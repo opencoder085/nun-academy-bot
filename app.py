@@ -45,6 +45,31 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
+def get_local_now() -> datetime:
+    """Okulun yerel saatini döner (Varsayılan UTC+3)"""
+    return datetime.utcnow() + timedelta(hours=TIMEZONE_OFFSET)
+
+def get_local_date() -> date:
+    """Okulun yerel takvim tarihini döner"""
+    return get_local_now().date()
+
+async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_markup=None, parse_mode="Markdown"):
+    """
+    Kullanıcının gönderdiği mesajlarda 'message can't be edited' hatasını önleyen,
+    inline butonlarda yerinde güncelleme, metinlerde ise temiz yeni mesaj gönderen akıllı fonksiyon.
+    """
+    if isinstance(target, CallbackQuery):
+        msg = target.message
+        if msg and msg.from_user and msg.from_user.is_bot and not msg.photo:
+            try:
+                await msg.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+                return
+            except Exception:
+                pass
+        await msg.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
+    elif isinstance(target, Message):
+        await target.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
+
 # ======================================================================
 # 1. ORTAM DEĞİŞKENLERİ VE AKILLI WEBHOOK TESPİTİ
 # ======================================================================
@@ -411,6 +436,25 @@ LOCALES = {
         "remind_att_sent": "📢 Yoklama almayan sınıfların öğretmenlerine anlık hatırlatma gönderildi.",
         "teacher_att_reminder_msg": "⚠️ *YOKLAMA HATIRLATMASI*\n\nSayın Hocam, *{class_name}* sınıfının sabah yoklaması henüz sisteme girilmemiştir. Lütfen ders yoklamasını alınız.",
         "morning_briefing_header": "☀️ *GÜNAYDIN SAYIN MÜDÜRÜM (İDARİ BRİFİNG - 09:30)*\n\n🏫 Toplam: *{total}* | ✅ Okulda: *{present}* (%{pct})\n❌ Gelmeyen: *{absent}* | 🏥 Mazeretli: *{excused}*\n\n⚠️ *Yoklama Almayan Sınıflar ({missing_cnt}):*\n{missing}\n\n🛎️ Bekleyen İşler: *{req_cnt}* Başvuru, *{med_cnt}* Rapor",
+                "rk_cat_staff": "👥 Kadro & Öğrenci",
+        "rk_cat_reports": "📊 Raporlar & Denetim",
+        "rk_cat_requests": "🛎️ Onay Masası",
+        "rk_cat_tools": "🛠️ İdari Araçlar",
+        "rk_cat_settings": "⚙️ Sistem & Ayarlar",
+        "cat_staff_title": "👥 *Okul Kadrosu & Öğrenci Yönetimi*\nLütfen işlem seçiniz:",
+        "cat_reports_title": "📊 *Akademik & Yoklama Denetim Masası*\nLütfen incelemek istediğiniz raporu seçiniz:",
+        "cat_requests_title": "🛎️ *Başvuru & Mazeret Onay Masası*\nLütfen işlem seçiniz:",
+        "cat_tools_title": "🛠️ *İdari Araçlar & İletişim Masası*\nLütfen işlem seçiniz:",
+        "cat_settings_title": "⚙️ *Sistem & Güvenlik Ayarları*\nLütfen işlem seçiniz:",
+                "rk_parent_info": "ℹ️ Okul Bilgi Panosu",
+        "rk_parent_settings": "⚙️ Ayarlar & Çıkış",
+        "btn_excel_hub": "📥 Excel Merkezi (Yükle / İndir)",
+        "excel_hub_title": "📥 *Excel İşlemleri Merkezi*\n\nLütfen yapmak istediğiniz işlemi seçiniz:",
+        "parent_info_title": "ℹ️ *Okul Bilgi Panosu*\n\nLütfen incelemek istediğiniz bölümü seçiniz:",
+        "parent_settings_title": "⚙️ *Veli Hesap & Bildirim Ayarları*\n\nLütfen ayar seçiniz:",
+        "btn_my_hws": "📚 Yayınlanan Ödevler",
+        "no_hws_found": "✅ Henüz yayınlanmış bir ödeviniz bulunmamaktadır.",
+        "btn_cockpit_unified": "📊 Sabah Kokpiti & Yoklama",
         "btn_teachers": "👨‍🏫 Öğretmenler",
         "btn_export_all": "📥 Genel Veri Yedeği (Excel)",
         "btn_notices": "📢 Son Duyurular",
@@ -597,6 +641,25 @@ LOCALES = {
         "remind_att_sent": "📢 Уведомление учителям отправлено.",
         "teacher_att_reminder_msg": "⚠️ *НАПОМИНАНИЕ О ПЕРЕКЛИЧКЕ*\n\nУважаемый учитель, перекличка класса *{class_name}* еще не внесена. Пожалуйста, заполните журнал.",
         "morning_briefing_header": "☀️ *УТРЕННИЙ ОТЧЕТ ДИРЕКТОРУ (09:30)*\n\n🏫 Всего: *{total}* | ✅ В школе: *{present}* (%{pct})\n❌ Отсутствуют: *{absent}* | 🏥 Справки: *{excused}*\n\n⚠️ *Классы без переклички ({missing_cnt}):*\n{missing}\n\n🛎️ Заявки: *{req_cnt}*, Справки: *{med_cnt}*",
+                "rk_cat_staff": "👥 Ученики и учителя",
+        "rk_cat_reports": "📊 Отчеты и контроль",
+        "rk_cat_requests": "🛎️ Центр одобрений",
+        "rk_cat_tools": "🛠️ Инструменты",
+        "rk_cat_settings": "⚙️ Настройки системы",
+        "cat_staff_title": "👥 *Управление учениками и учителями*\nВыберите действие:",
+        "cat_reports_title": "📊 *Академический контроль и отчеты*\nВыберите раздел:",
+        "cat_requests_title": "🛎️ *Заявки и медицинские справки*\nВыберите действие:",
+        "cat_tools_title": "🛠️ *Инструменты управления и рассылки*\nВыберите раздел:",
+        "cat_settings_title": "⚙️ *Системные настройки и безопасность*\nВыберите действие:",
+                "rk_parent_info": "ℹ️ Инфопанель школы",
+        "rk_parent_settings": "⚙️ Настройки и выход",
+        "btn_excel_hub": "📥 Центр Excel (Импорт / Экспорт)",
+        "excel_hub_title": "📥 *Центр операций Excel*\n\nВыберите действие:",
+        "parent_info_title": "ℹ️ *Информационная панель школы*\n\nВыберите раздел:",
+        "parent_settings_title": "⚙️ *Настройки уведомлений и аккаунта*\n\nВыберите действие:",
+        "btn_my_hws": "📚 Мои задания",
+        "no_hws_found": "✅ Опубликованных заданий пока нет.",
+        "btn_cockpit_unified": "📊 Утренний статус и перекличка",
         "btn_teachers": "👨‍🏫 Учителя",
         "btn_export_all": "📥 Экспорт базы (Excel)",
         "btn_notices": "📢 Объявления школы",
@@ -783,6 +846,25 @@ LOCALES = {
         "remind_att_sent": "📢 Davomat olmagan o'qituvchilarga eslatma yuborildi.",
         "teacher_att_reminder_msg": "⚠️ *DAVOMAT ESLATMASI*\n\nHurmatli ustoz, *{class_name}* sinfining tonggi davomati hali kiritilmagan. Iltimos, davomatni oling.",
         "morning_briefing_header": "☀️ *HURMATLI DIREKTOR, TONGGI HISOBOT (09:30)*\n\n🏫 Jami: *{total}* | ✅ Maktabda: *{present}* (%{pct})\n❌ Kelmagan: *{absent}* | 🏥 Sababli: *{excused}*\n\n⚠️ *Davomat olinmagan ({missing_cnt}):*\n{missing}\n\n🛎️ Arizalar: *{req_cnt}*, Ma'lumotnomalar: *{med_cnt}*",
+                "rk_cat_staff": "👥 Kadro va o'quvchilar",
+        "rk_cat_reports": "📊 Hisobotlar va nazorat",
+        "rk_cat_requests": "🛎️ Tasdiqlash markazi",
+        "rk_cat_tools": "🛠️ Boshqaruv vositalari",
+        "rk_cat_settings": "⚙️ Tizim va sozlamalar",
+        "cat_staff_title": "👥 *O'quvchilar va o'qituvchilar boshqaruvi*\nAmalni tanlang:",
+        "cat_reports_title": "📊 *Akademik hisobotlar va davomat nazorati*\nBo'limni tanlang:",
+        "cat_requests_title": "🛎️ *Arizalar va ma'lumotnomalarni tasdiqlash*\nAmalni tanlang:",
+        "cat_tools_title": "🛠️ *Boshqaruv vositalari va e'lonlar*\nBo'limni tanlang:",
+        "cat_settings_title": "⚙️ *Tizim va xavfsizlik sozlamalari*\nAmalni tanlang:",
+                "rk_parent_info": "ℹ️ Maktab ma'lumotlari",
+        "rk_parent_settings": "⚙️ Sozlamalar va chiqish",
+        "btn_excel_hub": "📥 Excel markazi (Yuklash / Ko'chirish)",
+        "excel_hub_title": "📥 *Excel amallari markazi*\n\nAmalni tanlang:",
+        "parent_info_title": "ℹ️ *Maktab axborot paneli*\n\nBo'limni tanlang:",
+        "parent_settings_title": "⚙️ *Xabarnoma va hisob sozlamalari*\n\nSozlamani tanlang:",
+        "btn_my_hws": "📚 Berilgan vazifalar",
+        "no_hws_found": "✅ Hozircha berilgan vazifalar yo'q.",
+        "btn_cockpit_unified": "📊 Tonggi hisobot va davomat",
         "btn_teachers": "👨‍🏫 O'qituvchilar",
         "btn_export_all": "📥 Umumiy arxiv (Excel)",
         "btn_notices": "📢 Maktab e'lonlari",
@@ -969,6 +1051,25 @@ LOCALES = {
         "remind_att_sent": "📢 Attendance reminders sent to teachers.",
         "teacher_att_reminder_msg": "⚠️ *ATTENDANCE REMINDER*\n\nDear Teacher, attendance for class *{class_name}* has not been recorded yet. Please submit attendance.",
         "morning_briefing_header": "☀️ *EXECUTIVE BRIEFING FOR PRINCIPAL (09:30)*\n\n🏫 Total: *{total}* | ✅ Present: *{present}* (%{pct})\n❌ Absent: *{absent}* | 🏥 Excused: *{excused}*\n\n⚠️ *Missing Attendance ({missing_cnt}):*\n{missing}\n\n🛎️ Requests: *{req_cnt}*, Medicals: *{med_cnt}*",
+                "rk_cat_staff": "👥 Staff & Students",
+        "rk_cat_reports": "📊 Reports & Audits",
+        "rk_cat_requests": "🛎️ Approval Center",
+        "rk_cat_tools": "🛠️ Admin Tools",
+        "rk_cat_settings": "⚙️ System & Settings",
+        "cat_staff_title": "👥 *Staff & Student Management*\nPlease select an option:",
+        "cat_reports_title": "📊 *Academic & Attendance Audit Hub*\nPlease select a report:",
+        "cat_requests_title": "🛎️ *Requests & Medical Approvals*\nPlease select an option:",
+        "cat_tools_title": "🛠️ *Administrative Tools & Communications*\nPlease select an option:",
+        "cat_settings_title": "⚙️ *System Settings & Security*\nPlease select an option:",
+                "rk_parent_info": "ℹ️ School Info Board",
+        "rk_parent_settings": "⚙️ Settings & Exit",
+        "btn_excel_hub": "📥 Excel Center (Import / Export)",
+        "excel_hub_title": "📥 *Excel Operations Hub*\n\nPlease select an action:",
+        "parent_info_title": "ℹ️ *School Information Board*\n\nPlease select a section:",
+        "parent_settings_title": "⚙️ *Parent Account & Notification Settings*\n\nPlease select an option:",
+        "btn_my_hws": "📚 Published Homeworks",
+        "no_hws_found": "✅ No published homeworks found.",
+        "btn_cockpit_unified": "📊 Morning Cockpit & Attendance",
         "btn_teachers": "👨‍🏫 Teachers",
         "btn_export_all": "📥 Full Data Backup (Excel)",
         "btn_notices": "📢 School Notices",
@@ -1034,9 +1135,9 @@ def get_role_reply_kb(role: str, lang: str = "tr") -> ReplyKeyboardMarkup:
     keyboard = []
     if role == "admin":
         keyboard = [
-            [KeyboardButton(text=get_text("rk_admin_dash", lang)), KeyboardButton(text=get_text("rk_cockpit", lang))],
-            [KeyboardButton(text=get_text("rk_classes", lang)), KeyboardButton(text=get_text("rk_teachers", lang))],
-            [KeyboardButton(text=get_text("rk_requests", lang)), KeyboardButton(text=get_text("rk_logout", lang))]
+            [KeyboardButton(text=get_text("rk_cat_staff", lang)), KeyboardButton(text=get_text("rk_cat_reports", lang))],
+            [KeyboardButton(text=get_text("rk_cat_requests", lang)), KeyboardButton(text=get_text("rk_cat_tools", lang))],
+            [KeyboardButton(text=get_text("rk_cat_settings", lang)), KeyboardButton(text=get_text("rk_main_menu", lang))]
         ]
     elif role == "teacher":
         keyboard = [
@@ -1046,16 +1147,15 @@ def get_role_reply_kb(role: str, lang: str = "tr") -> ReplyKeyboardMarkup:
         ]
     elif role == "parent":
         keyboard = [
-            [KeyboardButton(text=get_text("rk_report", lang)), KeyboardButton(text=get_text("rk_appointments", lang))],
-            [KeyboardButton(text=get_text("rk_upload_medical", lang)), KeyboardButton(text=get_text("rk_schedule", lang))],
-            [KeyboardButton(text=get_text("rk_notices", lang)), KeyboardButton(text=get_text("rk_cafeteria", lang))],
-            [KeyboardButton(text=get_text("rk_switch_student", lang)), KeyboardButton(text=get_text("rk_logout", lang))]
+            [KeyboardButton(text=get_text("rk_report", lang)), KeyboardButton(text=get_text("rk_upload_medical", lang))],
+            [KeyboardButton(text=get_text("rk_appointments", lang)), KeyboardButton(text=get_text("rk_parent_info", lang))],
+            [KeyboardButton(text=get_text("rk_switch_student", lang)), KeyboardButton(text=get_text("rk_parent_settings", lang))]
         ]
     elif role == "student":
         keyboard = [
             [KeyboardButton(text=get_text("rk_report", lang)), KeyboardButton(text=get_text("rk_homework", lang))],
-            [KeyboardButton(text=get_text("rk_schedule", lang)), KeyboardButton(text=get_text("rk_notices", lang))],
-            [KeyboardButton(text=get_text("rk_cafeteria", lang)), KeyboardButton(text=get_text("rk_logout", lang))]
+            [KeyboardButton(text=get_text("rk_schedule", lang)), KeyboardButton(text=get_text("rk_parent_info", lang))],
+            [KeyboardButton(text=get_text("rk_lang", lang)), KeyboardButton(text=get_text("rk_logout", lang))]
         ]
     else: # guest / giriş yapılmamış
         keyboard = [
@@ -1656,7 +1756,7 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
                 f"{get_text('admin_title', lang)}\n\n"
                 f"{get_text('admin_stats', lang, c_cnt=c_cnt, s_cnt=s_cnt, t_cnt=t_cnt, req_cnt=req_cnt, med_cnt=med_cnt, date=date_str)}"
             )
-            kb = get_admin_main_inline_kb(lang, med_count=med_cnt, req_count=req_cnt, is_maintenance=is_maint)
+            kb = None
 
     elif user.role == "teacher":
         async with AsyncSessionLocal() as session:
@@ -1680,7 +1780,7 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
                     InlineKeyboardButton(text=get_text("btn_teacher_appointments", lang, count=app_cnt), callback_data="tch:appointments")
                 ]
             ]
-            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+            kb = None
 
     elif user.role == "parent":
         async with AsyncSessionLocal() as session:
@@ -1707,7 +1807,7 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
                     InlineKeyboardButton(text=get_text("btn_switch_student", lang), callback_data="parent:switch_student")
                 ]
             ]
-            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+            kb = None
 
     elif user.role == "student":
         async with AsyncSessionLocal() as session:
@@ -1725,7 +1825,7 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
                     InlineKeyboardButton(text=get_text("btn_view_cafeteria", lang), callback_data="act_view_cafe")
                 ]
             ]
-            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+            kb = None
 
     else: # guest
         text = get_text("welcome_guest", lang)
@@ -2889,6 +2989,94 @@ async def cb_noop(query: CallbackQuery):
     except Exception:
         pass
 
+@router.message(any_state, F.text.in_([
+    "👥 Kadro & Öğrenci", "👥 Ученики и учителя", "👥 Kadro va o'quvchilar", "👥 Staff & Students"
+]))
+async def cb_cat_staff(message: Message, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        if not is_admin_user(user, message.from_user.id): return
+        lang = user.language if user else "tr"
+
+        buttons = [
+            [InlineKeyboardButton(text=get_text("btn_classes", lang), callback_data="adm:classes"), InlineKeyboardButton(text=get_text("btn_teachers", lang), callback_data="adm:teachers")],
+            [InlineKeyboardButton(text=get_text("btn_search_student", lang), callback_data="adm:search_student")]
+        ]
+        await message.answer(get_text("cat_staff_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+
+@router.message(any_state, F.text.in_([
+    "📊 Raporlar & Denetim", "📊 Отчеты и контроль", "📊 Hisobotlar va nazorat", "📊 Reports & Audits"
+]))
+async def cb_cat_reports(message: Message, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        if not is_admin_user(user, message.from_user.id): return
+        lang = user.language if user else "tr"
+
+        buttons = [
+            [InlineKeyboardButton(text=get_text("btn_cockpit_unified", lang), callback_data="adm:cockpit")],
+            [InlineKeyboardButton(text=get_text("btn_risk_radar", lang), callback_data="adm:risk_radar"), InlineKeyboardButton(text=get_text("btn_academic_report", lang), callback_data="adm:academic_report")]
+        ]
+        await message.answer(get_text("cat_reports_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+
+@router.message(any_state, F.text.in_([
+    "🛎️ Onay Masası", "🛎️ Центр одобрений", "🛎️ Tasdiqlash markazi", "🛎️ Approval Center"
+]))
+async def cb_cat_requests(message: Message, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        if not is_admin_user(user, message.from_user.id): return
+        lang = user.language if user else "tr"
+
+        req_cnt = (await session.execute(select(func.count(AccessRequest.id)).where(AccessRequest.status == "pending"))).scalar() or 0
+        med_cnt = (await session.execute(select(func.count(MedicalReport.id)).where(MedicalReport.status == "pending"))).scalar() or 0
+
+        buttons = [
+            [InlineKeyboardButton(text=get_text("btn_requests", lang, count=req_cnt), callback_data="adm:requests_list")],
+            [InlineKeyboardButton(text=get_text("btn_medical", lang, count=med_cnt), callback_data="adm:medical_list")],
+            [InlineKeyboardButton(text=get_text("btn_audit_logs", lang), callback_data="adm:audit_logs")]
+        ]
+        await message.answer(get_text("cat_requests_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+
+@router.message(any_state, F.text.in_([
+    "🛠️ İdari Araçlar", "🛠️ Инструменты", "🛠️ Boshqaruv vositalari", "🛠️ Admin Tools"
+]))
+async def cb_cat_tools(message: Message, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        if not is_admin_user(user, message.from_user.id): return
+        lang = user.language if user else "tr"
+
+        buttons = [
+            [InlineKeyboardButton(text=get_text("btn_broadcast", lang), callback_data="adm:broadcast_init"), InlineKeyboardButton(text=get_text("btn_excel_hub", lang), callback_data="adm:excel_hub")],
+            [InlineKeyboardButton(text=get_text("btn_pdf", lang), callback_data="adm:pdf_menu"), InlineKeyboardButton(text=get_text("btn_cafeteria_edit", lang), callback_data="adm:menu_edit")]
+        ]
+        await message.answer(get_text("cat_tools_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+
+@router.message(any_state, F.text.in_([
+    "⚙️ Sistem & Ayarlar", "⚙️ Настройки системы", "⚙️ Tizim va sozlamalar", "⚙️ System & Settings"
+]))
+async def cb_cat_settings(message: Message, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        if not is_admin_user(user, message.from_user.id): return
+        lang = user.language if user else "tr"
+
+        maint = await session.get(SystemSetting, "maintenance_mode")
+        is_maint = maint.value == "true" if maint else False
+        maint_txt = get_text("btn_maintenance_toggle", lang, status="AÇIK" if is_maint else "KAPALI")
+
+        buttons = [
+            [InlineKeyboardButton(text=maint_txt, callback_data="adm:toggle_maint"), InlineKeyboardButton(text=get_text("btn_blacklist", lang), callback_data="adm:blacklist")],
+            [InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang"), InlineKeyboardButton(text=get_text("rk_logout", lang), callback_data="act_logout")]
+        ]
+        await message.answer(get_text("cat_settings_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+
 @router.callback_query(F.data.startswith("adm:show_class:"))
 async def cb_show_class_students(query: CallbackQuery):
     parts = query.data.split(":")
@@ -3083,11 +3271,14 @@ async def cb_cockpit(query: CallbackQuery):
         taken_classes = (await session.execute(taken_classes_stmt)).scalars().all()
 
         missing = [c for c in all_classes if c not in taken_classes]
-        missing_str = "\n".join([f"• {c}" for c in missing]) if missing else "✅"
+        missing_str = "\n".join([f"• ❌ *{c}*" for c in missing]) if missing else "✅ Tümü Alındı"
 
         text = get_text("cockpit_report", lang, date=today.strftime("%d.%m.%Y"), total=total_students, present=present_count, absent=absent_count, missing_cnt=len(missing), missing=missing_str)
-        buttons = [get_nav_buttons(lang)]
-        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+        buttons = []
+        if missing:
+            buttons.append([InlineKeyboardButton(text=get_text("btn_remind_att", lang), callback_data="adm:remind_all_att")])
+        buttons.append(get_nav_buttons(lang))
+        await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await query.answer()
 
 @router.callback_query(F.data == "adm:risk_radar")
@@ -3313,14 +3504,17 @@ async def admin_excel_upload(message: Message):
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
 
-    bot: Bot = message.bot
-    file_info = await bot.get_file(message.document.file_id)
-    file_bytes = await bot.download_file(file_info.file_path)
+    try:
+        bot: Bot = message.bot
+        file_info = await bot.get_file(message.document.file_id)
+        file_bytes = await bot.download_file(file_info.file_path)
 
-    count, out_excel = await process_student_excel(file_bytes.read())
-    file = BufferedInputFile(out_excel.read(), filename="Giris_Kodlari_Uretildi.xlsx")
-    await message.answer_document(file, caption=get_text("excel_done", lang, count=count), parse_mode="Markdown")
-    out_excel.close()
+        count, out_excel = await process_student_excel(file_bytes.read())
+        file = BufferedInputFile(out_excel.read(), filename="Giris_Kodlari_Uretildi.xlsx")
+        await message.answer_document(file, caption=get_text("excel_done", lang, count=count), parse_mode="Markdown")
+        out_excel.close()
+    except Exception:
+        await message.answer("⚠️ *Dosya İşleme Hatası:* Excel dosyası okunamadı veya formatı geçersiz.\n\nLütfen ilk satır başlıklarının `Ad Soyad | Sinif | Numara` olduğundan ve dosyanın bozuk olmadığından emin olunuz.", parse_mode="Markdown")
 
 @router.callback_query(F.data == "adm:toggle_maint")
 async def cb_toggle_maintenance(query: CallbackQuery):
@@ -3483,6 +3677,8 @@ async def cb_broadcast_init(query: CallbackQuery, state: FSMContext):
 @router.message(Form.waiting_broadcast_text)
 async def process_broadcast_text(message: Message, state: FSMContext):
     b_text = message.text.strip()
+    if len(b_text) > 4000:
+        b_text = b_text[:4000] + "\n...(Metin kısaltıldı)"
     await state.clear()
     sent_cnt = 0
 
@@ -3866,6 +4062,54 @@ async def process_grade_edit_val(message: Message, state: FSMContext):
             await message.answer(get_text("grade_updated", lang), reply_markup=reply_kb)
             await render_clean_dashboard(message, user)
 
+@router.callback_query(F.data == "adm:excel_hub")
+async def cb_admin_excel_hub(query: CallbackQuery):
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+        buttons = [
+            [InlineKeyboardButton(text="📥 Toplu Öğrenci Yükle (Excel)", callback_data="adm:excel_info")],
+            [InlineKeyboardButton(text="📤 Tüm Okul Verisini İndir (Yedek)", callback_data="adm:export_all_excel")],
+            get_nav_buttons(lang)
+        ]
+        await safe_edit_or_answer(query, get_text("excel_hub_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    try: await query.answer()
+    except Exception: pass
+
+@router.message(any_state, F.text.in_([
+    "ℹ️ Okul Bilgi Panosu", "ℹ️ Инфопанель школы", "ℹ️ Maktab ma'lumotlari", "ℹ️ School Info Board"
+]))
+async def cb_parent_info_board(message: Message, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        lang = user.language if user else "tr"
+
+        buttons = [
+            [InlineKeyboardButton(text=get_text("btn_view_schedule", lang), callback_data="act_view_sched")],
+            [InlineKeyboardButton(text=get_text("btn_notices", lang), callback_data="act_view_notices")],
+            [InlineKeyboardButton(text=get_text("btn_view_cafeteria", lang), callback_data="act_view_cafe")]
+        ]
+        await message.answer(get_text("parent_info_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+
+@router.message(any_state, F.text.in_([
+    "⚙️ Ayarlar & Çıkış", "⚙️ Настройки и выход", "⚙️ Sozlamalar va chiqish", "⚙️ Settings & Exit"
+]))
+async def cb_parent_settings_hub(message: Message, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        lang = user.language if user else "tr"
+
+        briefing_txt = get_text("btn_briefing_on", lang) if (user and user.evening_briefing) else get_text("btn_briefing_off", lang)
+        buttons = [
+            [InlineKeyboardButton(text=briefing_txt, callback_data="parent:toggle_briefing")],
+            [InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")],
+            [InlineKeyboardButton(text=get_text("rk_logout", lang), callback_data="act_logout")]
+        ]
+        await message.answer(get_text("parent_settings_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+
 @router.callback_query(F.data == "tch:hw_classes")
 async def cb_hw_classes(query: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -3873,15 +4117,64 @@ async def cb_hw_classes(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
         classes = (await session.execute(select(Student.class_name).distinct().order_by(Student.class_name))).scalars().all()
-        if not classes:
-            classes = ["9-A"]
+        if not classes: classes = ["9-A"]
 
         buttons = []
         for c in classes:
-            buttons.append([InlineKeyboardButton(text=f"🏫 {c}", callback_data=f"hw_cls:{c}")])
+            buttons.append([InlineKeyboardButton(text=f"📢 {c} İçin Yeni Ödev Gönder", callback_data=f"hw_cls:{c}")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_my_hws", lang), callback_data="tch:view_my_hws")])
         buttons.append([InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")])
-        await query.message.edit_text(get_text("prompt_hw_class", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await query.answer()
+        await safe_edit_or_answer(query, get_text("prompt_hw_class", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    try: await query.answer()
+    except Exception: pass
+
+@router.callback_query(F.data == "tch:view_my_hws")
+async def cb_teacher_view_my_hws(query: CallbackQuery):
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+        hws = (await session.execute(
+            select(Homework).where(Homework.teacher_id == query.from_user.id).order_by(desc(Homework.created_at)).limit(10)
+        )).scalars().all()
+
+        if not hws:
+            buttons = [get_nav_buttons(lang, back_callback="tch:hw_classes")]
+            await safe_edit_or_answer(query, get_text("no_hws_found", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+            try: await query.answer()
+            except Exception: pass
+            return
+
+        buttons = []
+        for h in hws:
+            btn_txt = f"📚 {h.class_name} ({h.subject}): {h.content[:15]}..."
+            buttons.append([
+                InlineKeyboardButton(text=btn_txt, callback_data="noop"),
+                InlineKeyboardButton(text="❌ Sil", callback_data=f"tch:del_hw:{h.id}")
+            ])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="tch:hw_classes")])
+
+        await safe_edit_or_answer(query, "📚 *Yayınladığınız Son Ödevler:*", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    try: await query.answer()
+    except Exception: pass
+
+@router.callback_query(F.data.startswith("tch:del_hw:"))
+async def cb_teacher_del_hw(query: CallbackQuery):
+    hw_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        hw = await session.get(Homework, hw_id)
+        if hw and hw.teacher_id == query.from_user.id:
+            await session.delete(hw)
+            await session.commit()
+            try: await query.answer("Ödev silindi.", show_alert=True)
+            except Exception: pass
+            await cb_teacher_view_my_hws(query)
+            return
+    try: await query.answer()
+    except Exception: pass
+
+
+# --- HW CLASSES HANDLER MIGRATED ---
 
 @router.callback_query(F.data.startswith("hw_cls:"))
 async def cb_hw_enter_content(query: CallbackQuery, state: FSMContext):
@@ -4126,6 +4419,21 @@ async def cb_ack_notification(query: CallbackQuery):
     await query.answer(get_text("acknowledged_toast", "tr"), show_alert=True)
     await query.message.edit_reply_markup(reply_markup=None)
 
+@router.callback_query(F.data == "act_logout")
+async def cb_act_logout(query: CallbackQuery, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        u = await session.get(User, query.from_user.id)
+        if u:
+            u.role = "guest"
+            await session.commit()
+        lang = u.language if u else "tr"
+    reply_kb = get_role_reply_kb("guest", lang)
+    try: await query.message.delete()
+    except Exception: pass
+    await query.message.answer(get_text("logged_out", lang), reply_markup=reply_kb)
+    await prompt_guest_screen(query, u, state)
+
 @router.callback_query(F.data == "act_change_lang")
 async def cb_change_lang_screen(query: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -4144,6 +4452,12 @@ REPLY_BUTTON_ACTIONS = {
     "rk_lang": "act_lang",
     "rk_enter_code": "act_enter_code",
     "rk_req_access": "act_req_access",
+    # Yönetici Kategori Hub'ları
+    "rk_cat_staff": "act_cat_staff",
+    "rk_cat_reports": "act_cat_reports",
+    "rk_cat_requests": "act_cat_requests",
+    "rk_cat_tools": "act_cat_tools",
+    "rk_cat_settings": "act_cat_settings",
     # Yönetici
     "rk_cockpit": "act_cockpit",
     "rk_classes": "act_classes",
@@ -4154,6 +4468,8 @@ REPLY_BUTTON_ACTIONS = {
     "rk_grade": "act_grade",
     "rk_homework": "act_homework",
     # Veli & Öğrenci
+    "rk_parent_info": "act_parent_info",
+    "rk_parent_settings": "act_parent_settings",
     "rk_report": "act_report",
     "rk_appointments": "act_appointments",
     "rk_schedule": "act_schedule",
