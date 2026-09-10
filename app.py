@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-OKUL YÖNETİM TELEGRAM BOTU - TEK DOSYA TAM SİSTEM MİMARİSİ
+OKUL YÖNETİM TELEGRAM BOTU - TEK DOSYA TAM SİSTEM MİMARİSİ (PROD V3)
 Altyapı: FastAPI + aiogram 3.x Webhook + PostgreSQL (Neon / Supabase) / SQLite Çift Motor Kalkanı
 Dil Desteği: Türkçe (TR), Русский (RU), O'zbekcha (UZ), English (EN)
 Render Free Tier Uyumlu (512 MB RAM, 0.1 vCPU, Ephemeral Disk)
@@ -39,26 +39,38 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # ======================================================================
-# 1. ORTAM DEĞİŞKENLERİ VE YAPILANDIRMA
+# 1. ORTAM DEĞİŞKENLERİ VE AKILLI WEBHOOK TESPİTİ
 # ======================================================================
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "okul_bot_secret_token_2026")
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///school.db")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+
+# Webhook URL tespiti:
+# 1. Manuel WEBHOOK_URL verildiyse onu kullan.
+# 2. Verilmediyse Render'ın otomatik atadığı RENDER_EXTERNAL_URL'den türet!
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").strip()
+if not WEBHOOK_URL:
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "").strip()
+    if render_url:
+        WEBHOOK_URL = f"{render_url.rstrip('/')}/webhook"
+    else:
+        render_host = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+        if render_host:
+            WEBHOOK_URL = f"https://{render_host}/webhook"
+
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "OkulBotSecret2026").strip()
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///school.db").strip()
 ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
 
 # ======================================================================
 # 2. VERİTABANI MOTORU (ÇİFT MOTOR KALKANI - SQLITE & POSTGRESQL)
 # ======================================================================
 
-# Neon veya Supabase linkleri 'postgres://' formatında gelirse 'postgresql+asyncpg://' yapar
+# Neon veya Supabase linkleri 'postgres://' gelirse 'postgresql+asyncpg://' yapar
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+asyncpg://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# SQLite için havuz parametreleri kapatılır, PostgreSQL için havuz kalkanı devreye girer
 if "sqlite" in DATABASE_URL:
     engine = create_async_engine(DATABASE_URL, echo=False)
 else:
@@ -1031,26 +1043,60 @@ async def background_attendance_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print("=" * 60)
+    print("--> [1/4] Veritabanı başlatılıyor...")
     await init_db()
-    if WEBHOOK_URL:
+    print("--> [1/4] Veritabanı tabloları hazır.")
+
+    bot_info = None
+    try:
+        bot_info = await bot.get_me()
+        print(f"--> [2/4] Telegram Bot Bilgisi: @{bot_info.username} (ID: {bot_info.id})")
+    except Exception as e:
+        print(f"--> [HATA 2/4] BOT_TOKEN ile Telegram'a bağlanılamadı: {e}")
+
+    if bot_info and WEBHOOK_URL:
         try:
+            print(f"--> [3/4] Webhook Telegram'a kaydediliyor: {WEBHOOK_URL}")
+            await bot.delete_webhook(drop_pending_updates=False)
             await bot.set_webhook(
                 url=WEBHOOK_URL,
                 secret_token=WEBHOOK_SECRET,
-                drop_pending_updates=True
+                drop_pending_updates=False,
+                allowed_updates=["message", "callback_query"]
             )
-        except Exception:
-            pass
+            wh = await bot.get_webhook_info()
+            print(f"--> [3/4] Webhook Başarıyla Kuruldu! Aktif URL: {wh.url}")
+            if wh.last_error_message:
+                print(f"--> [UYARI] Telegram Son Hata: {wh.last_error_message}")
+        except Exception as e:
+            print(f"--> [HATA 3/4] Webhook kurulum hatası: {e}")
+    else:
+        print(f"--> [UYARI 3/4] Webhook kurulamadı! WEBHOOK_URL='{WEBHOOK_URL}'")
+
     worker_task = asyncio.create_task(background_attendance_loop())
+    print("--> [4/4] Gecikmeli bildirim kuyruk işçisi aktif.")
+    print("--> SISTEM CANLI VE TELEGRAM MESAJLARINI BEKLIYOR.")
+    print("=" * 60)
+    
     yield
+    
     worker_task.cancel()
     try:
-        await bot.delete_webhook()
+        await bot.session.close()
     except Exception:
         pass
-    await bot.session.close()
 
 app = FastAPI(title="OkulYonetimBot", lifespan=lifespan)
+
+@app.get("/")
+async def root():
+    return {
+        "status": "ok",
+        "service": "OkulYonetimBot",
+        "webhook_url": WEBHOOK_URL,
+        "uptime": True
+    }
 
 @app.get("/health", status_code=status.HTTP_200_OK)
 async def health_check():
@@ -1059,12 +1105,25 @@ async def health_check():
 @app.post("/webhook")
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-    if secret != WEBHOOK_SECRET:
+    if WEBHOOK_SECRET and secret and secret != WEBHOOK_SECRET:
+        print(f"--> [GÜVENLİK ENGELİ] Geçersiz Webhook Secret. Gelen: {secret}")
         return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"error": "Invalid secret"})
 
-    data = await request.json()
-    telegram_update = Update.model_validate(data, context={"bot": bot})
-    background_tasks.add_task(dp.feed_update, bot, telegram_update)
+    try:
+        data = await request.json()
+    except Exception as e:
+        print(f"--> [HATA] JSON okunamadı: {e}")
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Bad JSON"})
+
+    update_id = data.get("update_id", 0)
+    print(f"--> [MESAJ GELDİ] Telegram Update ID: {update_id}")
+
+    try:
+        telegram_update = Update.model_validate(data, context={"bot": bot})
+        background_tasks.add_task(dp.feed_update, bot, telegram_update)
+    except Exception as e:
+        print(f"--> [HATA] aiogram Update nesnesine çevrilemedi: {e}")
+
     return {"ok": True}
 
 if __name__ == "__main__":
