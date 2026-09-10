@@ -112,13 +112,28 @@ if DATABASE_URL.startswith("postgres://"):
 elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+asyncpg://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
+from sqlalchemy import event
+
 if "sqlite" in DATABASE_URL:
-    engine = create_async_engine(DATABASE_URL, echo=False)
+    engine = create_async_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False, "timeout": 30},
+        pool_pre_ping=True,
+        echo=False
+    )
+    @event.listens_for(engine.sync_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA cache_size=-64000")
+        cursor.close()
 else:
     engine = create_async_engine(
         DATABASE_URL,
-        pool_size=5,
-        max_overflow=2,
+        pool_size=10,
+        max_overflow=5,
         pool_recycle=300,
         pool_pre_ping=True,
         echo=False
@@ -294,6 +309,7 @@ LOCALES = {
     "tr": {
         "lang_select": "🌍 Lütfen bir dil seçiniz / Tilni tanlang / Select language:",
         "lang_changed": "Dil başarıyla güncellendi: 🇹🇷 Türkçe",
+        "prompt_enter_code_direct": "🔑 *Lütfen size verilen giriş kodunu yazınız:* (Örn: `HCA-123456`, `VELI-123456`, `OGR-123456`)",
         "welcome_guest": "🎓 *Okul Yönetim Sistemine Hoş Geldiniz.*\n\nLütfen giriş yapmak için bir seçenek belirleyiniz veya doğrudan size verilen **erişim kodunu** yazınız:",
         "auth_success": "✅ Giriş başarılı!\nHoş geldiniz: *{name}*\nRolünüz: *{role}*",
         "auth_failed": "❌ Geçersiz giriş kodu! Kalan deneme hakkınız: {remaining}",
@@ -499,6 +515,7 @@ LOCALES = {
     "ru": {
         "lang_select": "🌍 Пожалуйста, выберите язык:",
         "lang_changed": "Язык успешно изменен: 🇷🇺 Русский",
+        "prompt_enter_code_direct": "🔑 *Введите ваш код доступа:* (Например: `HCA-123456`, `VELI-123456`, `OGR-123456`)",
         "welcome_guest": "🎓 *Добро пожаловать в систему управления школой.*\n\nВыберите действие или введите выданный **код доступа**:",
         "auth_success": "✅ Авторизация успешна!\nДобро пожаловать: *{name}*\nВаша роль: *{role}*",
         "auth_failed": "❌ Неверный код доступа! Осталось попыток: {remaining}",
@@ -704,6 +721,7 @@ LOCALES = {
     "uz": {
         "lang_select": "🌍 Iltimos, tilni tanlang:",
         "lang_changed": "Til muvaffaqiyatli yangilandi: 🇺🇿 O'zbekcha",
+        "prompt_enter_code_direct": "🔑 *Iltimos, sizga berilgan kirish kodini yozing:* (Masalan: `HCA-123456`, `VELI-123456`, `OGR-123456`)",
         "welcome_guest": "🎓 *Maktab boshqaruv tizimiga xush kelibsiz.*\n\nIltimos, amalni tanlang yoki berilgan **kirish kodini** yozing:",
         "auth_success": "✅ Kirish muvaffaqiyatli!\nXush kelibsiz: *{name}*\nSizning rolingiz: *{role}*",
         "auth_failed": "❌ Noto'g'ri kod! Qolgan urinishlar soni: {remaining}",
@@ -909,6 +927,7 @@ LOCALES = {
     "en": {
         "lang_select": "🌍 Please select your language:",
         "lang_changed": "Language successfully updated: 🇬🇧 English",
+        "prompt_enter_code_direct": "🔑 *Please enter your access code:* (e.g. `HCA-123456`, `VELI-123456`, `OGR-123456`)",
         "welcome_guest": "🎓 *Welcome to School Management Ecosystem.*\n\nPlease choose an action or enter your provided **access code**:",
         "auth_success": "✅ Authentication successful!\nWelcome: *{name}*\nYour role: *{role}*",
         "auth_failed": "❌ Invalid access code! Remaining attempts: {remaining}",
@@ -1855,120 +1874,125 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
 async def process_auth_code_string(code: str, user_id: int, message: Message, state: FSMContext):
     clean_code = normalize_code(code)
 
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, user_id)
-        if not user:
-            user = User(telegram_id=user_id, language="tr", role="guest")
-            session.add(user)
+    try:
+        async with AsyncSessionLocal() as session:
+            user = await session.get(User, user_id)
+            if not user:
+                user = User(telegram_id=user_id, language="tr", role="guest")
+                session.add(user)
+                await session.commit()
+
+            lang = user.language
+
+            if user.is_blacklisted:
+                await message.answer(get_text("auth_blacklisted", lang))
+                return
+
+            if user.locked_until and user.locked_until > datetime.utcnow():
+                await message.answer(get_text("auth_locked", lang))
+                return
+
+            # 1. YÖNETİCİ ŞİFRESİ KONTROLÜ
+            if clean_code == ADMIN_CODE or user_id in ADMIN_IDS:
+                user.role = "admin"
+                user.failed_attempts = 0
+                user.locked_until = None
+                await session.commit()
+                await state.clear()
+
+                reply_kb = get_role_reply_kb("admin", lang)
+                success_txt = get_text("auth_success", lang, name="Yönetici", role="Okul İdaresi (Admin)")
+                await message.answer(success_txt, reply_markup=reply_kb)
+                await render_clean_dashboard(message, user)
+                return
+
+            # 2. ÖĞRETMEN GİRİŞ KODU KONTROLÜ (HCA-XXXXXX)
+            t_stmt = select(Teacher).where(func.upper(func.trim(Teacher.auth_code)) == clean_code)
+            teacher = (await session.execute(t_stmt)).scalar_one_or_none()
+            if teacher:
+                teacher.telegram_id = user_id
+                teacher.is_code_burned = True
+                user.role = "teacher"
+                user.full_name = teacher.full_name
+                user.failed_attempts = 0
+                user.locked_until = None
+                await session.commit()
+                await state.clear()
+
+                reply_kb = get_role_reply_kb("teacher", lang)
+                success_txt = get_text("auth_success", lang, name=teacher.full_name, role=f"Öğretmen ({teacher.subject})")
+                await message.answer(success_txt, reply_markup=reply_kb)
+                await render_clean_dashboard(message, user)
+                return
+
+            # 3. ÖĞRENCİ GİRİŞ KODU KONTROLÜ (OGR-XXXXXX)
+            s_stmt = select(Student).where(func.upper(func.trim(Student.student_code)) == clean_code)
+            student = (await session.execute(s_stmt)).scalar_one_or_none()
+            if student:
+                student.student_telegram_id = user_id
+                student.is_student_code_burned = True
+                user.role = "student"
+                user.full_name = student.full_name
+                user.failed_attempts = 0
+                user.locked_until = None
+                await session.commit()
+                await state.clear()
+
+                reply_kb = get_role_reply_kb("student", lang)
+                success_txt = get_text("auth_success", lang, name=student.full_name, role=f"Öğrenci ({student.class_name})")
+                await message.answer(success_txt, reply_markup=reply_kb)
+                await render_clean_dashboard(message, user)
+                return
+
+            # 4. VELİ GİRİŞ KODU KONTROLÜ (VELI-XXXXXX)
+            p_stmt = select(Student).where(func.upper(func.trim(Student.parent_code)) == clean_code)
+            p_student = (await session.execute(p_stmt)).scalar_one_or_none()
+            if p_student:
+                p_student.is_parent_code_burned = True
+                user.role = "parent"
+                user.failed_attempts = 0
+                user.locked_until = None
+                user.current_child_id = p_student.id
+
+                rel_check = select(ParentStudent).where(
+                    ParentStudent.parent_telegram_id == user_id,
+                    ParentStudent.student_id == p_student.id
+                )
+                exists = (await session.execute(rel_check)).scalar_one_or_none()
+                if not exists:
+                    session.add(ParentStudent(parent_telegram_id=user_id, student_id=p_student.id))
+
+                await session.commit()
+                await state.clear()
+
+                reply_kb = get_role_reply_kb("parent", lang)
+                success_txt = get_text("auth_success", lang, name=f"{p_student.full_name} Velisi", role=f"Veli ({p_student.class_name})")
+                await message.answer(success_txt, reply_markup=reply_kb)
+                await render_clean_dashboard(message, user)
+                return
+
+            # BAŞARISIZ GİRİŞ
+            user.failed_attempts += 1
+            if user.failed_attempts >= 5:
+                user.is_blacklisted = True
+                await session.commit()
+                await message.answer(get_text("auth_blacklisted", lang))
+                await state.clear()
+                return
+            elif user.failed_attempts >= 3:
+                user.locked_until = datetime.utcnow() + timedelta(hours=1)
+                await session.commit()
+                await message.answer(get_text("auth_locked", lang))
+                await state.clear()
+                return
+
+            remaining = 3 - user.failed_attempts
             await session.commit()
-
-        lang = user.language
-
-        if user.is_blacklisted:
-            await message.answer(get_text("auth_blacklisted", lang))
-            return
-
-        if user.locked_until and user.locked_until > datetime.utcnow():
-            await message.answer(get_text("auth_locked", lang))
-            return
-
-        # 1. YÖNETİCİ ŞİFRESİ KONTROLÜ
-        if clean_code == ADMIN_CODE or user_id in ADMIN_IDS:
-            user.role = "admin"
-            user.failed_attempts = 0
-            user.locked_until = None
-            await session.commit()
-            await state.clear()
-
-            reply_kb = get_role_reply_kb("admin", lang)
-            success_txt = get_text("auth_success", lang, name="Yönetici", role="Okul İdaresi (Admin)")
-            await message.answer(success_txt, reply_markup=reply_kb, parse_mode="Markdown")
-            await render_clean_dashboard(message, user)
-            return
-
-        # 2. ÖĞRETMEN GİRİŞ KODU KONTROLÜ (HCA-XXXXXX)
-        t_stmt = select(Teacher).where(Teacher.auth_code == clean_code)
-        teacher = (await session.execute(t_stmt)).scalar_one_or_none()
-        if teacher:
-            teacher.telegram_id = user_id
-            teacher.is_code_burned = True
-            user.role = "teacher"
-            user.full_name = teacher.full_name
-            user.failed_attempts = 0
-            user.locked_until = None
-            await session.commit()
-            await state.clear()
-
-            reply_kb = get_role_reply_kb("teacher", lang)
-            success_txt = get_text("auth_success", lang, name=teacher.full_name, role=f"Öğretmen ({teacher.subject})")
-            await message.answer(success_txt, reply_markup=reply_kb, parse_mode="Markdown")
-            await render_clean_dashboard(message, user)
-            return
-
-        # 3. ÖĞRENCİ GİRİŞ KODU KONTROLÜ (OGR-XXXXXX)
-        s_stmt = select(Student).where(Student.student_code == clean_code)
-        student = (await session.execute(s_stmt)).scalar_one_or_none()
-        if student:
-            student.student_telegram_id = user_id
-            student.is_student_code_burned = True
-            user.role = "student"
-            user.full_name = student.full_name
-            user.failed_attempts = 0
-            user.locked_until = None
-            await session.commit()
-            await state.clear()
-
-            reply_kb = get_role_reply_kb("student", lang)
-            success_txt = get_text("auth_success", lang, name=student.full_name, role=f"Öğrenci ({student.class_name})")
-            await message.answer(success_txt, reply_markup=reply_kb, parse_mode="Markdown")
-            await render_clean_dashboard(message, user)
-            return
-
-        # 4. VELİ GİRİŞ KODU KONTROLÜ (VELI-XXXXXX)
-        p_stmt = select(Student).where(Student.parent_code == clean_code)
-        p_student = (await session.execute(p_stmt)).scalar_one_or_none()
-        if p_student:
-            p_student.is_parent_code_burned = True
-            user.role = "parent"
-            user.failed_attempts = 0
-            user.locked_until = None
-            user.current_child_id = p_student.id
-
-            rel_check = select(ParentStudent).where(
-                ParentStudent.parent_telegram_id == user_id,
-                ParentStudent.student_id == p_student.id
-            )
-            exists = (await session.execute(rel_check)).scalar_one_or_none()
-            if not exists:
-                session.add(ParentStudent(parent_telegram_id=user_id, student_id=p_student.id))
-
-            await session.commit()
-            await state.clear()
-
-            reply_kb = get_role_reply_kb("parent", lang)
-            success_txt = get_text("auth_success", lang, name=f"{p_student.full_name} Velisi", role=f"Veli ({p_student.class_name})")
-            await message.answer(success_txt, reply_markup=reply_kb, parse_mode="Markdown")
-            await render_clean_dashboard(message, user)
-            return
-
-        # BAŞARISIZ GİRİŞ
-        user.failed_attempts += 1
-        if user.failed_attempts >= 5:
-            user.is_blacklisted = True
-            await session.commit()
-            await message.answer(get_text("auth_blacklisted", lang))
-            await state.clear()
-            return
-        elif user.failed_attempts >= 3:
-            user.locked_until = datetime.utcnow() + timedelta(hours=1)
-            await session.commit()
-            await message.answer(get_text("auth_locked", lang))
-            await state.clear()
-            return
-
-        remaining = 3 - user.failed_attempts
-        await session.commit()
-        await message.answer(get_text("auth_failed", lang, remaining=remaining))
+            await message.answer(get_text("auth_failed", lang, remaining=remaining))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        await message.answer(f"⚠️ Kod işlenirken beklenmeyen bir hata oluştu: {type(e).__name__}. Lütfen tekrar deneyiniz.")
 
 @router.message(Form.waiting_auth_code)
 async def handle_auth_code_fsm(message: Message, state: FSMContext):
@@ -4276,7 +4300,7 @@ async def process_parent_add_child_code(message: Message, state: FSMContext):
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
 
-        p_stmt = select(Student).where(Student.parent_code == clean_code)
+        p_stmt = select(Student).where(func.upper(func.trim(Student.parent_code)) == clean_code)
         p_student = (await session.execute(p_stmt)).scalar_one_or_none()
 
         reply_kb = get_role_reply_kb("parent", lang)
@@ -4529,7 +4553,7 @@ async def global_reply_keyboard_router(message: Message, state: FSMContext):
             return
 
         elif action == "act_enter_code":
-            await message.answer("🔑 *Lütfen giriş kodunu yazınız:* (Örn: `HCA-123456`, `VELI-123456`, `OGR-123456`)", parse_mode="Markdown")
+            await message.answer(get_text("prompt_enter_code_direct", lang), parse_mode="Markdown")
             await state.set_state(Form.waiting_auth_code)
             return
 
@@ -4616,10 +4640,14 @@ async def global_reply_keyboard_router(message: Message, state: FSMContext):
             await cb_upload_med_init(dummy_q, state)
             return
 
+@router.message(any_state, F.text.func(lambda text: normalize_code(text).startswith(("VELI-", "OGR-", "HCA-", "ADM-"))))
 @router.message(F.text)
-async def guest_text_auth_router(message: Message, state: FSMContext):
-    """Misafir kullanıcı herhangi bir kod yazdığında onu yakalayıp doğrular"""
+async def smart_text_auth_router(message: Message, state: FSMContext):
+    """Herhangi bir aşamada kod yazıldığında onu akıllıca yakalayıp doğrudan doğrular"""
     user_id = message.from_user.id
+    clean_code = normalize_code(message.text)
+    is_code = clean_code.startswith(("VELI-", "OGR-", "HCA-", "ADM-")) or clean_code == ADMIN_CODE
+
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         if not user:
@@ -4627,7 +4655,7 @@ async def guest_text_auth_router(message: Message, state: FSMContext):
             user = User(telegram_id=user_id, language="tr", role=role)
             session.add(user)
             await session.commit()
-        if user.role == "guest":
+        if is_code or user.role == "guest":
             await process_auth_code_string(message.text, user_id, message, state)
 
 # ======================================================================
@@ -4803,9 +4831,11 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
 
     try:
         telegram_update = Update.model_validate(data, context={"bot": bot})
-        background_tasks.add_task(dp.feed_update, bot, telegram_update)
+        await dp.feed_update(bot, telegram_update)
     except Exception as e:
-        print(f"--> [HATA] aiogram Update çeviri hatası: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"--> [HATA] Webhook işleme hatası: {e}")
 
     return {"ok": True}
 
