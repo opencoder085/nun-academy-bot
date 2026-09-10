@@ -377,7 +377,7 @@ async def init_db():
 # 3. KUSURSUZ 4 DİLLİ METİN SÖZLÜĞÜ (TR, RU, UZ, EN)
 # ======================================================================
 
-LOCALES = {'tr': {'rk_restart': '🔄 Yeniden Başlat', 'lang_select': '🌍 Lütfen bir dil seçiniz / Tilni tanlang / Select language:',
+LOCALES = {'tr': {'btn_add_another': '➕ Başka Ekle', 'btn_add_new_teacher': '➕ Yeni Öğretmen Ekle', 'btn_prev': '⬅️ Önceki', 'btn_appr_medical': '✅ Onayla (İzinli Say)', 'btn_appr_request': '✅ Onayla ve Yetkilendir', 'btn_reject': '❌ Reddet', 'btn_not_available': '❌ Müsait Değilim', 'btn_del_teacher': '❌ Öğretmeni Sil', 'btn_edit_name': '👤 İsim Değiştir', 'btn_edit_class': '🏫 Sınıf / Nakil', 'btn_edit_no': '🔢 Numara Değiştir', 'btn_unlink_parent': '👨‍👩‍👧‍👦 Veli Bağlantısını Kopar', 'btn_school_admins': '👨‍💼 Okul Yöneticileri', 'btn_manage_schedule': '📅 Ders Programı Yönetimi', 'btn_search_teacher': '🔍 Öğretmen Ara', 'btn_unack_notifs': '⚠️ Onaylanmamış Devamsızlıklar', 'btn_teachers_pdf': '👨‍🏫 Tüm Öğretmen Şifre Kartları (PDF)', 'btn_add_admin_id': '➕ Telegram ID ile Yönetici Ekle', 'btn_gen_admin_code': '🔑 Tek Kullanımlık Yönetici Kodu Üret', 'btn_recent_grades_menu': '📝 Son Girilen Notlar (Düzenle / Sil)', 'btn_export_all_data': '📤 Tüm Okul Verisini İndir (Yedek)', 'btn_upload_excel': '📥 Toplu Öğrenci Yükle (Excel)', 'btn_search_again': '🔍 Tekrar Ara', 'role_student_btn': '🎓 Öğrenci', 'role_teacher_btn': '👨‍🏫 Öğretmen', 'role_parent_btn': '👨‍👩‍👧‍👦 Veli', 'btn_cancel_action': '⬅️ İptal', 'btn_delete_action': '❌ Sil', 'auth_internal_error': '⚠️ Doğrulama sırasında hata oluştu. Lütfen tekrar deneyiniz.', 'req_approved_admin_msg': '✅ *Talep Onaylandı (# {id})*\\n{name} ({role}) başarıyla sisteme kaydedildi.', 'req_rejected_admin_msg': '❌ *Talep Reddedildi (# {id})*\\n{name} adlı kullanıcının başvurusu reddedildi.', 'pending_appointments_title': '🤝 *Bekleyen Veli Randevuları:*', 'no_permission_appointment': '⛔ Bu randevuyu yanıtlama yetkiniz bulunmuyor!', 'appointment_confirmed_toast': '✅ Randevu onaylandı ve veliye bildirildi.', 'setting_updated_toast': 'Ayar güncellendi.', 'maintenance_mode_updated': 'Bakım modu güncellendi.', 'admin_sched_edit_title': '📅 *Ders Programı Düzenleme Masası*\\n\\nDers programını girmek veya güncellemek istediğiniz sınıfı seçiniz:', 'admin_sched_updated': '✅ *{class_name} Sınıfı Ders Programı Güncellendi!*', 'student_name_invalid': '⚠️ *Hatalı Giriş:* Lütfen öğrencinin adını ve soyadını eksiksiz yazınız (en az 3 karakter):', 'teacher_name_invalid': '⚠️ *Hatalı Giriş:* Lütfen öğretmenin adını ve soyadını eksiksiz yazınız (en az 3 karakter):', 'teacher_search_prompt': '🔍 Lütfen aramak istediğiniz öğretmenin adını veya branşını yazınız (Örn: Ahmet veya Matematik):', 'teacher_search_no_results': '❌ Eşleşen öğretmen bulunamadı.', 'teacher_search_results_title': '🔍 *Öğretmen Arama Sonuçları:*', 'student_info_updated': '✅ *Öğrenci Bilgisi Güncellendi:* {name} ({class_name} - No: {no})', 'parent_unlinked_success': '✅ Veli bağlantıları koparıldı. Yeni Veli Kodu: {code}', 'all_notifs_acknowledged': '✅ *Tüm Devamsızlık Bildirimleri Velilerce Onaylandı!*\\n\\nSon 36 saatte velisi tarafından okunmamış hiçbir bildirim bulunmamaktadır.', 'admin_add_tg_id_prompt': '👤 Lütfen yeni yöneticinin Telegram ID numarasını yazınız (Örn: `123456789`):\\n\\n*(Kişi bota /start yazdığında ID numarasını görebilir)*', 'admin_invalid_tg_id': '⚠️ Lütfen sadece rakamlardan oluşan geçerli bir Telegram ID yazınız:', 'admin_add_name_prompt': '👤 Lütfen yeni yöneticinin Adını, Soyadını ve Unvanını yazınız (Örn: `Ahmet Yılmaz - Müdür Yrd.`):', 'admin_added_success': '✅ *Yönetici Başarıyla Eklendi:* {name} (`{id}`)', 'permanent_admin_protected': '⛔ Kalıcı / Kurucu yöneticinin yetkisi kaldırılamaz!', 'admin_demoted_toast': 'Yönetici yetkisi kaldırıldı.', 'no_students_in_class': 'Sınıfta öğrenci bulunamadı!', 'image_load_error': 'Görsel yüklenemedi!', 'published_homeworks_title': '📚 *Yayınladığınız Son Ödevler:*', 'homework_deleted_toast': 'Ödev silindi.', 'action_cancelled': '❌ *İşlem iptal edildi.*', 'unauthorized_action': '⛔ Yetkisiz işlem!', 'request_already_handled': 'Bu talep daha önce işleme alınmış!', 'teacher_not_found': 'Öğretmen bulunamadı!', 'student_not_found': 'Öğrenci bulunamadı!', 'no_registered_teachers': 'Kayıtlı öğretmen bulunamadı!', 'no_registered_students': 'Kayıtlı öğrenci bulunamadı!', 'appointment_not_found': 'Randevu bulunamadı!', 'report_not_found': 'Rapor bulunamadı!', 'no_permission_grade': 'Bu nota erişim yetkiniz yok!', 'no_permission_report_card': '⛔ Bu karneye erişim izniniz bulunmamaktadır!', 'no_permission_student_record': '⛔ Yetkisiz İşlem: Bu öğrenci kaydına erişim izniniz yok!', 'invalid_name_error': '⚠️ *Hatalı İsim:* Lütfen adınızı ve soyadınızı eksiksiz yazınız (en az 3 karakter):', 'invalid_phone_error': '⚠️ *Hatalı Telefon:* Lütfen geçerli bir telefon numarası giriniz (en az 7 rakam):', 'invalid_score_format': '⚠️ Lütfen geçerli bir sayı giriniz (0-100):', 'invalid_score_range': '⚠️ Not 0 ile 100 arasında olmalıdır. Lütfen tekrar giriniz (0-100):', 'invalid_parent_code': '❌ *Geçersiz Veli Kodu!* Lütfen kodu kontrol ediniz.', 'lock_countdown_msg': '⛔ *Güvenlik Kilidi:* Hesabınız geçici olarak kilitlidir.\n\nKalan süre: *{mins} dakika*. Lütfen sürenin dolmasını bekleyiniz.', 'attendance_weekend_lock': '⚠️ Hafta sonu günlerinde yoklama kaydedilemez!', 'attendance_hours_lock': '⚠️ Ders saatleri dışında (07:00 - 18:30) yoklama kaydedilemez!', 'attendance_select_class': '📋 Yoklama alacağınız sınıfı seçiniz:', 'attendance_correction_notification': 'ℹ️ *DEVAMSIZLIK DÜZELTME BİLDİRİMİ*\n\nÖğrenciniz *{name}* için daha önce iletilen devamsızlık kaydı öğretmen tarafından *DÜZELTİLMİŞTİR* (Öğrenci derstedir).', 'grade_select_class': '📝 Not gireceğiniz sınıfı seçiniz:', 'grade_select_student': '📝 *{class_name} Sınıfı* - Öğrenciyi seçiniz:', 'grade_parent_notification': '📝 *YENİ DERS NOTU*\n\nÖğrenciniz *{name}*, {subject} ({exam_type}) sınavından *{score}* aldı. ({badge})', 'schedule_select_class': '📅 Ders programını incelemek istediğiniz sınıfı seçiniz:', 'homework_board_title': '📚 *{class_name} Sınıfı Son Ödevleri:*', 'no_active_homeworks': '📚 *{class_name} Sınıfı Ödev Panosu*\n\nŞu anda aktif veya bekleyen bir ödev bulunmamaktadır.', 'photo_expected_medical': '⚠️ *Fotoğraf Bekleniyor:* Lütfen sağlık raporu veya mazeret belgesinin net bir fotoğrafını gönderiniz.\n\n*(İptal etmek için aşağıdaki \'❌ İşlemi İptal Et\' butonuna basabilirsiniz.)*', 'parent_choose_child': '🧑‍🎓 Lütfen durumunu incelemek istediğiniz öğrenciyi seçiniz:', 'unauthorized_excel_upload': '⛔ *Yetkisiz İşlem:* Yalnızca okul yöneticileri Excel ile toplu öğrenci yükleyebilir!', 'excel_format_error': '⚠️ *Dosya İşleme Hatası:* Excel dosyası okunamadı veya formatı geçersiz.\n\nLütfen ilk satır başlıklarının \'Ad Soyad | Sinif | Numara\' olduğundan emin olunuz.', 'medical_approved_parent': '✅ *Sağlık / Mazeret raporunuz okul idaresi tarafından onaylandı. Öğrenci izinli sayıldı.*', 'medical_rejected_parent': '❌ *Sağlık / Mazeret raporunuz okul idaresi tarafından reddedildi.*', 'admin_unban_notification': '🟢 *Hesabınızın engeli okul yönetimi tarafından kaldırılmıştır. Tekrar giriş yapabilirsiniz.*', 'admin_demoted_notification': 'ℹ️ *Okul yönetici yetkiniz idare tarafından sonlandırılmıştır.*', 'admin_promoted_notification': '🎉 *Tebrikler, {name}!*\n\nOkul yönetim sistemi üzerinde *Okul İdaresi (Admin)* olarak yetkilendirildiniz. Alt menüden yönetim işlemlerinizi gerçekleştirebilirsiniz.', 'rk_restart': '🔄 Yeniden Başlat', 'lang_select': '🌍 Lütfen bir dil seçiniz / Tilni tanlang / Select language:',
         'lang_changed': 'Dil başarıyla güncellendi: 🇹🇷 Türkçe',
         'prompt_enter_code_direct': '🔑 *Lütfen size verilen giriş kodunu yazınız:* (Örn: `HCA-123456`, `VELI-123456`, '
                                     '`OGR-123456`)',
@@ -670,7 +670,7 @@ LOCALES = {'tr': {'rk_restart': '🔄 Yeniden Başlat', 'lang_select': '🌍 Lü
         'rk_logout': '🚪 Çıkış Yap',
         'rk_enter_code': '🔑 Şifre / Kod Gir',
         'rk_req_access': '📩 Şifre / Erişim İste'},
- 'ru': {'rk_restart': '🔄 Перезапуск', 'lang_select': '🌍 Пожалуйста, выберите язык:',
+ 'ru': {'btn_add_another': '➕ Добавить еще', 'btn_add_new_teacher': '➕ Добавить нового учителя', 'btn_prev': '⬅️ Назад', 'btn_appr_medical': '✅ Одобрить (По уважительной)', 'btn_appr_request': '✅ Одобрить и авторизовать', 'btn_reject': '❌ Отклонить', 'btn_not_available': '❌ Не могу принять', 'btn_del_teacher': '❌ Удалить учителя', 'btn_edit_name': '👤 Изменить имя', 'btn_edit_class': '🏫 Класс / Перевод', 'btn_edit_no': '🔢 Изменить номер', 'btn_unlink_parent': '👨‍👩‍👧‍👦 Отвязать родителей', 'btn_school_admins': '👨‍💼 Администрация школы', 'btn_manage_schedule': '📅 Расписание уроков', 'btn_search_teacher': '🔍 Поиск учителей', 'btn_unack_notifs': '⚠️ Непрочитанные пропуски', 'btn_teachers_pdf': '👨‍🏫 Пароли всех учителей (PDF)', 'btn_add_admin_id': '➕ Добавить администратора по Telegram ID', 'btn_gen_admin_code': '🔑 Создать одноразовый код администратора', 'btn_recent_grades_menu': '📝 Выставленные оценки (Редактировать / Удалить)', 'btn_export_all_data': '📤 Скачать все данные (Резервная копия)', 'btn_upload_excel': '📥 Загрузить учеников (Excel)', 'btn_search_again': '🔍 Искать снова', 'role_student_btn': '🎓 Ученик', 'role_teacher_btn': '👨‍🏫 Учитель', 'role_parent_btn': '👨‍👩‍👧‍👦 Родитель', 'btn_cancel_action': '⬅️ Отмена', 'btn_delete_action': '❌ Удалить', 'auth_internal_error': '⚠️ Ошибка при авторизации. Пожалуйста, попробуйте снова.', 'req_approved_admin_msg': '✅ *Заявка одобрена (# {id})*\\n{name} ({role}) успешно добавлен(а) в систему.', 'req_rejected_admin_msg': '❌ *Заявка отклонена (# {id})*\\nЗапрос пользователя {name} отклонен.', 'pending_appointments_title': '🤝 *Ожидающие встречи с родителями:*', 'no_permission_appointment': '⛔ У вас нет прав для ответа на эту запись!', 'appointment_confirmed_toast': '✅ Запись подтверждена, родитель уведомлен.', 'setting_updated_toast': 'Настройка обновлена.', 'maintenance_mode_updated': 'Режим обслуживания обновлен.', 'admin_sched_edit_title': '📅 *Редактор расписания*\\n\\nВыберите класс для ввода или обновления расписания:', 'admin_sched_updated': '✅ *Расписание класса {class_name} обновлено!*', 'student_name_invalid': '⚠️ *Ошибка ввода:* Введите имя и фамилию ученика полностью (не менее 3 символов):', 'teacher_name_invalid': '⚠️ *Ошибка ввода:* Введите имя и фамилию учителя полностью (не менее 3 символов):', 'teacher_search_prompt': '🔍 Введите имя или предмет учителя для поиска (напр. Ахмет или Математика):', 'teacher_search_no_results': '❌ Подходящих учителей не найдено.', 'teacher_search_results_title': '🔍 *Результаты поиска учителей:*', 'student_info_updated': '✅ *Данные ученика обновлены:* {name} ({class_name} - №{no})', 'parent_unlinked_success': '✅ Привязки родителей сброшены. Новый код родителя: {code}', 'all_notifs_acknowledged': '✅ *Все уведомления о посещаемости прочитаны родителями!*\\n\\nЗа последние 36 часов нет непрочитанных уведомлений.', 'admin_add_tg_id_prompt': '👤 Введите Telegram ID нового администратора (напр. `123456789`):', 'admin_invalid_tg_id': '⚠️ Пожалуйста, введите корректный Telegram ID из цифр:', 'admin_add_name_prompt': '👤 Введите имя, фамилию и должность нового администратора (напр. `Иван Иванов - Завуч`):', 'admin_added_success': '✅ *Администратор успешно добавлен:* {name} (`{id}`)', 'permanent_admin_protected': '⛔ Права главного/постоянного администратора не могут быть отозваны!', 'admin_demoted_toast': 'Права администратора отозваны.', 'no_students_in_class': 'В классе нет учеников!', 'image_load_error': 'Не удалось загрузить изображение!', 'published_homeworks_title': '📚 *Опубликованные вами домашние задания:*', 'homework_deleted_toast': 'Задание удалено.', 'action_cancelled': '❌ *Действие отменено.*', 'unauthorized_action': '⛔ Недостаточно прав!', 'request_already_handled': 'Эта заявка уже обработана!', 'teacher_not_found': 'Учитель не найден!', 'student_not_found': 'Ученик не найден!', 'no_registered_teachers': 'Зарегистрированные учителя не найдены!', 'no_registered_students': 'Зарегистрированные ученики не найдены!', 'appointment_not_found': 'Запись на прием не найдена!', 'report_not_found': 'Справка не найдена!', 'no_permission_grade': 'У вас нет прав для доступа к этой оценке!', 'no_permission_report_card': '⛔ У вас нет доступа к этому табелю!', 'no_permission_student_record': '⛔ Доступ запрещен: у вас нет прав на этого ученика!', 'invalid_name_error': '⚠️ *Некорректное имя:* Введите фамилию и имя полностью (не менее 3 символов):', 'invalid_phone_error': '⚠️ *Некорректный телефон:* Введите правильный номер телефона (не менее 7 цифр):', 'invalid_score_format': '⚠️ Пожалуйста, введите число от 0 до 100:', 'invalid_score_range': '⚠️ Оценка должна быть от 0 до 100. Попробуйте снова (0-100):', 'invalid_parent_code': '❌ *Неверный код родителя!* Пожалуйста, проверьте код.', 'lock_countdown_msg': '⛔ *Блокировка безопасности:* Аккаунт временно заблокирован.\n\nОсталось: *{mins} мин.* Пожалуйста, подождите.', 'attendance_weekend_lock': '⚠️ В выходные дни перекличка не сохраняется!', 'attendance_hours_lock': '⚠️ Вне учебных часов (07:00 - 18:30) перекличка недоступна!', 'attendance_select_class': '📋 Выберите класс для проведения переклички:', 'attendance_correction_notification': 'ℹ️ *ИСПРАВЛЕНИЕ ДАННЫХ О ПОСЕЩАЕМОСТИ*\n\nРанее отправленная отметка об отсутствии ученика *{name}* была *ИСПРАВЛЕНА* учителем (ученик на уроке).', 'grade_select_class': '📝 Выберите класс для выставления оценок:', 'grade_select_student': '📝 *Класс {class_name}* - Выберите ученика:', 'grade_parent_notification': '📝 *НОВАЯ ОЦЕНКА*\n\nВаш ребенок *{name}* получил(а) *{score}* за {subject} ({exam_type}). ({badge})', 'schedule_select_class': '📅 Выберите класс для просмотра расписания:', 'homework_board_title': '📚 *Последние задания класса {class_name}:*', 'no_active_homeworks': '📚 *Доска заданий класса {class_name}*\n\nВ настоящее время активных заданий нет.', 'photo_expected_medical': '⚠️ *Ожидается фото:* Пожалуйста, отправьте четкое фото медицинской справки или документа.\n\n*(Для отмены нажмите \'❌ Отменить действие\')*', 'parent_choose_child': '🧑‍🎓 Пожалуйста, выберите ученика для просмотра:', 'unauthorized_excel_upload': '⛔ *Доступ запрещен:* Только администраторы могут загружать списки через Excel!', 'excel_format_error': '⚠️ *Ошибка обработки:* Файл Excel не прочитан или имеет неверный формат.\n\nУбедитесь, что заголовки первой строки: \'Ad Soyad | Sinif | Numara\'.', 'medical_approved_parent': '✅ *Медицинская справка одобрена администрацией. Ученик(ца) отмечен(а) как отсутствующий(ая) по уважительной причине.*', 'medical_rejected_parent': '❌ *Медицинская справка отклонена администрацией школы.*', 'admin_unban_notification': '🟢 *Блокировка вашего аккаунта снята администрацией школы. Вы можете войти снова.*', 'admin_demoted_notification': 'ℹ️ *Ваши права администратора школы были отозваны.*', 'admin_promoted_notification': '🎉 *Поздравляем, {name}!*\n\nВам предоставлены права *Администратора школы*. Вы можете пользоваться функциями управления в меню ниже.', 'rk_restart': '🔄 Перезапуск', 'lang_select': '🌍 Пожалуйста, выберите язык:',
         'lang_changed': 'Язык успешно изменен: 🇷🇺 Русский',
         'prompt_enter_code_direct': '🔑 *Введите ваш код доступа:* (Например: `HCA-123456`, `VELI-123456`, '
                                     '`OGR-123456`)',
@@ -950,7 +950,7 @@ LOCALES = {'tr': {'rk_restart': '🔄 Yeniden Başlat', 'lang_select': '🌍 Lü
         'rk_logout': '🚪 Выйти',
         'rk_enter_code': '🔑 Ввести код доступа',
         'rk_req_access': '📩 Запросить доступ'},
- 'uz': {'rk_restart': "🔄 Qayta ishga tushirish", 'lang_select': '🌍 Iltimos, tilni tanlang:',
+ 'uz': {'btn_add_another': '➕ Yana qo\'shish', 'btn_add_new_teacher': '➕ Yangi o\'qituvchi qo\'shish', 'btn_prev': '⬅️ Oldingi', 'btn_appr_medical': '✅ Tasdiqlash (Sababli)', 'btn_appr_request': '✅ Tasdiqlash va ruxsat berish', 'btn_reject': '❌ Rad etish', 'btn_not_available': '❌ Bandman', 'btn_del_teacher': '❌ O\'qituvchini o\'chirish', 'btn_edit_name': '👤 Ismni o\'zgartirish', 'btn_edit_class': '🏫 Sinf / Ko\'chirish', 'btn_edit_no': '🔢 Raqamni o\'zgartirish', 'btn_unlink_parent': '👨‍👩‍👧‍👦 Ota-onani ajratish', 'btn_school_admins': '👨‍💼 Maktab ma\'muriyati', 'btn_manage_schedule': '📅 Dars jadvali boshqaruvi', 'btn_search_teacher': '🔍 O\'qituvchini qidirish', 'btn_unack_notifs': '⚠️ Tasdiqlanmagan davomatlar', 'btn_teachers_pdf': '👨‍🏫 O\'qituvchilar parollari (PDF)', 'btn_add_admin_id': '➕ Telegram ID orqali ma\'mur qo\'shish', 'btn_gen_admin_code': '🔑 Bir martalik ma\'mur kodini yaratish', 'btn_recent_grades_menu': '📝 So\'nggi baholar (Tahrirlash / O\'chirish)', 'btn_export_all_data': '📤 Barcha ma\'lumotlarni yuklab olish (Zaxira)', 'btn_upload_excel': '📥 O\'quvchilarni yuklash (Excel)', 'btn_search_again': '🔍 Qaytadan qidirish', 'role_student_btn': '🎓 O\'quvchi', 'role_teacher_btn': '👨‍🏫 O\'qituvchi', 'role_parent_btn': '👨‍👩‍👧‍👦 Ota-ona', 'btn_cancel_action': '⬅️ Bekor qilish', 'btn_delete_action': '❌ O\'chirish', 'auth_internal_error': '⚠️ Tasdiqlashda xatolik yuz berdi. Qaytadan urinib ko\'ring.', 'req_approved_admin_msg': '✅ *Ariza tasdiqlandi (# {id})*\\n{name} ({role}) tizimga muvaffaqiyatli saqlandi.', 'req_rejected_admin_msg': '❌ *Ariza rad etildi (# {id})*\\nFoydalanuvchi {name} arizasi rad etildi.', 'pending_appointments_title': '🤝 *Kutilayotgan ota-onalar uchrashuvlari:*', 'no_permission_appointment': '⛔ Ushbu uchrashuvga javob berish huquqingiz yo\'q!', 'appointment_confirmed_toast': '✅ Uchrashuv tasdiqlandi va ota-onaga xabar berildi.', 'setting_updated_toast': 'Sozlama yangilandi.', 'maintenance_mode_updated': 'Texnik rejim yangilandi.', 'admin_sched_edit_title': '📅 *Dars jadvalini tahrirlash*\\n\\nDars jadvalini kiritish yoki yangilash uchun sinfni tanlang:', 'admin_sched_updated': '✅ *{class_name} sinfi dars jadvali yangilandi!*', 'student_name_invalid': '⚠️ *Xato kiritish:* Iltimos, o\'quvchining ism va familiyasini to\'liq kiriting (kamida 3 belgi):', 'teacher_name_invalid': '⚠️ *Xato kiritish:* Iltimos, o\'qituvchining ism va familiyasini to\'liq kiriting (kamida 3 belgi):', 'teacher_search_prompt': '🔍 Qidirmoqchi bo\'lgan o\'qituvchining ismi yoki fanini kiriting (masalan, Ali yoki Matematika):', 'teacher_search_no_results': '❌ Mos o\'qituvchi topilmadi.', 'teacher_search_results_title': '🔍 *O\'qituvchilar qidiruv natijalari:*', 'student_info_updated': '✅ *O\'quvchi ma\'lumotlari yangilandi:* {name} ({class_name} - №{no})', 'parent_unlinked_success': '✅ Ota-ona hisoblari ajratildi. Yangi ota-ona kodi: {code}', 'all_notifs_acknowledged': '✅ *Barcha davomat xabarlari ota-onalar tomonidan tasdiqlandi!*\\n\\nSo\'nggi 36 soatda o\'qilmagan xabarlar mavjud emas.', 'admin_add_tg_id_prompt': '👤 Yangi ma\'murning Telegram ID raqamini kiriting (masalan, `123456789`):', 'admin_invalid_tg_id': '⚠️ Iltimos, faqat raqamlardan iborat haqiqiy Telegram ID kiriting:', 'admin_add_name_prompt': '👤 Yangi ma\'murning ismi, familiyasi va lavozimini kiriting (masalan, `Ali Valiyev - O\'IBDO\'`):', 'admin_added_success': '✅ *Ma\'mur muvaffaqiyatli qo\'shildi:* {name} (`{id}`)', 'permanent_admin_protected': '⛔ Asosiy/doimiy ma\'mur vakolatlarini bekor qilib bo\'lmaydi!', 'admin_demoted_toast': 'Ma\'mur vakolatlari bekor qilindi.', 'no_students_in_class': 'Sinfda o\'quvchi topilmadi!', 'image_load_error': 'Rasmni yuklab bo\'lmadi!', 'published_homeworks_title': '📚 *Siz chiqargan so\'nggi vazifalar:*', 'homework_deleted_toast': 'Vazifa o\'chirildi.', 'action_cancelled': '❌ *Amal bekor qilindi.*', 'unauthorized_action': '⛔ Ruxsat etilmagan amal!', 'request_already_handled': 'Ushbu ariza allaqachon ko\'rib chiqilgan!', 'teacher_not_found': 'O\'qituvchi topilmadi!', 'student_not_found': 'O\'quvchi topilmadi!', 'no_registered_teachers': 'Ro\'yxatdan o\'tgan o\'qituvchilar topilmadi!', 'no_registered_students': 'Ro\'yxatdan o\'tgan o\'quvchilar topilmadi!', 'appointment_not_found': 'Uchrashuv topilmadi!', 'report_not_found': 'Ma\'lumotnoma topilmadi!', 'no_permission_grade': 'Ushbu bahoga kirish huquqiga ega emassiz!', 'no_permission_report_card': '⛔ Ushbu kundalikka kirish ruxsatingiz yo\'q!', 'no_permission_student_record': '⛔ Ruxsat yo\'q: ushbu o\'quvchi ma\'lumotlariga kirish huquqingiz yo\'q!', 'invalid_name_error': '⚠️ *Noto\'g\'ri ism:* Iltimos, ism va familiyangizni to\'liq kiriting (kamida 3 belgi):', 'invalid_phone_error': '⚠️ *Noto\'g\'ri telefon:* Iltimos, haqiqiy telefon raqamini kiriting (kamida 7 ta raqam):', 'invalid_score_format': '⚠️ Iltimos, 0 dan 100 gacha bo\'lgan son kiriting:', 'invalid_score_range': '⚠️ Baho 0 va 100 oralig\'ida bo\'lishi kerak. Qaytadan kiriting (0-100):', 'invalid_parent_code': '❌ *Noto\'g\'ri ota-ona kodi!* Iltimos, kodni tekshiring.', 'lock_countdown_msg': '⛔ *Xavfsizlik bloki:* Hisobingiz vaqtincha bloklangan.\n\nQolgan vaqt: *{mins} daqiqa*. Iltimos, kuting.', 'attendance_weekend_lock': '⚠️ Dam olish kunlarida davomat saqlanmaydi!', 'attendance_hours_lock': '⚠️ Dars vaqtidan tashqari (07:00 - 18:30) davomat olinmaydi!', 'attendance_select_class': '📋 Davomat olmoqchi bo\'lgan sinfni tanlang:', 'attendance_correction_notification': 'ℹ️ *DAVOMAT TUZATISH BILDIRISHNOMASI*\n\nFarzandingiz *{name}* uchun yuborilgan kelmadi xabari o\'qituvchi tomonidan *TUZATILDI* (o\'quvchi darsda).', 'grade_select_class': '📝 Baho qo\'ymoqchi bo\'lgan sinfni tanlang:', 'grade_select_student': '📝 *{class_name} sinfi* - O\'quvchini tanlang:', 'grade_parent_notification': '📝 *YANGI BAHO*\n\nFarzandingiz *{name}*, {subject} fanidan ({exam_type}) *{score}* oldi. ({badge})', 'schedule_select_class': '📅 Dars jadvalini ko\'rmoqchi bo\'lgan sinfni tanlang:', 'homework_board_title': '📚 *{class_name} sinfining so\'nggi vazifalari:*', 'no_active_homeworks': '📚 *{class_name} sinfi vazifalar paneli*\n\nHozirda faol vazifalar mavjud emas.', 'photo_expected_medical': '⚠️ *Rasm kutilmoqda:* Iltimos, ma\'lumotnoma rasmini yuboring.\n\n*(Bekor qilish uchun \'❌ Bekor qilish\' tugmasini bosing)*', 'parent_choose_child': '🧑‍🎓 Iltimos, ko\'rmoqchi bo\'lgan o\'quvchini tanlang:', 'unauthorized_excel_upload': '⛔ *Ruxsat etilmagan:* Faqat maktab ma\'murlari Excel orqali yuklashlari mumkin!', 'excel_format_error': '⚠️ *Fayl xatosi:* Excel fayli o\'qilmadi yoki formati noto\'g\'ri.\n\nBirinchi qator sarlavhalari \'Ad Soyad | Sinif | Numara\' ekanligiga ishonch hosil qiling.', 'medical_approved_parent': '✅ *Tibbiy ma\'lumotnoma ma\'muriyat tomonidan tasdiqlandi. O\'quvchi sababli deb qayd etildi.*', 'medical_rejected_parent': '❌ *Tibbiy ma\'lumotnoma maktab ma\'muriyati tomonidan rad etildi.*', 'admin_unban_notification': '🟢 *Hisobingiz blokdan chiqarildi. Qaytadan kirishingiz mumkin.*', 'admin_demoted_notification': 'ℹ️ *Maktab ma\'muri vakolatlaringiz bekor qilindi.*', 'admin_promoted_notification': '🎉 *Tabriklaymiz, {name}!*\n\nSizga *Maktab Ma\'muriyati (Admin)* vakolatlari berildi. Quyidagi menyu orqali boshqaruv amallarini bajarishingiz mumkin.', 'rk_restart': "🔄 Qayta ishga tushirish", 'lang_select': '🌍 Iltimos, tilni tanlang:',
         'lang_changed': "Til muvaffaqiyatli yangilandi: 🇺🇿 O'zbekcha",
         'prompt_enter_code_direct': '🔑 *Iltimos, sizga berilgan kirish kodini yozing:* (Masalan: `HCA-123456`, '
                                     '`VELI-123456`, `OGR-123456`)',
@@ -1238,7 +1238,7 @@ LOCALES = {'tr': {'rk_restart': '🔄 Yeniden Başlat', 'lang_select': '🌍 Lü
         'rk_logout': '🚪 Chiqish',
         'rk_enter_code': '🔑 Kod kiritish',
         'rk_req_access': "📩 Ruxsat so'rash"},
- 'en': {'rk_restart': '🔄 Restart Bot', 'lang_select': '🌍 Please select your language:',
+ 'en': {'btn_add_another': '➕ Add Another', 'btn_add_new_teacher': '➕ Add New Teacher', 'btn_prev': '⬅️ Previous', 'btn_appr_medical': '✅ Approve (Mark Excused)', 'btn_appr_request': '✅ Approve & Authorize', 'btn_reject': '❌ Reject', 'btn_not_available': '❌ Not Available', 'btn_del_teacher': '❌ Delete Teacher', 'btn_edit_name': '👤 Edit Name', 'btn_edit_class': '🏫 Class / Transfer', 'btn_edit_no': '🔢 Edit Roll Number', 'btn_unlink_parent': '👨‍👩‍👧‍👦 Unlink Parents', 'btn_school_admins': '👨‍💼 School Administrators', 'btn_manage_schedule': '📅 Timetable Management', 'btn_search_teacher': '🔍 Search Teachers', 'btn_unack_notifs': '⚠️ Unacknowledged Absences', 'btn_teachers_pdf': '👨‍🏫 Teacher Password Cards (PDF)', 'btn_add_admin_id': '➕ Add Admin by Telegram ID', 'btn_gen_admin_code': '🔑 Generate One-Time Admin Code', 'btn_recent_grades_menu': '📝 Recent Grades (Edit / Delete)', 'btn_export_all_data': '📤 Export All School Data (Backup)', 'btn_upload_excel': '📥 Bulk Student Import (Excel)', 'btn_search_again': '🔍 Search Again', 'role_student_btn': '🎓 Student', 'role_teacher_btn': '👨‍🏫 Teacher', 'role_parent_btn': '👨‍👩‍👧‍👦 Parent', 'btn_cancel_action': '⬅️ Cancel', 'btn_delete_action': '❌ Delete', 'auth_internal_error': '⚠️ Error during authentication. Please try again.', 'req_approved_admin_msg': '✅ *Request Approved (# {id})*\\n{name} ({role}) has been registered.', 'req_rejected_admin_msg': '❌ *Request Rejected (# {id})*\\nApplication for {name} has been rejected.', 'pending_appointments_title': '🤝 *Pending Parent Appointments:*', 'no_permission_appointment': '⛔ You do not have permission to respond to this appointment!', 'appointment_confirmed_toast': '✅ Appointment confirmed and parent notified.', 'setting_updated_toast': 'Setting updated.', 'maintenance_mode_updated': 'Maintenance mode updated.', 'admin_sched_edit_title': '📅 *Timetable Editor*\\n\\nSelect a class to enter or update its timetable:', 'admin_sched_updated': '✅ *Timetable for Class {class_name} updated!*', 'student_name_invalid': '⚠️ *Invalid Input:* Please enter student\'s full name (at least 3 characters):', 'teacher_name_invalid': '⚠️ *Invalid Input:* Please enter teacher\'s full name (at least 3 characters):', 'teacher_search_prompt': '🔍 Enter teacher name or subject to search (e.g. John or Mathematics):', 'teacher_search_no_results': '❌ No matching teachers found.', 'teacher_search_results_title': '🔍 *Teacher Search Results:*', 'student_info_updated': '✅ *Student Record Updated:* {name} ({class_name} - No: {no})', 'parent_unlinked_success': '✅ Parent links reset. New Parent Code: {code}', 'all_notifs_acknowledged': '✅ *All Absence Notifications Acknowledged!*\\n\\nThere are no unacknowledged notifications in the last 36 hours.', 'admin_add_tg_id_prompt': '👤 Please enter the Telegram ID of the new administrator (e.g. `123456789`):', 'admin_invalid_tg_id': '⚠️ Please enter a valid Telegram ID containing only digits:', 'admin_add_name_prompt': '👤 Please enter new admin\'s full name and title (e.g. `John Doe - Vice Principal`):', 'admin_added_success': '✅ *Administrator Successfully Added:* {name} (`{id}`)', 'permanent_admin_protected': '⛔ Permanent/Founder administrator privileges cannot be revoked!', 'admin_demoted_toast': 'Administrator privileges revoked.', 'no_students_in_class': 'No students found in class!', 'image_load_error': 'Could not load image!', 'published_homeworks_title': '📚 *Your Published Homework Assignments:*', 'homework_deleted_toast': 'Homework deleted.', 'action_cancelled': '❌ *Action cancelled.*', 'unauthorized_action': '⛔ Unauthorized action!', 'request_already_handled': 'This request has already been processed!', 'teacher_not_found': 'Teacher not found!', 'student_not_found': 'Student not found!', 'no_registered_teachers': 'No registered teachers found!', 'no_registered_students': 'No registered students found!', 'appointment_not_found': 'Appointment not found!', 'report_not_found': 'Report not found!', 'no_permission_grade': 'You do not have permission to access this grade!', 'no_permission_report_card': '⛔ You do not have permission to access this report card!', 'no_permission_student_record': '⛔ Unauthorized: you do not have permission for this student record!', 'invalid_name_error': '⚠️ *Invalid Name:* Please enter your full name (at least 3 characters):', 'invalid_phone_error': '⚠️ *Invalid Phone:* Please enter a valid phone number (at least 7 digits):', 'invalid_score_format': '⚠️ Please enter a valid number (0-100):', 'invalid_score_range': '⚠️ Score must be between 0 and 100. Please enter again (0-100):', 'invalid_parent_code': '❌ *Invalid Parent Code!* Please verify the code.', 'lock_countdown_msg': '⛔ *Security Lockout:* Your account is temporarily locked.\n\nTime remaining: *{mins} minutes*. Please wait.', 'attendance_weekend_lock': '⚠️ Attendance cannot be recorded on weekends!', 'attendance_hours_lock': '⚠️ Attendance can only be recorded during school hours (07:00 - 18:30)!', 'attendance_select_class': '📋 Select a class to record attendance:', 'attendance_correction_notification': 'ℹ️ *ATTENDANCE CORRECTION ALERT*\n\nThe previous absence record for your student *{name}* has been *CORRECTED* by the teacher (student is in class).', 'grade_select_class': '📝 Select a class to enter grades:', 'grade_select_student': '📝 *Class {class_name}* - Select student:', 'grade_parent_notification': '📝 *NEW GRADE POSTED*\n\nYour student *{name}* received *{score}* in {subject} ({exam_type}). ({badge})', 'schedule_select_class': '📅 Select a class to view timetable:', 'homework_board_title': '📚 *Latest Homework for Class {class_name}:*', 'no_active_homeworks': '📚 *Homework Board for Class {class_name}*\n\nThere are currently no pending homework assignments.', 'photo_expected_medical': '⚠️ *Photo Expected:* Please send a clear photo of the medical certificate or excuse note.\n\n*(To cancel, tap \'❌ Cancel Action\')*', 'parent_choose_child': '🧑‍🎓 Please select the student to view status:', 'unauthorized_excel_upload': '⛔ *Unauthorized:* Only school administrators can import students via Excel!', 'excel_format_error': '⚠️ *File Processing Error:* Excel file could not be read or has an invalid format.\n\nPlease ensure headers in the first row are \'Ad Soyad | Sinif | Numara\'.', 'medical_approved_parent': '✅ *Medical certificate has been approved by school administration. Student is marked excused.*', 'medical_rejected_parent': '❌ *Medical certificate has been rejected by school administration.*', 'admin_unban_notification': '🟢 *Your account restriction has been lifted by school administration. You may log in again.*', 'admin_demoted_notification': 'ℹ️ *Your school administrator privileges have been revoked by administration.*', 'admin_promoted_notification': '🎉 *Congratulations, {name}!*\n\nYou have been granted *School Administrator (Admin)* privileges. You can now access administrative actions via the menu below.', 'rk_restart': '🔄 Restart Bot', 'lang_select': '🌍 Please select your language:',
         'lang_changed': 'Language successfully updated: 🇬🇧 English',
         'prompt_enter_code_direct': '🔑 *Please enter your access code:* (e.g. `HCA-123456`, `VELI-123456`, '
                                     '`OGR-123456`)',
@@ -1985,7 +1985,12 @@ async def generate_student_report_card_pdf(student_id: int, lang: str = "tr") ->
     lbl_att = {"tr": "Toplam Devamsızlık:", "ru": "Всего пропусков:", "uz": "Jami davomat:", "en": "Total Absences:"}.get(lang, "Absences:")
     lbl_acad = {"tr": "Akademik Ortalama:", "ru": "Средний балл:", "uz": "O'rtacha ball:", "en": "GPA / Average:"}.get(lang, "GPA:")
 
-    att_text = f"{absent_cnt} Gün (Özürlü: {excused_cnt})" if lang == "tr" else f"{absent_cnt} (Excused: {excused_cnt})"
+    att_text = {
+        "tr": f"{absent_cnt} Gün (Özürlü: {excused_cnt})",
+        "ru": f"{absent_cnt} дн. (Уважительная: {excused_cnt})",
+        "uz": f"{absent_cnt} kun (Sababli: {excused_cnt})",
+        "en": f"{absent_cnt} Days (Excused: {excused_cnt})"
+    }.get(lang, f"{absent_cnt} Days (Excused: {excused_cnt})")
 
     meta = [
         [Paragraph(f"<b>{lbl_name}</b>", c_bold), Paragraph(st.full_name, c_norm),
@@ -2022,9 +2027,9 @@ async def generate_student_report_card_pdf(student_id: int, lang: str = "tr") ->
     ]
 
     badge_labels = {
-        "🟢": "🟢 Başarılı" if lang == "tr" else "🟢 Good",
-        "🟡": "🟡 Geliştirilmeli" if lang == "tr" else "🟡 Needs Work",
-        "🔴": "🔴 Dikkat" if lang == "tr" else "🔴 Warning"
+        "🟢": {"tr": "🟢 Başarılı", "ru": "🟢 Отлично", "uz": "🟢 A'lo", "en": "🟢 Excellent"}.get(lang, "🟢 Good"),
+        "🟡": {"tr": "🟡 Geliştirilmeli", "ru": "🟡 Внимание", "uz": "🟡 O'rtacha", "en": "🟡 Needs Work"}.get(lang, "🟡 Needs Work"),
+        "🔴": {"tr": "🔴 Dikkat", "ru": "🔴 Слабо", "uz": "🔴 Qoniqarsiz", "en": "🔴 Warning"}.get(lang, "🔴 Warning")
     }
 
     if not grades:
@@ -2068,10 +2073,25 @@ async def generate_student_report_card_pdf(student_id: int, lang: str = "tr") ->
     story.append(t_grades)
     story.append(Spacer(1, 15))
 
-    foot_note = "<i>* Bu belge okul yönetim bilgi sistemi veritabanından üretilmiş resmi dönem karnesidir.<br/>Doğrulama Kodu: OKL-" + str(st.id) + "-" + date_str.replace(".", "") + "</i>"
+    foot_note_dict = {
+        "tr": "<i>* Bu belge okul yönetim bilgi sistemi veritabanından üretilmiş resmi dönem karnesidir.<br/>Doğrulama Kodu: OKL-" + str(st.id) + "-" + date_str.replace(".", "") + "</i>",
+        "ru": "<i>* Данный документ является официальным электронным табелем успеваемости школы.<br/>Код проверки: OKL-" + str(st.id) + "-" + date_str.replace(".", "") + "</i>",
+        "uz": "<i>* Ushbu hujjat maktab boshqaruv tizimidan olingan rasmiy davriy baholar kundaligidir.<br/>Tekshirish kodi: OKL-" + str(st.id) + "-" + date_str.replace(".", "") + "</i>",
+        "en": "<i>* This document is an official electronic academic report card generated from the school database.<br/>Verification Code: OKL-" + str(st.id) + "-" + date_str.replace(".", "") + "</i>"
+    }
+    foot_note = foot_note_dict.get(lang, foot_note_dict["en"])
+
+    footer_admin_dict = {
+        "tr": "<b>OKUL YÖNETİMİ</b><br/><br/><i>Elektronik Onaylıdır</i>",
+        "ru": "<b>АДМИНИСТРАЦИЯ ШКОЛЫ</b><br/><br/><i>Электронная подпись</i>",
+        "uz": "<b>MAKTAB MA'MURIYATI</b><br/><br/><i>Elektron tasdiqlangan</i>",
+        "en": "<b>SCHOOL ADMINISTRATION</b><br/><br/><i>Electronically Verified</i>"
+    }
+    footer_admin = footer_admin_dict.get(lang, footer_admin_dict["en"])
+
     footer = [
         [Paragraph(foot_note, c_norm),
-         Paragraph("<b>OKUL YÖNETİMİ</b><br/><br/><i>Elektronik Onaylıdır</i>", c_center)]
+         Paragraph(footer_admin, c_center)]
     ]
     t_foot = Table(footer, colWidths=[367, 180])
     t_foot.setStyle(TableStyle([
@@ -2302,7 +2322,7 @@ async def cmd_cancel(message: Message, state: FSMContext):
         user = await session.get(User, message.from_user.id)
         if user:
             reply_kb = get_role_reply_kb(user.role, user.language)
-            await message.answer("❌ *İşlem iptal edildi.*", reply_markup=reply_kb, parse_mode="Markdown")
+            await message.answer(get_text("action_cancelled", user.language if user else "tr"), reply_markup=reply_kb, parse_mode="Markdown")
             await render_clean_dashboard(message, user)
 
 @router.message(CommandStart())
@@ -2347,7 +2367,7 @@ async def cmd_start(message: Message, state: FSMContext):
 
         if user.locked_until and user.locked_until > datetime.utcnow():
             rem_mins = max(1, int((user.locked_until - datetime.utcnow()).total_seconds() / 60))
-            await message.answer(f"⛔ *Güvenlik Kilidi:* Hesabınız geçici olarak kilitlidir.\n\nKalan süre: *{rem_mins} dakika*.", parse_mode="Markdown")
+            await message.answer(get_text("lock_countdown_msg", user.language, mins=rem_mins), parse_mode="Markdown")
             return
 
         if user.role != "admin":
@@ -2522,7 +2542,7 @@ async def process_auth_code_string(code: str, user_id: int, message: Message, st
 
             if user.locked_until and user.locked_until > datetime.utcnow():
                 rem_mins = max(1, int((user.locked_until - datetime.utcnow()).total_seconds() / 60))
-                await message.answer(f"⛔ *Güvenlik Kilidi:* Hesabınız geçici olarak kilitlidir.\n\nKalan süre: *{rem_mins} dakika*. Lütfen sürenin dolmasını bekleyiniz.", parse_mode="Markdown")
+                await message.answer(get_text("lock_countdown_msg", lang, mins=rem_mins), parse_mode="Markdown")
                 return
 
             # 1. YÖNETİCİ ŞİFRESİ VEYA DİNAMİK YÖNETİCİ KODU
@@ -2635,7 +2655,7 @@ async def process_auth_code_string(code: str, user_id: int, message: Message, st
     except Exception as e:
         import traceback
         traceback.print_exc()
-        await message.answer(f"⚠️ Doğrulama sırasında hata oluştu: {type(e).__name__}. Lütfen tekrar deneyiniz.")
+        await message.answer(get_text("auth_internal_error", lang))
         return
 
     # BAŞARILI GİRİŞ
@@ -2696,11 +2716,11 @@ async def cb_act_req_access(query: CallbackQuery, state: FSMContext):
 
         buttons = [
             [
-                InlineKeyboardButton(text="👨‍🏫 Öğretmen", callback_data="req_role:teacher"),
-                InlineKeyboardButton(text="👨‍👩‍👧‍👦 Veli", callback_data="req_role:parent")
+                InlineKeyboardButton(text=get_text("role_teacher_btn", lang), callback_data="req_role:teacher"),
+                InlineKeyboardButton(text=get_text("role_parent_btn", lang), callback_data="req_role:parent")
             ],
             [
-                InlineKeyboardButton(text="🎓 Öğrenci", callback_data="req_role:student")
+                InlineKeyboardButton(text=get_text("role_student_btn", lang), callback_data="req_role:student")
             ],
             [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
         ]
@@ -2725,7 +2745,7 @@ async def cb_req_choose_role(query: CallbackQuery, state: FSMContext):
 async def process_req_name(message: Message, state: FSMContext):
     full_name = message.text.strip()
     if len(full_name) < 3:
-        await message.answer("⚠️ *Hatalı İsim:* Lütfen adınızı ve soyadınızı eksiksiz yazınız (en az 3 karakter):", parse_mode="Markdown")
+        await message.answer(get_text("invalid_name_error", lang), parse_mode="Markdown")
         return
     await state.update_data(full_name=full_name)
 
@@ -2745,7 +2765,7 @@ async def process_req_phone(message: Message, state: FSMContext):
     phone_val = message.text.strip()
     digits_only = re.sub(r"\D", "", phone_val)
     if len(digits_only) < 7:
-        await message.answer("⚠️ *Hatalı Telefon:* Lütfen geçerli bir telefon numarası giriniz (en az 7 rakam):", parse_mode="Markdown")
+        await message.answer(get_text("invalid_phone_error", lang), parse_mode="Markdown")
         return
     await state.update_data(phone=phone_val)
 
@@ -2817,8 +2837,8 @@ async def process_req_details(message: Message, state: FSMContext):
 
         adm_kb = InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Onayla ve Yetkilendir", callback_data=f"adm:appr_req:{req.id}"),
-                InlineKeyboardButton(text="❌ Reddet", callback_data=f"adm:rej_req:{req.id}")
+                InlineKeyboardButton(text=get_text("btn_appr_request", lang), callback_data=f"adm:appr_req:{req.id}"),
+                InlineKeyboardButton(text=get_text("btn_reject", lang), callback_data=f"adm:rej_req:{req.id}")
             ]
         ])
 
@@ -2862,7 +2882,7 @@ async def cb_admin_view_request(query: CallbackQuery):
 
         req = await session.get(AccessRequest, req_id)
         if not req or req.status != "pending":
-            await query.answer("Bu talep zaten sonuçlandırılmış!", show_alert=True)
+            await query.answer(get_text("request_already_handled", lang), show_alert=True)
             await cb_admin_requests_list(query)
             return
 
@@ -2885,8 +2905,8 @@ async def cb_admin_view_request(query: CallbackQuery):
 
         buttons = [
             [
-                InlineKeyboardButton(text="✅ Onayla ve Yetkilendir", callback_data=f"adm:appr_req:{req.id}"),
-                InlineKeyboardButton(text="❌ Reddet", callback_data=f"adm:rej_req:{req.id}")
+                InlineKeyboardButton(text=get_text("btn_appr_request", lang), callback_data=f"adm:appr_req:{req.id}"),
+                InlineKeyboardButton(text=get_text("btn_reject", lang), callback_data=f"adm:rej_req:{req.id}")
             ],
             [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="adm:requests_list")]
         ]
@@ -2900,12 +2920,12 @@ async def cb_admin_approve_request(query: CallbackQuery):
         admin_user = await session.get(User, query.from_user.id)
         is_admin = (admin_user and admin_user.role == "admin") or (query.from_user.id in ADMIN_IDS)
         if not is_admin:
-            await query.answer("Yetkisiz işlem!", show_alert=True)
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
             return
 
         req = await session.get(AccessRequest, req_id)
         if not req or req.status != "pending":
-            await query.answer("Bu talep daha önce işleme alınmış!", show_alert=True)
+            await query.answer(get_text("request_already_handled", lang), show_alert=True)
             return
 
         req.status = "approved"
@@ -2961,8 +2981,8 @@ async def cb_admin_approve_request(query: CallbackQuery):
         await safe_send_message(query.message.bot, req.telegram_id, user_msg, reply_markup=reply_kb, parse_mode="Markdown")
         await render_clean_dashboard(query.message.bot, target_user, chat_id=req.telegram_id)
 
-        await query.message.edit_text(f"✅ *Talep Onaylandı (# {req.id})*\n{escape_md(req.full_name)} ({req.role}) başarıyla sisteme kaydedildi.", parse_mode="Markdown")
-    await query.answer("Onaylandı!")
+        await query.message.edit_text(get_text("req_approved_admin_msg", lang, id=req.id, name=escape_md(req.full_name), role=req.role), parse_mode="Markdown")
+    await query.answer(get_text("acknowledged_toast", lang))
 
 @router.callback_query(F.data.startswith("adm:rej_req:"))
 async def cb_admin_reject_request(query: CallbackQuery):
@@ -2971,12 +2991,12 @@ async def cb_admin_reject_request(query: CallbackQuery):
         admin_user = await session.get(User, query.from_user.id)
         is_admin = (admin_user and admin_user.role == "admin") or (query.from_user.id in ADMIN_IDS)
         if not is_admin:
-            await query.answer("Yetkisiz işlem!", show_alert=True)
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
             return
 
         req = await session.get(AccessRequest, req_id)
         if not req or req.status != "pending":
-            await query.answer("Bu talep daha önce işleme alınmış!", show_alert=True)
+            await query.answer(get_text("request_already_handled", lang), show_alert=True)
             return
 
         req.status = "rejected"
@@ -2988,7 +3008,7 @@ async def cb_admin_reject_request(query: CallbackQuery):
         lang = target_user.language if target_user else "tr"
         await safe_send_message(query.message.bot, req.telegram_id, get_text("req_rejected_user", lang), parse_mode="Markdown")
 
-        await query.message.edit_text(f"❌ *Talep Reddedildi (# {req.id})*\n{escape_md(req.full_name)} adlı kullanıcının başvurusu reddedildi.", parse_mode="Markdown")
+        await query.message.edit_text(get_text("req_rejected_admin_msg", lang, id=req.id, name=escape_md(req.full_name)), parse_mode="Markdown")
     await query.answer("Reddedildi.")
 
 # ======================================================================
@@ -3004,7 +3024,7 @@ async def cb_parent_book_app_init(query: CallbackQuery, state: FSMContext):
 
         teachers = (await session.execute(select(Teacher).order_by(Teacher.full_name))).scalars().all()
         if not teachers:
-            await query.answer("Kayıtlı öğretmen bulunamadı!", show_alert=True)
+            await query.answer(get_text("no_registered_teachers", lang), show_alert=True)
             return
 
         buttons = []
@@ -3080,7 +3100,7 @@ async def cb_teacher_view_appointment(query: CallbackQuery):
         lang = user.language if user else "tr"
         app = await session.get(Appointment, app_id)
         if not app:
-            await query.answer("Randevu bulunamadı!", show_alert=True)
+            await query.answer(get_text("appointment_not_found", lang), show_alert=True)
             return
 
         parent_user = await session.get(User, app.parent_telegram_id)
@@ -3128,7 +3148,7 @@ async def cb_teacher_appointments_list(query: CallbackQuery):
             buttons.append([InlineKeyboardButton(text=btn_txt, callback_data=f"tch:view_app:{a.id}")])
         buttons.append(get_nav_buttons(lang))
 
-        await query.message.edit_text("🤝 *Bekleyen Veli Randevuları:*", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+        await query.message.edit_text(get_text("pending_appointments_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
 @router.callback_query(F.data.startswith("tch:appr_app:"))
@@ -3138,13 +3158,13 @@ async def cb_teacher_approve_app(query: CallbackQuery):
         tch = (await session.execute(select(Teacher).where(Teacher.telegram_id == query.from_user.id))).scalar_one_or_none()
         app = await session.get(Appointment, app_id)
         if not tch or not app or app.teacher_id != tch.id:
-            await query.answer("⛔ Bu randevuyu yanıtlama yetkiniz bulunmuyor!", show_alert=True)
+            await query.answer(get_text("no_permission_appointment", lang), show_alert=True)
             return
         if app and app.status == "pending":
             app.status = "approved"
             await session.commit()
             await safe_send_message(query.message.bot, app.parent_telegram_id, get_text("appointment_approved_msg", "tr"), parse_mode="Markdown")
-            await query.message.edit_text("✅ Randevu onaylandı ve veliye bildirildi.")
+            await query.message.edit_text(get_text("appointment_confirmed_toast", lang))
     await query.answer()
 
 @router.callback_query(F.data.startswith("tch:rej_app:"))
@@ -3167,7 +3187,7 @@ async def cb_parent_toggle_briefing(query: CallbackQuery):
             user.evening_briefing = not user.evening_briefing
             await session.commit()
             await render_clean_dashboard(query, user)
-    await query.answer("Ayar güncellendi.")
+    await query.answer(get_text("setting_updated_toast", lang))
 
 @router.callback_query(F.data == "act_view_notices")
 async def cb_view_notices(query: CallbackQuery):
@@ -3208,7 +3228,7 @@ async def cb_view_schedule(query: CallbackQuery):
                     row = []
             if row: buttons.append(row)
             buttons.append(get_nav_buttons(lang))
-            await safe_edit_or_answer(query, "📅 Ders programını incelemek istediğiniz sınıfı seçiniz:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+            await safe_edit_or_answer(query, get_text("schedule_select_class", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
             await query.answer()
             return
 
@@ -3298,7 +3318,7 @@ async def cb_admin_unban(query: CallbackQuery):
             target_u.failed_attempts = 0
             target_u.locked_until = None
             await session.commit()
-            await safe_send_message(query.message.bot, t_id, "🟢 *Hesabınızın engeli okul yönetimi tarafından kaldırılmıştır. Tekrar giriş yapabilirsiniz.*", parse_mode="Markdown")
+            await safe_send_message(query.message.bot, t_id, get_text("admin_unban_notification", target_u.language if target_u else "tr"), parse_mode="Markdown")
             await query.answer(get_text("unban_success", lang), show_alert=True)
             await cb_admin_blacklist(query)
             return
@@ -3322,7 +3342,7 @@ async def cb_admin_sched_edit_menu(query: CallbackQuery):
         if row: buttons.append(row)
         buttons.append(get_nav_buttons("tr"))
 
-        await safe_edit_or_answer(query, "📅 *Ders Programı Düzenleme Masası*\n\nDers programını girmek veya güncellemek istediğiniz sınıfı seçiniz:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+        await safe_edit_or_answer(query, get_text("admin_sched_edit_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
 @router.callback_query(F.data.startswith("adm:sched_edit_cls:"))
@@ -3360,7 +3380,7 @@ async def process_sched_update_text(message: Message, state: FSMContext):
             sched.schedule_text = new_text
         await session.commit()
 
-        await message.answer(f"✅ *{escape_md(class_name)} Sınıfı Ders Programı Güncellendi!*", reply_markup=get_role_reply_kb("admin", "tr"), parse_mode="Markdown")
+        await message.answer(get_text("admin_sched_updated", lang, class_name=escape_md(class_name)), reply_markup=get_role_reply_kb("admin", lang), parse_mode="Markdown")
         await render_clean_dashboard(message, await session.get(User, message.from_user.id))
 
 async def cb_admin_menu_edit(query: CallbackQuery, state: FSMContext):
@@ -3415,7 +3435,7 @@ async def cb_start_add_student(query: CallbackQuery, state: FSMContext):
 async def process_student_name(message: Message, state: FSMContext):
     name_val = message.text.strip()
     if len(name_val) < 3:
-        await message.answer("⚠️ *Hatalı Giriş:* Lütfen öğrencinin adını ve soyadını eksiksiz yazınız (en az 3 karakter):", parse_mode="Markdown")
+        await message.answer(get_text("student_name_invalid", lang), parse_mode="Markdown")
         return
     await state.update_data(name=name_val)
     async with AsyncSessionLocal() as session:
@@ -3470,7 +3490,7 @@ async def process_student_no(message: Message, state: FSMContext):
 
         text = get_text("student_added_card", lang, name=escape_md(full_name), class_name=escape_md(class_name), no=escape_md(student_no), st_code=st_code, pr_code=pr_code)
         buttons = [
-            [InlineKeyboardButton(text="➕ Başka Ekle", callback_data="adm:add_student")],
+            [InlineKeyboardButton(text=get_text("btn_add_another", lang), callback_data="adm:add_student")],
             [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
         ]
         await safe_edit_or_answer(message, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -3491,7 +3511,7 @@ async def cb_start_add_teacher(query: CallbackQuery, state: FSMContext):
 async def process_teacher_name(message: Message, state: FSMContext):
     name_val = message.text.strip()
     if len(name_val) < 3:
-        await message.answer("⚠️ *Hatalı Giriş:* Lütfen öğretmenin adını ve soyadını eksiksiz yazınız (en az 3 karakter):", parse_mode="Markdown")
+        await message.answer(get_text("teacher_name_invalid", lang), parse_mode="Markdown")
         return
     await state.update_data(name=name_val)
     async with AsyncSessionLocal() as session:
@@ -3523,7 +3543,7 @@ async def process_teacher_subject(message: Message, state: FSMContext):
 
         text = get_text("teacher_added_card", lang, name=escape_md(full_name), subject=escape_md(subject), code=auth_code)
         buttons = [
-            [InlineKeyboardButton(text="➕ Başka Ekle", callback_data="adm:add_teacher")],
+            [InlineKeyboardButton(text=get_text("btn_add_another", lang), callback_data="adm:add_teacher")],
             [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
         ]
         await safe_edit_or_answer(message, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -3534,7 +3554,7 @@ async def process_teacher_subject(message: Message, state: FSMContext):
 async def cb_search_teacher_init(query: CallbackQuery, state: FSMContext):
     await state.clear()
     buttons = [get_nav_buttons("tr")]
-    await query.message.edit_text("🔍 Lütfen aramak istediğiniz öğretmenin adını veya branşını yazınız (Örn: `Ahmet` veya `Matematik`):", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.message.edit_text(get_text("teacher_search_prompt", "tr"), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await state.set_state(Form.waiting_search_teacher_query)
     await query.answer()
 
@@ -3553,10 +3573,10 @@ async def process_search_teacher_query(message: Message, state: FSMContext):
 
         if not results:
             buttons = [
-                [InlineKeyboardButton(text="🔍 Tekrar Ara", callback_data="adm:search_teacher")],
+                [InlineKeyboardButton(text=get_text("btn_search_again", "tr"), callback_data="adm:search_teacher")],
                 [InlineKeyboardButton(text=get_text("btn_main_menu", "tr"), callback_data="adm:dashboard")]
             ]
-            await message.answer("❌ Eşleşen öğretmen bulunamadı.", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+            await message.answer(get_text("teacher_search_no_results", "tr"), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
             return
 
         buttons = []
@@ -3564,7 +3584,7 @@ async def process_search_teacher_query(message: Message, state: FSMContext):
             buttons.append([InlineKeyboardButton(text=f"👨‍🏫 {t.full_name} ({t.subject})", callback_data=f"adm:tch_card:{t.id}")])
 
         buttons.append(get_nav_buttons("tr"))
-        await safe_edit_or_answer(message, "🔍 *Öğretmen Arama Sonuçları:*", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+        await safe_edit_or_answer(message, get_text("teacher_search_results_title", "tr"), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
 
 async def cb_search_student_init(query: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -3594,7 +3614,7 @@ async def process_search_query(message: Message, state: FSMContext):
 
         if not results:
             buttons = [
-                [InlineKeyboardButton(text="🔍 Tekrar Ara", callback_data="adm:search_student")],
+                [InlineKeyboardButton(text=get_text("btn_search_again", lang), callback_data="adm:search_student")],
                 [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
             ]
             await message.answer(get_text("search_no_results", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -3619,7 +3639,7 @@ async def cb_admin_teachers_list(query: CallbackQuery):
             status_dot = "🟢" if t.telegram_id else "⚪"
             buttons.append([InlineKeyboardButton(text=f"{status_dot} {t.full_name} ({t.subject})", callback_data=f"adm:tch_card:{t.id}")])
 
-        buttons.append([InlineKeyboardButton(text="➕ Yeni Öğretmen Ekle", callback_data="adm:add_teacher")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_add_new_teacher", lang), callback_data="adm:add_teacher")])
         buttons.append(get_nav_buttons(lang))
 
         text = f"👨‍🏫 *Öğretmenler Listesi* (Toplam {len(teachers)} Öğretmen):\nDetay veya şifre işlemleri için tıklayınız:"
@@ -3634,15 +3654,15 @@ async def cb_admin_teacher_card(query: CallbackQuery):
         lang = user.language if user else "tr"
         tch = await session.get(Teacher, tch_id)
         if not tch:
-            await query.answer("Öğretmen bulunamadı!", show_alert=True)
+            await query.answer(get_text("teacher_not_found", lang), show_alert=True)
             return
 
         status_str = f"Bağlı (`{tch.telegram_id}`)" if tch.telegram_id else "Henüz Giriş Yapmadı"
         text = get_text("teacher_card", lang, name=escape_md(tch.full_name), subject=escape_md(tch.subject), code=tch.auth_code, status=status_str)
 
         buttons = [
-            [InlineKeyboardButton(text="🔄 Kodu Sıfırla", callback_data=f"adm:reset_tch:{tch.id}")],
-            [InlineKeyboardButton(text="❌ Öğretmeni Sil", callback_data=f"adm:del_tch:{tch.id}")],
+            [InlineKeyboardButton(text=get_text("btn_reset_codes", lang), callback_data=f"adm:reset_tch:{tch.id}")],
+            [InlineKeyboardButton(text=get_text("btn_del_teacher", lang), callback_data=f"adm:del_tch:{tch.id}")],
             get_nav_buttons(lang, back_callback="adm:teachers")
         ]
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -3738,8 +3758,8 @@ async def cb_cat_staff(message: Message, state: FSMContext):
 
         buttons = [
             [InlineKeyboardButton(text=get_text("btn_classes", lang), callback_data="adm:classes"), InlineKeyboardButton(text=get_text("btn_teachers", lang), callback_data="adm:teachers")],
-            [InlineKeyboardButton(text=get_text("btn_search_student", lang), callback_data="adm:search_student"), InlineKeyboardButton(text="🔍 Öğretmen Ara", callback_data="adm:search_teacher")],
-            [InlineKeyboardButton(text="👨‍💼 Okul Yöneticileri", callback_data="adm:admins_list")]
+            [InlineKeyboardButton(text=get_text("btn_search_student", lang), callback_data="adm:search_student"), InlineKeyboardButton(text=get_text("btn_search_teacher", lang), callback_data="adm:search_teacher")],
+            [InlineKeyboardButton(text=get_text("btn_school_admins", lang), callback_data="adm:admins_list")]
         ]
         await safe_edit_or_answer(message, get_text("cat_staff_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
 
@@ -3754,7 +3774,7 @@ async def cb_cat_reports(message: Message, state: FSMContext):
         buttons = [
             [InlineKeyboardButton(text=get_text("btn_cockpit_unified", lang), callback_data="adm:cockpit")],
             [InlineKeyboardButton(text=get_text("btn_risk_radar", lang), callback_data="adm:risk_radar"), InlineKeyboardButton(text=get_text("btn_academic_report", lang), callback_data="adm:academic_report")],
-            [InlineKeyboardButton(text="⚠️ Onaylanmamış Devamsızlıklar", callback_data="adm:unack_notifs")]
+            [InlineKeyboardButton(text=get_text("btn_unack_notifs", lang), callback_data="adm:unack_notifs")]
         ]
         await safe_edit_or_answer(message, get_text("cat_reports_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
 
@@ -3786,7 +3806,7 @@ async def cb_cat_tools(message: Message, state: FSMContext):
 
         buttons = [
             [InlineKeyboardButton(text=get_text("btn_broadcast", lang), callback_data="adm:broadcast_init"), InlineKeyboardButton(text=get_text("btn_excel_hub", lang), callback_data="adm:excel_hub")],
-            [InlineKeyboardButton(text="📅 Ders Programı Yönetimi", callback_data="adm:sched_edit_menu"), InlineKeyboardButton(text=get_text("btn_cafeteria_edit", lang), callback_data="adm:menu_edit")],
+            [InlineKeyboardButton(text=get_text("btn_manage_schedule", lang), callback_data="adm:sched_edit_menu"), InlineKeyboardButton(text=get_text("btn_cafeteria_edit", lang), callback_data="adm:menu_edit")],
             [InlineKeyboardButton(text=get_text("btn_pdf", lang), callback_data="adm:pdf_menu")]
         ]
         await safe_edit_or_answer(message, get_text("cat_tools_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -3820,7 +3840,7 @@ async def cb_class_attendance_sheet(query: CallbackQuery):
         )).scalars().all()
 
         if not students:
-            await query.answer("Öğrenci bulunamadı!", show_alert=True)
+            await query.answer(get_text("student_not_found", lang), show_alert=True)
             return
 
         lines = [f"📋 *{escape_md(class_name)} Sınıfı Toplu Devamsızlık Çizelgesi:*\n"]
@@ -3872,7 +3892,7 @@ async def cb_show_class_students(query: CallbackQuery):
         if total_pages > 1:
             nav_row = []
             if page > 0:
-                nav_row.append(InlineKeyboardButton(text="⬅️ Önceki", callback_data=f"adm:show_class:{class_name}:{page - 1}"))
+                nav_row.append(InlineKeyboardButton(text=get_text("btn_prev", lang), callback_data=f"adm:show_class:{class_name}:{page - 1}"))
             nav_row.append(InlineKeyboardButton(text=f"📄 {page + 1}/{total_pages}", callback_data="noop"))
             if page < total_pages - 1:
                 nav_row.append(InlineKeyboardButton(text="Sonraki ➡️", callback_data=f"adm:show_class:{class_name}:{page + 1}"))
@@ -3896,9 +3916,9 @@ async def cb_admin_edit_student_menu(query: CallbackQuery):
         if not st: return
 
         buttons = [
-            [InlineKeyboardButton(text="👤 İsim Değiştir", callback_data=f"adm:edf:{st.id}:name")],
-            [InlineKeyboardButton(text="🏫 Sınıf / Nakil", callback_data=f"adm:edf:{st.id}:class")],
-            [InlineKeyboardButton(text="🔢 Numara Değiştir", callback_data=f"adm:edf:{st.id}:no")],
+            [InlineKeyboardButton(text=get_text("btn_edit_name", lang), callback_data=f"adm:edf:{st.id}:name")],
+            [InlineKeyboardButton(text=get_text("btn_edit_class", lang), callback_data=f"adm:edf:{st.id}:class")],
+            [InlineKeyboardButton(text=get_text("btn_edit_no", lang), callback_data=f"adm:edf:{st.id}:no")],
             get_nav_buttons(lang, back_callback=f"adm:st_card:{st.id}")
         ]
         text = f"✏️ *{escape_md(st.full_name)}* ({escape_md(st.class_name)} - No: {escape_md(st.student_number)})\nDüzenlemek istediğiniz bilgiyi seçiniz:"
@@ -3917,7 +3937,7 @@ async def cb_admin_edit_field_init(query: CallbackQuery, state: FSMContext):
         "class": "🏫 Öğrencinin yeni Sınıfını yazınız (Örn: `10-B`):",
         "no": "🔢 Öğrencinin yeni Okul Numarasını yazınız (Örn: `205`):"
     }
-    await query.message.edit_text(prompts.get(field, "Lütfen yeni değeri yazınız:"), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ İptal", callback_data=f"adm:st_card:{st_id}")]]))
+    await query.message.edit_text(prompts.get(field, "Lütfen yeni değeri yazınız:"), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data=f"adm:st_card:{st_id}")]]))
     await state.set_state(Form.edit_student_val)
     await query.answer()
 
@@ -3939,7 +3959,7 @@ async def process_student_edit_val(message: Message, state: FSMContext):
             elif field == "no":
                 st.student_number = new_val
             await session.commit()
-            await message.answer(f"✅ *Öğrenci Bilgisi Güncellendi:* {escape_md(st.full_name)} ({escape_md(st.class_name)} - No: {escape_md(st.student_number)})", parse_mode="Markdown")
+            await message.answer(get_text("student_info_updated", lang, name=escape_md(st.full_name), class_name=escape_md(st.class_name), no=escape_md(st.student_number)), parse_mode="Markdown")
             dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data=f"adm:st_card:{st.id}")
             await cb_student_card(dummy_q)
 
@@ -3951,7 +3971,7 @@ async def cb_student_card(query: CallbackQuery):
         lang = user.language if user else "tr"
         st = await session.get(Student, st_id)
         if not st:
-            await query.answer("Öğrenci bulunamadı!", show_alert=True)
+            await query.answer(get_text("student_not_found", lang), show_alert=True)
             return
 
         st_status = "Kullanıldı" if st.is_student_code_burned else "Aktif / Boşta"
@@ -3961,7 +3981,7 @@ async def cb_student_card(query: CallbackQuery):
         buttons = [
             [InlineKeyboardButton(text=get_text("btn_edit_student", lang), callback_data=f"adm:edit_st:{st.id}")],
             [InlineKeyboardButton(text=get_text("btn_reset_codes", lang), callback_data=f"adm:reset_codes:{st.id}")],
-            [InlineKeyboardButton(text="👨‍👩‍👧‍👦 Veli Bağlantısını Kopar", callback_data=f"adm:unlink_pr:{st.id}")],
+            [InlineKeyboardButton(text=get_text("btn_unlink_parent", lang), callback_data=f"adm:unlink_pr:{st.id}")],
             [InlineKeyboardButton(text=get_text("btn_del_student", lang), callback_data=f"adm:del_student:{st.id}")],
             get_nav_buttons(lang, back_callback=f"adm:show_class:{st.class_name}")
         ]
@@ -4011,7 +4031,7 @@ async def cb_admin_unlink_parent(query: CallbackQuery):
             st.parent_code = generate_secure_code("VELI")
             st.is_parent_code_burned = False
             await session.commit()
-            await query.answer(f"✅ Veli bağlantıları koparıldı. Yeni Veli Kodu: {st.parent_code}", show_alert=True)
+            await query.answer(get_text("parent_unlinked_success", "tr", code=st.parent_code), show_alert=True)
             dummy_q = CallbackQuery(id="0", from_user=query.from_user, chat_instance="0", message=query.message, data=f"adm:st_card:{st.id}")
             await cb_student_card(dummy_q)
             return
@@ -4075,7 +4095,7 @@ async def cb_admin_unack_notifs(query: CallbackQuery):
 
         if not unacks:
             buttons = [get_nav_buttons("tr")]
-            await safe_edit_or_answer(query, "✅ *Tüm Devamsızlık Bildirimleri Velilerce Onaylandı!*\n\nSon 36 saatte velisi tarafından okunmamış hiçbir bildirim bulunmamaktadır.", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+            await safe_edit_or_answer(query, get_text("all_notifs_acknowledged", "tr"), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
             await query.answer()
             return
 
@@ -4276,7 +4296,7 @@ async def cb_pdf_menu(query: CallbackQuery):
         if row:
             buttons.append(row)
 
-        buttons.insert(0, [InlineKeyboardButton(text="👨‍🏫 Tüm Öğretmen Şifre Kartları (PDF)", callback_data="adm:gen_pdf_teachers")])
+        buttons.insert(0, [InlineKeyboardButton(text=get_text("btn_teachers_pdf", lang), callback_data="adm:gen_pdf_teachers")])
         buttons.append(get_nav_buttons(lang))
         await safe_edit_or_answer(query, get_text("select_pdf_class", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
@@ -4334,7 +4354,7 @@ async def admin_excel_upload(message: Message):
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
         if not is_admin_user(user, message.from_user.id):
-            await message.answer("⛔ *Yetkisiz İşlem:* Yalnızca okul yöneticileri Excel ile toplu öğrenci yükleyebilir!", parse_mode="Markdown")
+            await message.answer(get_text("unauthorized_excel_upload", lang), parse_mode="Markdown")
             return
 
     try:
@@ -4347,7 +4367,7 @@ async def admin_excel_upload(message: Message):
         await message.answer_document(file, caption=get_text("excel_done", lang, count=count), parse_mode="Markdown")
         out_excel.close()
     except Exception:
-        await message.answer("⚠️ *Dosya İşleme Hatası:* Excel dosyası okunamadı veya formatı geçersiz.\n\nLütfen ilk satır başlıklarının `Ad Soyad | Sinif | Numara` olduğundan emin olunuz.", parse_mode="Markdown")
+        await message.answer(get_text("excel_format_error", lang), parse_mode="Markdown")
 
 @router.callback_query(F.data == "adm:toggle_maint")
 async def cb_toggle_maintenance(query: CallbackQuery):
@@ -4361,7 +4381,7 @@ async def cb_toggle_maintenance(query: CallbackQuery):
             maint.value = "false" if maint.value == "true" else "true"
         await session.commit()
     await render_clean_dashboard(query, user)
-    await query.answer("Bakım modu güncellendi.")
+    await query.answer(get_text("maintenance_mode_updated", lang))
 
 # --- MAZERET RAPORLARI ---
 
@@ -4403,13 +4423,13 @@ async def cb_view_medical(query: CallbackQuery):
         st = await session.get(Student, rep.student_id) if rep else None
 
         if not rep or not st:
-            await query.answer("Rapor bulunamadı!", show_alert=True)
+            await query.answer(get_text("report_not_found", lang), show_alert=True)
             return
 
         adm_kb = InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Onayla (İzinli Say)", callback_data=f"adm:appr_med:{rep.id}"),
-                InlineKeyboardButton(text="❌ Reddet", callback_data=f"adm:rej_med:{rep.id}")
+                InlineKeyboardButton(text=get_text("btn_appr_medical", lang), callback_data=f"adm:appr_med:{rep.id}"),
+                InlineKeyboardButton(text=get_text("btn_reject", lang), callback_data=f"adm:rej_med:{rep.id}")
             ],
             [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="adm:medical_list")]
         ])
@@ -4450,7 +4470,9 @@ async def cb_approve_medical(query: CallbackQuery):
                 session.add(new_att)
             await session.commit()
 
-            await safe_send_message(query.message.bot, rep.parent_telegram_id, "✅ *Sağlık / Mazeret raporunuz onaylandı. Öğrenci izinli sayıldı.*", parse_mode="Markdown")
+            p_u = await session.get(User, rep.parent_telegram_id)
+            p_lang = p_u.language if p_u else "tr"
+            await safe_send_message(query.message.bot, rep.parent_telegram_id, get_text("medical_approved_parent", p_lang), parse_mode="Markdown")
             try:
                 await query.message.delete()
             except Exception:
@@ -4470,7 +4492,9 @@ async def cb_reject_medical(query: CallbackQuery):
         if rep:
             rep.status = "rejected"
             await session.commit()
-            await safe_send_message(query.message.bot, rep.parent_telegram_id, "❌ *Sağlık / Mazeret raporunuz reddedildi.*", parse_mode="Markdown")
+            p_u = await session.get(User, rep.parent_telegram_id)
+            p_lang = p_u.language if p_u else "tr"
+            await safe_send_message(query.message.bot, rep.parent_telegram_id, get_text("medical_rejected_parent", p_lang), parse_mode="Markdown")
             try:
                 await query.message.delete()
             except Exception:
@@ -4554,8 +4578,8 @@ async def cb_admin_admins_list(query: CallbackQuery):
                 lines.append(f"• 👨‍💼 *{escape_md(name_str)}* (`{tg_id}`)")
                 buttons.append([InlineKeyboardButton(text=f"❌ Yetkiyi Al: {name_str}", callback_data=f"adm:del_admin:{tg_id}")])
 
-        buttons.append([InlineKeyboardButton(text="➕ Telegram ID ile Yönetici Ekle", callback_data="adm:add_admin_id")])
-        buttons.append([InlineKeyboardButton(text="🔑 Tek Kullanımlık Yönetici Kodu Üret", callback_data="adm:gen_admin_code")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_add_admin_id", lang), callback_data="adm:add_admin_id")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_gen_admin_code", lang), callback_data="adm:gen_admin_code")])
         buttons.append(get_nav_buttons(lang))
 
         await safe_edit_or_answer(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -4585,7 +4609,7 @@ async def cb_admin_gen_code(query: CallbackQuery):
 @router.callback_query(F.data == "adm:add_admin_id")
 async def cb_admin_add_id_init(query: CallbackQuery, state: FSMContext):
     await state.clear()
-    await query.message.answer("👤 Lütfen yeni yöneticinin Telegram ID numarasını yazınız (Örn: `123456789`):\n\n*(Kişi bota /start yazdığında ID numarasını görebilir)*", reply_markup=get_cancel_reply_kb("tr"), parse_mode="Markdown")
+    await query.message.answer(get_text("admin_add_tg_id_prompt", "tr"), reply_markup=get_cancel_reply_kb("tr"), parse_mode="Markdown")
     await state.set_state(Form.waiting_admin_tg_id)
     await query.answer()
 
@@ -4593,10 +4617,10 @@ async def cb_admin_add_id_init(query: CallbackQuery, state: FSMContext):
 async def process_admin_tg_id(message: Message, state: FSMContext):
     val = message.text.strip().replace("@", "")
     if not val.isdigit():
-        await message.answer("⚠️ Lütfen sadece rakamlardan oluşan geçerli bir Telegram ID yazınız:")
+        await message.answer(get_text("admin_invalid_tg_id", "tr"))
         return
     await state.update_data(new_admin_id=int(val))
-    await message.answer("👤 Lütfen yeni yöneticinin Adını, Soyadını ve Unvanını yazınız (Örn: `Ahmet Yılmaz - Müdür Yrd.`):", parse_mode="Markdown")
+    await message.answer(get_text("admin_add_name_prompt", "tr"), parse_mode="Markdown")
     await state.set_state(Form.waiting_admin_name)
 
 @router.message(Form.waiting_admin_name)
@@ -4619,17 +4643,17 @@ async def process_admin_name(message: Message, state: FSMContext):
         await session.commit()
 
         # Yeni yöneticiye anlık bildirim gönder
-        notify_txt = f"🎉 *Tebrikler, {escape_md(name_val)}!*\n\nOkul yönetim sistemi üzerinde *Okul İdaresi (Admin)* olarak yetkilendirildiniz. Alt menüden yönetim işlemlerinizi gerçekleştirebilirsiniz."
+        notify_txt = get_text("admin_promoted_notification", target_u.language if target_u else "tr", name=escape_md(name_val))
         await safe_send_message(message.bot, new_admin_id, notify_txt, reply_markup=get_role_reply_kb("admin", "tr"), parse_mode="Markdown")
 
-        await message.answer(f"✅ *Yönetici Başarıyla Eklendi:* {escape_md(name_val)} (`{new_admin_id}`)", reply_markup=get_role_reply_kb("admin", "tr"), parse_mode="Markdown")
+        await message.answer(get_text("admin_added_success", "tr", name=escape_md(name_val), id=new_admin_id), reply_markup=get_role_reply_kb("admin", "tr"), parse_mode="Markdown")
         await render_clean_dashboard(message, await session.get(User, message.from_user.id))
 
 @router.callback_query(F.data.startswith("adm:del_admin:"))
 async def cb_admin_delete_admin(query: CallbackQuery):
     target_id = int(query.data.split(":")[2])
     if target_id in PERMANENT_ADMIN_IDS:
-        await query.answer("⛔ Kalıcı / Kurucu yöneticinin yetkisi kaldırılamaz!", show_alert=True)
+        await query.answer(get_text("permanent_admin_protected", "tr"), show_alert=True)
         return
 
     async with AsyncSessionLocal() as session:
@@ -4637,9 +4661,9 @@ async def cb_admin_delete_admin(query: CallbackQuery):
         if target_u:
             target_u.role = "guest"
             await session.commit()
-            await safe_send_message(query.message.bot, target_id, "ℹ️ *Okul yönetici yetkiniz idare tarafından sonlandırılmıştır.*", reply_markup=get_role_reply_kb("guest", target_u.language), parse_mode="Markdown")
+            await safe_send_message(query.message.bot, target_id, get_text("admin_demoted_notification", target_u.language if target_u else "tr"), reply_markup=get_role_reply_kb("guest", target_u.language), parse_mode="Markdown")
 
-        await query.answer("Yönetici yetkisi kaldırıldı.", show_alert=True)
+        await query.answer(get_text("admin_demoted_toast", "tr"), show_alert=True)
         await cb_admin_admins_list(query)
 
 # ======================================================================
@@ -4667,7 +4691,7 @@ async def cb_teacher_classes(query: CallbackQuery, state: FSMContext):
             buttons.append(row)
 
         buttons.append([InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")])
-        await safe_edit_or_answer(query, "📋 Yoklama alacağınız sınıfı seçiniz:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+        await safe_edit_or_answer(query, get_text("attendance_select_class", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
 @router.callback_query(F.data.startswith("att_class:"))
@@ -4715,12 +4739,12 @@ async def cb_attendance_save(query: CallbackQuery):
 
     # 1. Hafta Sonu Güvenlik Kilidi (Cumartesi: 5, Pazar: 6)
     if now_local.weekday() in (5, 6):
-        await query.answer("⚠️ Hafta sonu günlerinde yoklama kaydedilemez!", show_alert=True)
+        await query.answer(get_text("attendance_weekend_lock", lang), show_alert=True)
         return
 
     # 2. Ders Saatleri Dışı Güvenlik Kilidi (07:00 - 18:30 dışı)
     if not (7 <= now_local.hour < 19):
-        await query.answer("⚠️ Ders saatleri dışında (07:00 - 18:30) yoklama kaydedilemez!", show_alert=True)
+        await query.answer(get_text("attendance_hours_lock", lang), show_alert=True)
         return
 
     cache = ATTENDANCE_CACHE.pop(query.from_user.id, {})
@@ -4748,7 +4772,9 @@ async def cb_attendance_save(query: CallbackQuery):
                     st_obj = await session.get(Student, st_id)
                     st_n = escape_md(st_obj.full_name) if st_obj else "Öğrenci"
                     parents = (await session.execute(select(ParentStudent.parent_telegram_id).where(ParentStudent.student_id == st_id))).scalars().all()
-                    corr_text = f"ℹ️ *DEVAMSIZLIK DÜZELTME BİLDİRİMİ*\n\nÖğrenciniz *{st_n}* için daha önce iletilen devamsızlık kaydı öğretmen tarafından *DÜZELTİLMİŞTİR* (Öğrenci derstedir)."
+                    p_u = await session.get(User, p_id)
+                    p_lang = p_u.language if p_u else "tr"
+                    corr_text = get_text("attendance_correction_notification", p_lang, name=st_n)
                     for p_id in parents:
                         await safe_send_message(query.message.bot, p_id, corr_text, parse_mode="Markdown")
             else:
@@ -4796,12 +4822,12 @@ async def cb_grade_classes(query: CallbackQuery, state: FSMContext):
             classes = ["9-A"]
 
         buttons = [
-            [InlineKeyboardButton(text="📝 Son Girilen Notlar (Düzenle / Sil)", callback_data="tch:recent_grades")]
+            [InlineKeyboardButton(text=get_text("btn_recent_grades_menu", lang), callback_data="tch:recent_grades")]
         ]
         for c in classes:
             buttons.append([InlineKeyboardButton(text=f"🏫 {c}", callback_data=f"gr_cls:{c}")])
         buttons.append([InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")])
-        await safe_edit_or_answer(query, "📝 Not gireceğiniz sınıfı seçiniz:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+        await safe_edit_or_answer(query, get_text("grade_select_class", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
 @router.callback_query(F.data.startswith("gr_cls:"))
@@ -4816,7 +4842,7 @@ async def cb_teacher_class_grade_sheet(query: CallbackQuery):
 
         students = (await session.execute(select(Student).where(Student.class_name == class_name).order_by(Student.student_number))).scalars().all()
         if not students:
-            await query.answer("Sınıfta öğrenci bulunamadı!", show_alert=True)
+            await query.answer(get_text("no_students_in_class", lang), show_alert=True)
             return
 
         lines = [f"📊 *{escape_md(class_name)} Sınıfı {escape_md(subject_name)} Not Çizelgesi:*\n"]
@@ -4851,7 +4877,7 @@ async def cb_grade_students(query: CallbackQuery):
             buttons.append([InlineKeyboardButton(text=f"👤 {s.full_name} ({s.student_number})", callback_data=f"gr_st:{s.id}")])
         buttons.append([InlineKeyboardButton(text=f"📊 {class_name} Not Çizelgesi", callback_data=f"tch:grade_sheet:{class_name}")])
         buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="tch:grade_classes")])
-        await safe_edit_or_answer(query, f"📝 *{escape_md(class_name)} Sınıfı* - Öğrenciyi seçiniz:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+        await safe_edit_or_answer(query, get_text("grade_select_student", lang, class_name=escape_md(class_name)), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
 @router.callback_query(F.data.startswith("gr_st:"))
@@ -4897,11 +4923,11 @@ async def process_grade_score(message: Message, state: FSMContext):
     try:
         score_val = float(score_str)
     except ValueError:
-        await message.answer("⚠️ Lütfen geçerli bir sayı giriniz (0-100):")
+        await message.answer(get_text("invalid_score_format", lang))
         return
 
     if not (0.0 <= score_val <= 100.0):
-        await message.answer("⚠️ Not 0 ile 100 arasında olmalıdır. Lütfen tekrar giriniz (0-100):")
+        await message.answer(get_text("invalid_score_range", lang))
         return
 
     GRADE_CACHE[message.from_user.id]["score"] = score_val
@@ -4960,7 +4986,9 @@ async def cb_grade_save_final(query: CallbackQuery, state: FSMContext):
 
         parents = (await session.execute(select(ParentStudent.parent_telegram_id).where(ParentStudent.student_id == st_id))).scalars().all()
         for p_id in parents:
-            alert_text = f"📝 *YENİ DERS NOTU*\n\nÖğrenciniz *{escape_md(st.full_name)}*, {escape_md(subject_name)} ({escape_md(exam_type_val)}) sınavından *{score_val}* aldı. ({badge_val})"
+            p_u = await session.get(User, p_id)
+            p_lang = p_u.language if p_u else "tr"
+            alert_text = get_text("grade_parent_notification", p_lang, name=escape_md(st.full_name), subject=escape_md(subject_name), exam_type=escape_md(exam_type_val), score=score_val, badge=badge_val)
             await safe_send_message(query.message.bot, p_id, alert_text, parse_mode="Markdown")
 
         buttons = [get_nav_buttons(lang)]
@@ -5006,7 +5034,7 @@ async def cb_teacher_view_grade(query: CallbackQuery):
         lang = user.language if user else "tr"
         grade = await session.get(Grade, gr_id)
         if not grade or grade.teacher_id != query.from_user.id:
-            await query.answer("Bu nota erişim yetkiniz yok!", show_alert=True)
+            await query.answer(get_text("no_permission_grade", lang), show_alert=True)
             return
 
         st = await session.get(Student, grade.student_id)
@@ -5057,11 +5085,11 @@ async def process_grade_edit_val(message: Message, state: FSMContext):
     try:
         score_val = float(score_str)
     except ValueError:
-        await message.answer("⚠️ Lütfen geçerli bir sayı giriniz (0-100):")
+        await message.answer(get_text("invalid_score_format", lang))
         return
 
     if not (0.0 <= score_val <= 100.0):
-        await message.answer("⚠️ Not 0 ile 100 arasında olmalıdır. Tekrar giriniz:")
+        await message.answer(get_text("invalid_score_range", lang))
         return
 
     data = await state.get_data()
@@ -5086,8 +5114,8 @@ async def cb_admin_excel_hub(query: CallbackQuery):
         lang = user.language if user else "tr"
 
         buttons = [
-            [InlineKeyboardButton(text="📥 Toplu Öğrenci Yükle (Excel)", callback_data="adm:excel_info")],
-            [InlineKeyboardButton(text="📤 Tüm Okul Verisini İndir (Yedek)", callback_data="adm:export_all_excel")],
+            [InlineKeyboardButton(text=get_text("btn_upload_excel", lang), callback_data="adm:excel_info")],
+            [InlineKeyboardButton(text=get_text("btn_export_all_data", lang), callback_data="adm:export_all_excel")],
             get_nav_buttons(lang)
         ]
         await safe_edit_or_answer(query, get_text("excel_hub_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -5145,11 +5173,11 @@ async def cb_view_homeworks_list(query: CallbackQuery):
 
         if not hws:
             buttons = [get_nav_buttons(lang)]
-            await safe_edit_or_answer(query, f"📚 *{escape_md(cls_name)} Sınıfı Ödev Panosu*\n\nŞu anda aktif veya bekleyen bir ödev bulunmamaktadır.", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+            await safe_edit_or_answer(query, get_text("no_active_homeworks", lang, class_name=escape_md(cls_name)), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
             await query.answer()
             return
 
-        lines = [f"📚 *{escape_md(cls_name)} Sınıfı Son Ödevleri:*\n"]
+        lines = [f"{get_text('homework_board_title', lang, class_name=escape_md(cls_name))}\n"]
         buttons = []
         for h in hws:
             dt_str = h.created_at.strftime("%d.%m.%Y")
@@ -5175,7 +5203,7 @@ async def cb_view_hw_photo(query: CallbackQuery):
                 return
             except Exception:
                 pass
-    await query.answer("Görsel yüklenemedi!", show_alert=True)
+    await query.answer(get_text("image_load_error", lang), show_alert=True)
 
 @router.callback_query(F.data == "tch:hw_classes")
 async def cb_hw_classes(query: CallbackQuery, state: FSMContext):
@@ -5215,11 +5243,11 @@ async def cb_teacher_view_my_hws(query: CallbackQuery):
             btn_txt = f"📚 {h.class_name} ({h.subject}): {h.content[:15]}..."
             buttons.append([
                 InlineKeyboardButton(text=btn_txt, callback_data="noop"),
-                InlineKeyboardButton(text="❌ Sil", callback_data=f"tch:del_hw:{h.id}")
+                InlineKeyboardButton(text=get_text("btn_delete_action", lang), callback_data=f"tch:del_hw:{h.id}")
             ])
         buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="tch:hw_classes")])
 
-        await safe_edit_or_answer(query, "📚 *Yayınladığınız Son Ödevler:*", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+        await safe_edit_or_answer(query, get_text("published_homeworks_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await query.answer()
 
 @router.callback_query(F.data.startswith("tch:del_hw:"))
@@ -5230,7 +5258,7 @@ async def cb_teacher_del_hw(query: CallbackQuery):
         if hw and hw.teacher_id == query.from_user.id:
             await session.delete(hw)
             await session.commit()
-            await query.answer("Ödev silindi.", show_alert=True)
+            await query.answer(get_text("homework_deleted_toast", lang), show_alert=True)
             await cb_teacher_view_my_hws(query)
             return
     await query.answer()
@@ -5299,7 +5327,7 @@ async def cb_parent_switch_student(query: CallbackQuery, state: FSMContext):
         children = (await session.execute(stmt)).scalars().all()
 
         if not children:
-            await query.answer("Kayıtlı öğrenci bulunamadı!", show_alert=True)
+            await query.answer(get_text("no_registered_students", lang), show_alert=True)
             return
 
         buttons = []
@@ -5309,7 +5337,7 @@ async def cb_parent_switch_student(query: CallbackQuery, state: FSMContext):
             buttons.append([InlineKeyboardButton(text=btn_txt, callback_data=f"set_child:{c.id}")])
 
         buttons.append([InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")])
-        await query.message.edit_text("🧑‍🎓 Lütfen durumunu incelemek istediğiniz öğrenciyi seçiniz:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+        await query.message.edit_text(get_text("parent_choose_child", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await query.answer()
 
 @router.callback_query(F.data == "parent:add_child_code")
@@ -5339,7 +5367,7 @@ async def process_parent_add_child_code(message: Message, state: FSMContext):
 
         reply_kb = get_role_reply_kb("parent", lang)
         if not p_student:
-            await message.answer("❌ *Geçersiz Veli Kodu!* Lütfen kodu kontrol ediniz.", reply_markup=reply_kb, parse_mode="Markdown")
+            await message.answer(get_text("invalid_parent_code", lang), reply_markup=reply_kb, parse_mode="Markdown")
             await render_clean_dashboard(message, user)
             return
 
@@ -5371,7 +5399,7 @@ async def cb_set_child(query: CallbackQuery):
             )
         )).scalar_one_or_none()
         if not rel:
-            await query.answer("⛔ Yetkisiz İşlem: Bu öğrenci kaydına erişim izniniz yok!", show_alert=True)
+            await query.answer(get_text("no_permission_student_record", lang), show_alert=True)
             return
 
         user.current_child_id = child_id
@@ -5439,7 +5467,7 @@ async def cb_download_pdf_report(query: CallbackQuery):
 
         st = await session.get(Student, student_id)
         if not st:
-            await query.answer("Öğrenci bulunamadı!", show_alert=True)
+            await query.answer(get_text("student_not_found", lang), show_alert=True)
             return
 
         is_authorized = False
@@ -5457,7 +5485,7 @@ async def cb_download_pdf_report(query: CallbackQuery):
                     is_authorized = True
 
         if not is_authorized:
-            await query.answer("⛔ Bu karneye erişim izniniz bulunmamaktadır!", show_alert=True)
+            await query.answer(get_text("no_permission_report_card", lang), show_alert=True)
             return
 
         pdf_buf = await generate_student_report_card_pdf(st.id, lang=lang)
@@ -5483,7 +5511,7 @@ async def cb_upload_med_init(query: CallbackQuery, state: FSMContext):
 
 @router.message(Form.waiting_medical_photo, ~F.photo)
 async def fallback_medical_photo_text(message: Message):
-    await message.answer("⚠️ *Fotoğraf Bekleniyor:* Lütfen sağlık raporu veya mazeret belgesinin net bir fotoğrafını gönderiniz.\n\n*(İptal etmek için aşağıdaki '❌ İşlemi İptal Et' butonuna basabilirsiniz.)*", parse_mode="Markdown")
+    await message.answer(get_text("photo_expected_medical", lang), parse_mode="Markdown")
 
 @router.message(Form.waiting_medical_photo, F.photo)
 async def handle_medical_photo(message: Message, state: FSMContext):
