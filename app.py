@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-OKUL YÖNETİM TELEGRAM BOTU - KURUMSAL VE EKSİKSİZ TAM SİSTEM MİMARİSİ (PROD V7 - FINAL)
+OKUL YÖNETİM TELEGRAM BOTU - KURUMSAL VE EKSİKSİZ TAM SİSTEM MİMARİSİ (PROD V9 - ENTERPRISE)
 Altyapı: FastAPI + aiogram 3.x Webhook + PostgreSQL (Neon / Supabase) / SQLite Çift Motor Kalkanı
-4 Dilli Kusursuz Arayüz (i18n): 🇹🇷 Türkçe, 🇷🇺 Русский, 🇺🇿 O'zbekcha (Lotin), 🇬🇧 English
-Platform: Render Free Web Service (512 MB RAM, 0.1 vCPU, Ephemeral Disk)
-Optimizasyonlar:
-- 7/24 Kesintisiz Çalışma Kalkanı (Dahili Self-KeepAlive Pinger)
-- Mükerrer Yoklama Önleme (UPSERT Mantığı)
-- In-Place UI Rendering (Sohbeti kirletmeyen mesaj içi güncelleme)
-- 15 Dakika Gecikmeli Yoklama Kalkanı ve Rozetli Not Girişi
-- Çoklu Öğrenci Değiştirme (Student Switcher), Hızlı Arama, Ödev Panosu, Akşam Brifingi
+4 Dilli Kusursuz Arayüz (i18n): 🇹🇷 Türkçe, 🇷🇺 Русский, 🇺🇿 O'zbekcha, 🇬🇧 English
+Platform: Render Web Service / VPS / Docker
+
+Yeni Mimari Özellikler:
+- 📩 Yöneticiden Şifre / Erişim İsteme Modülü (Kimlik seçimi, akıllı veri eşleşme teyidi, spam & cooldown kalkanı).
+- 🛎️ Yönetici Tek Tuşla Onay / Ret Masası (Otomatik rol aktivasyonu ve Telegram üzerinden anlık bildirim).
+- 🤝 Veli - Öğretmen Randevu Sistemi (Görüşme talepleri ve öğretmen onay paneli).
+- 📅 Sınıf Ders Programı & 🍲 Günlük Yemekhane Menüsü Entegrasyonu.
+- 📱 Sade, Dağınık Olmayan, Maksimum Kolay Tuş Tasarımı (Rol bazlı odaklı Reply & Inline Hub'lar).
+- 🔒 Güçlendirilmiş Güvenlik ve İzolasyon: Kaba kuvvet kalkanı, 6 haneli benzersiz şifre üretimi.
 """
 
 import os
@@ -17,7 +19,7 @@ import io
 import random
 import string
 import asyncio
-from datetime import datetime, timedelta, time as dtime
+from datetime import datetime, timedelta, date
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, BackgroundTasks, status
@@ -26,13 +28,13 @@ from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import (
     Update, Message, CallbackQuery, BufferedInputFile,
-    InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
+    InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from sqlalchemy import (
-    BigInteger, Integer, String, Boolean, DateTime, Date, ForeignKey, Float, Text, select, func, delete
+    BigInteger, Integer, String, Boolean, DateTime, Date, ForeignKey, Float, Text, select, func, delete, desc
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -61,6 +63,10 @@ if not WEBHOOK_URL:
 
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "OkulBotSecret2026").strip()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///school.db").strip()
+
+# Yönetici Tanımlamaları ve Güvenlik
+ADMIN_CODE = os.getenv("ADMIN_CODE", "ADM-OKUL-2026").strip()
+TIMEZONE_OFFSET = int(os.getenv("TIMEZONE_OFFSET", "3")) # Varsayılan UTC+3 (Türkiye)
 
 ADMIN_IDS = []
 for x in os.getenv("ADMIN_IDS", "").split(","):
@@ -105,7 +111,7 @@ class User(Base):
     is_blacklisted: Mapped[bool] = mapped_column(Boolean, default=False)
     current_child_id: Mapped[int] = mapped_column(Integer, nullable=True)
     evening_briefing: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
 class Student(Base):
     __tablename__ = "students"
@@ -139,12 +145,12 @@ class Attendance(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     student_id: Mapped[int] = mapped_column(Integer, ForeignKey("students.id"), index=True)
     class_name: Mapped[str] = mapped_column(String(20), index=True)
-    date: Mapped[datetime.date] = mapped_column(Date, default=datetime.utcnow().date, index=True)
+    date: Mapped[date] = mapped_column(Date, default=lambda: datetime.utcnow().date(), index=True)
     status: Mapped[str] = mapped_column(String(10), default="present") # present, absent, excused
     teacher_id: Mapped[int] = mapped_column(BigInteger)
     notify_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     is_notified: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
 class Grade(Base):
     __tablename__ = "grades"
@@ -155,7 +161,7 @@ class Grade(Base):
     badge: Mapped[str] = mapped_column(String(10)) # 🟢, 🟡, 🔴
     note: Mapped[str] = mapped_column(Text, nullable=True)
     teacher_id: Mapped[int] = mapped_column(BigInteger)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
 class MedicalReport(Base):
     __tablename__ = "medical_reports"
@@ -165,15 +171,15 @@ class MedicalReport(Base):
     file_id: Mapped[str] = mapped_column(String(255))
     caption: Mapped[str] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="pending") # pending, approved, rejected
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
 class CriticalNotification(Base):
     __tablename__ = "critical_notifications"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    message_text: Mapped[Text] = mapped_column(Text)
+    message_text: Mapped[str] = mapped_column(Text)
     acknowledged_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
 class Homework(Base):
     __tablename__ = "homeworks"
@@ -183,12 +189,48 @@ class Homework(Base):
     content: Mapped[str] = mapped_column(Text)
     file_id: Mapped[str] = mapped_column(String(255), nullable=True)
     teacher_id: Mapped[int] = mapped_column(BigInteger)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
 class SystemSetting(Base):
     __tablename__ = "system_settings"
     key: Mapped[str] = mapped_column(String(50), primary_key=True)
     value: Mapped[str] = mapped_column(String(255))
+
+class AccessRequest(Base):
+    __tablename__ = "access_requests"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    role: Mapped[str] = mapped_column(String(20)) # teacher, parent, student
+    full_name: Mapped[str] = mapped_column(String(100))
+    phone: Mapped[str] = mapped_column(String(30))
+    details: Mapped[str] = mapped_column(Text)
+    student_match_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending") # pending, approved, rejected
+    reviewed_by: Mapped[int] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+class Appointment(Base):
+    __tablename__ = "appointments"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    parent_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    teacher_id: Mapped[int] = mapped_column(Integer, ForeignKey("teachers.id"), index=True)
+    preferred_time: Mapped[str] = mapped_column(String(100))
+    note: Mapped[str] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending") # pending, approved, rejected
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+
+class ScheduleItem(Base):
+    __tablename__ = "schedules"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    class_name: Mapped[str] = mapped_column(String(20), index=True)
+    schedule_text: Mapped[str] = mapped_column(Text)
+
+class CafeteriaMenu(Base):
+    __tablename__ = "cafeteria_menus"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[date] = mapped_column(Date, default=lambda: datetime.utcnow().date(), index=True)
+    menu_text: Mapped[str] = mapped_column(Text)
 
 async def init_db():
     async with engine.begin() as conn:
@@ -200,16 +242,16 @@ async def init_db():
 
 LOCALES = {
     "tr": {
-        "lang_select": "🌍 Lütfen bir dil seçiniz:",
+        "lang_select": "🌍 Lütfen bir dil seçiniz / Tilni tanlang / Select language:",
         "lang_changed": "Dil başarıyla güncellendi: 🇹🇷 Türkçe",
-        "welcome_guest": "🎓 *Okul Yönetim Sistemine Hoş Geldiniz.*\n\nLütfen okul idaresinin verdiği erişim kodunu yazınız:",
-        "auth_success": "✅ Giriş başarılı. Rolünüz: *{role}*",
+        "welcome_guest": "🎓 *Okul Yönetim Sistemine Hoş Geldiniz.*\n\nLütfen giriş yapmak için bir seçenek belirleyiniz veya doğrudan size verilen **erişim kodunu** yazınız:",
+        "auth_success": "✅ Giriş başarılı!\nHoş geldiniz: *{name}*\nRolünüz: *{role}*",
         "auth_failed": "❌ Geçersiz giriş kodu! Kalan deneme hakkınız: {remaining}",
         "auth_locked": "⛔ Güvenlik nedeniyle hesabınız 1 saat süreyle kilitlendi.",
-        "auth_blacklisted": "🚫 Hesabınız kalıcı olarak askıya alındı.",
+        "auth_blacklisted": "🚫 Hesabınız güvenlik nedeniyle kalıcı olarak askıya alındı.",
         "maintenance_mode": "⚠️ Sistem şu anda planlı bakım modundadır. Lütfen daha sonra tekrar deneyiniz.",
         "admin_title": "⚡ *Okul Yönetim Kokpiti (Admin)*",
-        "admin_stats": "📊 *Genel Durum:*\n• Toplam Sınıf: *{c_cnt}*\n• Toplam Öğrenci: *{s_cnt}*\n• Toplam Öğretmen: *{t_cnt}*\n• Tarih: *{date}*",
+        "admin_stats": "📊 *Genel Durum:*\n• Sınıflar: *{c_cnt}* | Öğrenciler: *{s_cnt}* | Öğretmenler: *{t_cnt}*\n• Bekleyen Talepler: *{req_cnt}* | Mazeretler: *{med_cnt}*\n• Tarih: *{date}*",
         "btn_add_student": "➕ Öğrenci Ekle",
         "btn_add_teacher": "➕ Öğretmen Ekle",
         "btn_classes": "🏫 Sınıflar & Öğrenciler",
@@ -217,16 +259,17 @@ LOCALES = {
         "btn_excel": "📥 Excel ile Yükle",
         "btn_cockpit": "📊 Sabah Kokpiti",
         "btn_pdf": "📄 Şifre Kartları (PDF)",
-        "btn_medical": "🏥 Mazeret Raporları ({count})",
+        "btn_medical": "🏥 Mazeretler ({count})",
+        "btn_requests": "🛎️ Erişim Talepleri ({count})",
         "btn_broadcast": "📢 Toplu Duyuru",
         "btn_maintenance_toggle": "🚨 Bakım Modu ({status})",
-        "btn_test_roles": "🔄 Rolleri Test Et",
+        "btn_cafeteria_edit": "🍲 Günün Menüsünü Güncelle",
         "btn_lang": "🌐 Dil Değiştir",
         "btn_back": "⬅️ Geri",
         "btn_main_menu": "🏠 Ana Menü",
         "btn_acknowledged": "✅ Okudum / Bilgilendirildim",
         "acknowledged_toast": "Onayınız kaydedildi.",
-        "no_classes_found": "⚠️ Henüz kayıtlı bir sınıf bulunmamaktadır. Aşağıdan öğrenci ekleyebilir veya Excel yükleyebilirsiniz.",
+        "no_classes_found": "⚠️ Henüz kayıtlı bir sınıf bulunmamaktadır.",
         "prompt_student_name": "👤 Öğrencinin Adını ve Soyadını yazınız:",
         "prompt_student_class": "🏫 Öğrencinin Sınıfını yazınız (Örn: `9-A`):",
         "prompt_student_no": "🔢 Öğrencinin Okul Numarasını yazınız (Örn: `101`):",
@@ -239,59 +282,110 @@ LOCALES = {
         "btn_del_student": "❌ Öğrenciyi Sil",
         "btn_student_grades": "📊 Notları & Devamsızlığı",
         "student_deleted": "🗑️ Öğrenci sistemden silindi.",
-        "codes_reset_done": "✅ Giriş kodları sıfırlandı ve yenilendi!\n\n• Yeni Öğrenci Kodu: `{st_code}`\n• Yeni Veli Kodu: `{pr_code}`",
-        "excel_info": "📥 *Excel ile Toplu Öğrenci Yükleme*\n\nLütfen `.xlsx` uzantılı dosyayı doğrudan sohbete gönderiniz.\nİlk satır başlıkları:\n`Ad Soyad` | `Sinif` | `Numara`\n\nÖrnek:\n`Ali Yılmaz` | `9-A` | `101`",
-        "excel_done": "✅ Excel işlendi! Eklenen öğrenci sayısı: *{count}*\nŞifreler ekteki dosyada oluşturuldu.",
-        "cockpit_report": "📊 *Sabah Kokpiti Özeti ({date})*\n\n🏫 Toplam Öğrenci: *{total}*\n✅ Gelen: *{present}*\n❌ Gelmeyen: *{absent}*\n\n⚠️ *Yoklama Girmeyen Sınıflar ({missing_cnt}):*\n{missing}",
-        "select_pdf_class": "📄 Şifre kartlarını PDF olarak indirmek istediğiniz sınıfı seçiniz:",
-        "pdf_ready": "📄 *{class_name}* sınıfı dağıtıma hazır şifre kartları ektedir.",
-        "pending_medical_title": "🏥 *Bekleyen Sağlık / Mazeret Raporları:*",
+        "codes_reset_done": "✅ Giriş kodları yenilendi!\n\n• Yeni Öğrenci: `{st_code}`\n• Yeni Veli: `{pr_code}`",
+        "excel_info": "📥 *Excel ile Toplu Öğrenci Yükleme*\n\nLütfen `.xlsx` dosyasını gönderiniz.\nBaşlıklar: `Ad Soyad` | `Sinif` | `Numara`",
+        "excel_done": "✅ Excel işlendi! Eklenen öğrenci: *{count}*\nŞifreler ekteki dosyada üretildi.",
+        "cockpit_report": "📊 *Sabah Kokpiti ({date})*\n\n🏫 Toplam: *{total}* | ✅ Gelen: *{present}* | ❌ Gelmeyen: *{absent}*\n\n⚠️ *Yoklama Almayan Sınıflar ({missing_cnt}):*\n{missing}",
+        "select_pdf_class": "📄 Şifre kartlarını indirmek istediğiniz sınıfı seçiniz:",
+        "pdf_ready": "📄 *{class_name}* şifre kartları ektedir.",
+        "pending_medical_title": "🏥 *Bekleyen Mazeret Raporları:*",
         "no_pending_medical": "✅ Bekleyen mazeret raporu bulunmamaktadır.",
-        "medical_approved": "✅ Mazeret raporu onaylandı. Öğrenci izinli sayıldı.",
-        "medical_rejected": "❌ Mazeret raporu reddedildi.",
-        "prompt_broadcast": "📢 Lütfen tüm kullanıcılara göndermek istediğiniz duyuru metnini yazınız:",
-        "broadcast_success": "📢 Duyuru *{count}* kullanıcıya başarıyla ulaştırıldı.",
-        "prompt_search_student": "🔍 Aramak istediğiniz öğrencinin adını veya numarasını yazınız:",
+        "medical_approved": "✅ Rapor onaylandı. Öğrenci izinli sayıldı.",
+        "medical_rejected": "❌ Rapor reddedildi.",
+        "prompt_broadcast": "📢 Göndermek istediğiniz duyuru metnini yazınız:",
+        "broadcast_success": "📢 Duyuru *{count}* kullanıcıya iletildi.",
+        "prompt_search_student": "🔍 Öğrenci adı veya numarası yazınız:",
         "search_no_results": "❌ Eşleşen öğrenci bulunamadı.",
         "search_results_title": "🔍 *Arama Sonuçları:*",
-        "menu_teacher": "👨‍🏫 *Öğretmen Paneli*\nBranş: *{subject}*",
+        "menu_teacher": "👨‍🏫 *Öğretmen Masası*\nÖğretmen: *{name}* ({subject})",
         "btn_attendance": "📋 Hızlı Yoklama",
         "btn_enter_grade": "📝 Not Girişi",
         "btn_homework_board": "📢 Ödev Panosu",
-        "attendance_intro": "📋 *{class_name} Yoklaması*\nHerkes 'Geldi' kabul edilir. Gelmeyenleri tıklayıp 'Gelmedi' yapın ve kaydedin:",
+        "btn_teacher_appointments": "🤝 Veli Randevuları ({count})",
+        "attendance_intro": "📋 *{class_name} Yoklaması*\nGelmeyenlerin üzerine tıklayıp kaydediniz:",
         "btn_save_att": "💾 Yoklamayı Kaydet",
         "att_saved": "✅ Yoklama kaydedildi. 15 dakikalık düzeltme süresi başladı.",
-        "prompt_grade_score": "Öğrenci: *{name}* ({class_name})\nLütfen notu giriniz (0-100):",
-        "prompt_grade_badge": "Değerlendirme rozetini seçiniz:",
-        "badge_praise": "🟢 Övgü / Başarı",
-        "badge_missing": "🟡 Eksik / Çalışmalı",
-        "badge_warning": "🔴 Disiplin / Uyarı",
-        "grade_saved_success": "✅ Not kaydedildi ve veliye bilgilendirme iletildi.",
-        "prompt_hw_class": "Ödevin gönderileceği sınıfı seçiniz:",
-        "prompt_hw_content": "Lütfen ödev açıklamasını metin olarak yazınız veya tahta fotoğrafı gönderiniz:",
-        "hw_sent_success": "📢 Ödev *{class_name}* sınıfındaki tüm öğrenci ve velilere ulaştırıldı.",
-        "menu_parent": "👨‍👩‍👧‍👦 *Veli Paneli*\nÖğrenci: *{name}* ({class_name})",
-        "btn_report_card": "📊 Durum Paneli",
+        "prompt_grade_score": "Öğrenci: *{name}* ({class_name})\nNotu giriniz (0-100):",
+        "prompt_grade_badge": "Değerlendirme rozeti seçiniz:",
+        "badge_praise": "🟢 Başarılı / Övgü",
+        "badge_missing": "🟡 Eksik / Tekrar",
+        "badge_warning": "🔴 Uyarı / Dikkat",
+        "grade_saved_success": "✅ Not kaydedildi ve veliye bildirildi.",
+        "prompt_hw_class": "Ödevin sınıfını seçiniz:",
+        "prompt_hw_content": "Ödev açıklamasını yazınız veya fotoğraf gönderiniz:",
+        "hw_sent_success": "📢 Ödev *{class_name}* sınıfına iletildi.",
+        "menu_parent": "👨‍👩‍👧‍👦 *Veli Masası*\nÖğrenci: *{name}* ({class_name})",
+        "btn_report_card": "📊 Durum Paneli (Karne)",
         "btn_switch_student": "🧑‍🎓 Öğrenci Değiştir",
         "btn_upload_medical": "🏥 Mazeret / Rapor Yükle",
-        "upload_med_prompt": "Lütfen sağlık raporu veya mazeret belgesinin fotoğrafını gönderiniz:",
-        "med_uploaded_success": "Rapor okul idaresine iletildi. İncelendiğinde bildirim alacaksınız.",
-        "student_switched_success": "Aktif öğrenci değiştirildi: *{name}* ({class_name})",
-        "menu_student": "🎓 *Öğrenci Paneli*\nSınıf: *{class_name}* | No: *{no}*",
+        "btn_book_appointment": "🤝 Öğretmen Randevusu",
+        "btn_view_schedule": "📅 Ders Programı",
+        "btn_view_cafeteria": "🍲 Günün Menüsü",
+        "upload_med_prompt": "Lütfen mazeret veya rapor belgesinin fotoğrafını gönderiniz:",
+        "med_uploaded_success": "Rapor okul idaresine iletildi.",
+        "student_switched_success": "Aktif öğrenci seçildi: *{name}* ({class_name})",
+        "menu_student": "🎓 *Öğrenci Masası*\nÖğrenci: *{name}* ({class_name} - No: {no})",
         "no_grades": "Henüz girilmiş bir ders notu bulunmamaktadır.",
-        "evening_briefing_header": "🌙 *GÜN SONU ÖZETİ (18:30)*\nÖğrenci: *{name}* ({class_name})\n\n📌 Bugünkü Devamsızlık: *{att_status}*\n📝 Bugün Girilen Notlar:\n{grades}"
+        "no_linked_student": "⚠️ Hesabınıza tanımlı bir öğrenci bulunamadı.",
+        "evening_briefing_header": "🌙 *GÜN SONU BÜLTENİ (18:30)*\nÖğrenci: *{name}* ({class_name})\n\n📌 Devamsızlık: *{att_status}*\n📝 Notlar:\n{grades}",
+        "logged_out": "🚪 Güvenli çıkış yapıldı. Tekrar giriş yapabilirsiniz.",
+        # Talep Sistemi (Request Access)
+        "btn_req_access": "📩 Şifre / Erişim Talep Et",
+        "req_role_select": "📩 *Erişim Talebi Başvurusu*\n\nLütfen kurumdaki rolünüzü seçiniz:",
+        "req_name_prompt": "👤 Lütfen Adınızı ve Soyadınızı yazınız:",
+        "req_phone_prompt": "📱 Lütfen iletişim telefon numaranızı yazınız (Örn: `05551234567`):",
+        "req_details_teacher": "📚 Öğretmenlik branşınızı yazınız (Örn: `Matematik`):",
+        "req_details_student": "🏫 Sınıfınızı ve Okul Numaranızı yazınız (Örn: `9-A / 101`):",
+        "req_details_parent": "🧑‍🎓 Öğrencinizin Adı Soyadı, Sınıfı ve Okul Numarasını yazınız (Örn: `Ali Yılmaz, 9-A, 101`):",
+        "req_sent_success": "✅ *Erişim Talebiniz İdareye İletildi!*\n\nBaşvurunuz incelendikten sonra onay ve erişim bildiriminiz Telegram üzerinden otomatik iletilecektir.",
+        "req_already_pending": "⚠️ Zaten incelenmekte olan bir başvurunuz bulunmaktadır. Lütfen yönetici onayını bekleyiniz.",
+        "req_cooldown": "⚠️ Önceki başvurunuz reddedilmiştir. Güvenlik gereği 24 saat sonra tekrar deneyebilirsiniz.",
+        "req_approved_user": "🎉 *Tebrikler! Okul Yönetimi Erişim Talebinizi Onayladı.*\n\nRolünüz: *{role}*\nArtık tüm menüleri kullanabilirsiniz.",
+        "req_rejected_user": "❌ *Erişim Talebiniz Okul İdaresi Tarafından Reddedildi.*\n\nLütfen okul yönetimi ile doğrudan iletişime geçiniz.",
+        "no_pending_requests": "✅ Bekleyen erişim talebi bulunmamaktadır.",
+        "pending_requests_title": "🛎️ *İncelenmeyi Bekleyen Erişim Talepleri:*",
+        # Randevu ve Menü
+        "select_teacher_appointment": "🤝 Görüşmek istediğiniz öğretmeni seçiniz:",
+        "prompt_appointment_note": "Lütfen görüşmek istediğiniz konu ve uygun olduğunuz zaman dilimini yazınız:",
+        "appointment_sent": "✅ Randevu talebiniz öğretmene iletildi.",
+        "appointment_approved_msg": "✅ Randevu talebiniz öğretmen tarafından kabul edildi!",
+        "appointment_rejected_msg": "❌ Öğretmen bu saatte müsait olmadığını bildirdi.",
+        "no_pending_appointments": "✅ Bekleyen randevu talebiniz bulunmamaktadır.",
+        "cafeteria_today_title": "🍲 *Bugünün Yemek Menüsü ({date}):*\n\n{content}",
+        "schedule_title": "📅 *{class_name} Sınıfı Ders Programı:*\n\n{content}",
+        "prompt_menu_update": "🍲 Lütfen bugünün yemek menüsünü yazınız:",
+        "menu_updated": "✅ Günün yemek menüsü güncellendi.",
+        # Reply Keyboard Alt Menü Butonları (4 Dilli Eşleştirme İçin)
+        "rk_admin_dash": "⚡ Yönetici Paneli",
+        "rk_cockpit": "📊 Sabah Kokpiti",
+        "rk_classes": "🏫 Sınıflar & Öğrenciler",
+        "rk_requests": "🛎️ Talepler & Onaylar",
+        "rk_attendance": "📋 Hızlı Yoklama",
+        "rk_grade": "📝 Not Girişi",
+        "rk_homework": "📢 Ödev Panosu",
+        "rk_appointments": "🤝 Veli Randevuları",
+        "rk_report": "📊 Durum Paneli (Karne)",
+        "rk_schedule": "📅 Ders Programı",
+        "rk_cafeteria": "🍲 Günün Menüsü",
+        "rk_switch_student": "🧑‍🎓 Öğrenci Değiştir",
+        "rk_upload_medical": "🏥 Mazeret / Rapor",
+        "rk_main_menu": "🏠 Ana Menü",
+        "rk_lang": "🌐 Dil Değiştir",
+        "rk_logout": "🚪 Çıkış Yap",
+        "rk_enter_code": "🔑 Şifre / Kod Gir",
+        "rk_req_access": "📩 Şifre / Erişim İste"
     },
     "ru": {
         "lang_select": "🌍 Пожалуйста, выберите язык:",
         "lang_changed": "Язык успешно изменен: 🇷🇺 Русский",
-        "welcome_guest": "🎓 *Добро пожаловать в систему управления школой.*\n\nВведите код доступа, выданный администрацией школы:",
-        "auth_success": "✅ Авторизация успешна. Ваша роль: *{role}*",
+        "welcome_guest": "🎓 *Добро пожаловать в систему управления школой.*\n\nВыберите действие или введите выданный **код доступа**:",
+        "auth_success": "✅ Авторизация успешна!\nДобро пожаловать: *{name}*\nВаша роль: *{role}*",
         "auth_failed": "❌ Неверный код доступа! Осталось попыток: {remaining}",
         "auth_locked": "⛔ Аккаунт заблокирован на 1 час из соображений безопасности.",
         "auth_blacklisted": "🚫 Ваш аккаунт заблокирован навсегда.",
         "maintenance_mode": "⚠️ В системе ведутся технические работы. Пожалуйста, попробуйте позже.",
         "admin_title": "⚡ *Панель управления школой (Администратор)*",
-        "admin_stats": "📊 *Общий статус:*\n• Всего классов: *{c_cnt}*\n• Всего учеников: *{s_cnt}*\n• Всего учителей: *{t_cnt}*\n• Дата: *{date}*",
+        "admin_stats": "📊 *Общий статус:*\n• Классы: *{c_cnt}* | Ученики: *{s_cnt}* | Учителя: *{t_cnt}*\n• Заявки: *{req_cnt}* | Справки: *{med_cnt}*\n• Дата: *{date}*",
         "btn_add_student": "➕ Добавить ученика",
         "btn_add_teacher": "➕ Добавить учителя",
         "btn_classes": "🏫 Классы и ученики",
@@ -299,81 +393,133 @@ LOCALES = {
         "btn_excel": "📥 Импорт из Excel",
         "btn_cockpit": "📊 Утренний статус",
         "btn_pdf": "📄 Карточки с кодами (PDF)",
-        "btn_medical": "🏥 Медицинские справки ({count})",
+        "btn_medical": "🏥 Справки ({count})",
+        "btn_requests": "🛎️ Заявки на доступ ({count})",
         "btn_broadcast": "📢 Рассылка объявления",
         "btn_maintenance_toggle": "🚨 Режим обслуживания ({status})",
-        "btn_test_roles": "🔄 Тестировать роли",
+        "btn_cafeteria_edit": "🍲 Обновить меню столовой",
         "btn_lang": "🌐 Сменить язык",
         "btn_back": "⬅️ Назад",
         "btn_main_menu": "🏠 Главное меню",
         "btn_acknowledged": "✅ Ознакомлен(а)",
         "acknowledged_toast": "Подтверждение принято.",
-        "no_classes_found": "⚠️ Пока не зарегистрировано ни одного класса. Добавьте ученика вручную или загрузите Excel.",
+        "no_classes_found": "⚠️ Пока не зарегистрировано ни одного класса.",
         "prompt_student_name": "👤 Введите Фамилию и Имя ученика:",
         "prompt_student_class": "🏫 Введите класс ученика (Например: `9-A`):",
         "prompt_student_no": "🔢 Введите номер ученика (Например: `101`):",
         "student_added_card": "✅ *Ученик успешно добавлен!*\n\n👤 ФИО: *{name}*\n🏫 Класс: *{class_name}* | №: *{no}*\n\n🔑 *Коды доступа:*\n• Код ученика: `{st_code}`\n• Код родителя: `{pr_code}`",
         "prompt_teacher_name": "👨‍🏫 Введите ФИО учителя:",
-        "prompt_teacher_subject": "📚 Введите предмет преподавания (Например: `Математика`):",
-        "teacher_added_card": "✅ *Учитель успешно зарегистрирован!*\n\n👤 ФИО: *{name}*\n📚 Предмет: *{subject}*\n\n🔑 *Код доступа учителя:*\n`{code}`",
+        "prompt_teacher_subject": "📚 Введите предмет (Например: `Математика`):",
+        "teacher_added_card": "✅ *Учитель зарегистрирован!*\n\n👤 ФИО: *{name}*\n📚 Предмет: *{subject}*\n\n🔑 *Код доступа:*\n`{code}`",
         "student_card": "👤 *Карточка ученика*\nФИО: *{name}*\nКласс: *{class_name}* | №: *{no}*\n\n🔑 *Статус кодов:*\n• Ученик: `{st_code}` ({st_status})\n• Родитель: `{pr_code}` ({pr_status})",
         "btn_reset_codes": "🔄 Сбросить коды",
         "btn_del_student": "❌ Удалить ученика",
         "btn_student_grades": "📊 Оценки и пропуски",
         "student_deleted": "🗑️ Ученик удален из системы.",
-        "codes_reset_done": "✅ Коды доступа обновлены!\n\n• Новый код ученика: `{st_code}`\n• Новый код родителя: `{pr_code}`",
-        "excel_info": "📥 *Массовый импорт учеников через Excel*\n\nОтправьте файл `.xlsx` прямо в этот чат.\nЗаголовки первой строки:\n`Ad Soyad` | `Sinif` | `Numara`\n\nПример:\n`Иван Иванов` | `9-A` | `101`",
-        "excel_done": "✅ Файл обработан! Добавлено учеников: *{count}*\nФайл с сгенерированными кодами прикреплен.",
-        "cockpit_report": "📊 *Утренняя сводка ({date})*\n\n🏫 Всего учеников: *{total}*\n✅ Присутствуют: *{present}*\n❌ Отсутствуют: *{absent}*\n\n⚠️ *Классы без переклички ({missing_cnt}):*\n{missing}",
-        "select_pdf_class": "📄 Выберите класс для скачивания карточек в PDF:",
-        "pdf_ready": "📄 Карточки с кодами доступа для класса *{class_name}* готовы к печати.",
+        "codes_reset_done": "✅ Коды обновлены!\n\n• Новый код ученика: `{st_code}`\n• Новый код родителя: `{pr_code}`",
+        "excel_info": "📥 *Импорт через Excel*\n\nОтправьте файл `.xlsx`.\nЗаголовки: `Ad Soyad` | `Sinif` | `Numara`",
+        "excel_done": "✅ Обработано! Добавлено учеников: *{count}*\nКоды прикреплены в файле.",
+        "cockpit_report": "📊 *Утренняя сводка ({date})*\n\n🏫 Всего: *{total}* | ✅ Есть: *{present}* | ❌ Нет: *{absent}*\n\n⚠️ *Классы без переклички ({missing_cnt}):*\n{missing}",
+        "select_pdf_class": "📄 Выберите класс для карточек:",
+        "pdf_ready": "📄 Карточки для *{class_name}* готовы.",
         "pending_medical_title": "🏥 *Справки на рассмотрении:*",
         "no_pending_medical": "✅ Нет справок, ожидающих проверки.",
-        "medical_approved": "✅ Справка одобрена. Пропуск засчитан по уважительной причине.",
+        "medical_approved": "✅ Справка одобрена.",
         "medical_rejected": "❌ Справка отклонена.",
-        "prompt_broadcast": "📢 Введите текст объявления для рассылки всем пользователям:",
+        "prompt_broadcast": "📢 Введите текст объявления:",
         "broadcast_success": "📢 Объявление доставлено пользователям: *{count}*.",
-        "prompt_search_student": "🔍 Введите фамилию или номер ученика для поиска:",
+        "prompt_search_student": "🔍 Введите фамилию или номер ученика:",
         "search_no_results": "❌ Ученик не найден.",
         "search_results_title": "🔍 *Результаты поиска:*",
-        "menu_teacher": "👨‍🏫 *Панель учителя*\nПредмет: *{subject}*",
+        "menu_teacher": "👨‍🏫 *Панель учителя*\nУчитель: *{name}* ({subject})",
         "btn_attendance": "📋 Быстрая перекличка",
         "btn_enter_grade": "📝 Выставить оценки",
         "btn_homework_board": "📢 Доска заданий",
-        "attendance_intro": "📋 *Перекличка класса {class_name}*\nВсе отмечены как 'Присутствует'. Нажмите на отсутствующих и сохраните:",
-        "btn_save_att": "💾 Сохранить перекличку",
-        "att_saved": "✅ Перекличка сохранена. Окно правок (15 мин) запущено.",
+        "btn_teacher_appointments": "🤝 Записи родителей ({count})",
+        "attendance_intro": "📋 *Перекличка {class_name}*\nОтметьте отсутствующих и сохраните:",
+        "btn_save_att": "💾 Сохранить",
+        "att_saved": "✅ Перекличка сохранена (правки 15 мин).",
         "prompt_grade_score": "Ученик: *{name}* ({class_name})\nВведите оценку (0-100):",
         "prompt_grade_badge": "Выберите категорию оценки:",
         "badge_praise": "🟢 Похвала / Успех",
         "badge_missing": "🟡 Пробел / Доработать",
         "badge_warning": "🔴 Замечание / Дисциплина",
-        "grade_saved_success": "✅ Оценка сохранена и отправлена родителю.",
-        "prompt_hw_class": "Выберите класс для отправки задания:",
+        "grade_saved_success": "✅ Оценка отправлена родителю.",
+        "prompt_hw_class": "Выберите класс для задания:",
         "prompt_hw_content": "Отправьте текст задания или фото доски:",
-        "hw_sent_success": "📢 Задание разослано классу *{class_name}*.",
+        "hw_sent_success": "📢 Задание отправлено классу *{class_name}*.",
         "menu_parent": "👨‍👩‍👧‍👦 *Панель родителя*\nУченик: *{name}* ({class_name})",
         "btn_report_card": "📊 Табель успеваемости",
-        "btn_switch_student": "🧑‍🎓 Выбрать ученика",
+        "btn_switch_student": "🧑‍🎓 Сменить ученика",
         "btn_upload_medical": "🏥 Отправить справку",
-        "upload_med_prompt": "Пожалуйста, отправьте фото справки или заявления:",
+        "btn_book_appointment": "🤝 Запись к учителю",
+        "btn_view_schedule": "📅 Расписание уроков",
+        "btn_view_cafeteria": "🍲 Меню столовой",
+        "upload_med_prompt": "Пожалуйста, отправьте фото справки:",
         "med_uploaded_success": "Справка отправлена администрации.",
         "student_switched_success": "Выбран ученик: *{name}* ({class_name})",
-        "menu_student": "🎓 *Панель ученика*\nКласс: *{class_name}* | №: *{no}*",
+        "menu_student": "🎓 *Панель ученика*\nУченик: *{name}* ({class_name} - №: {no})",
         "no_grades": "Оценки пока не выставлены.",
-        "evening_briefing_header": "🌙 *ИТОГИ ДНЯ (18:30)*\nУченик: *{name}* ({class_name})\n\n📌 Посещаемость сегодня: *{att_status}*\n📝 Оценки сегодня:\n{grades}"
+        "no_linked_student": "⚠️ Ученик не найден в системе.",
+        "evening_briefing_header": "🌙 *ИТОГИ ДНЯ (18:30)*\nУченик: *{name}* ({class_name})\n\n📌 Посещаемость: *{att_status}*\n📝 Оценки:\n{grades}",
+        "logged_out": "🚪 Вы успешно вышли из системы.",
+        # Talep Sistemi
+        "btn_req_access": "📩 Запросить доступ",
+        "req_role_select": "📩 *Заявка на доступ к системе*\n\nВыберите вашу роль в школе:",
+        "req_name_prompt": "👤 Введите Фамилию и Имя:",
+        "req_phone_prompt": "📱 Введите номер телефона (Например: `+79991234567`):",
+        "req_details_teacher": "📚 Введите предмет преподавания (Например: `Математика`):",
+        "req_details_student": "🏫 Введите класс и номер (Например: `9-A / 101`):",
+        "req_details_parent": "🧑‍🎓 Введите ФИО ребенка, класс и номер (Например: `Иван Иванов, 9-A, 101`):",
+        "req_sent_success": "✅ *Заявка отправлена администрации!*\n\nПосле проверки вам придет уведомление с доступом в этот чат.",
+        "req_already_pending": "⚠️ У вас уже есть активная заявка на рассмотрении. Ожидайте подтверждения.",
+        "req_cooldown": "⚠️ Предыдущая заявка была отклонена. Повторная отправка доступна через 24 часа.",
+        "req_approved_user": "🎉 *Поздравляем! Администрация одобрила доступ.*\n\nВаша роль: *{role}*\nВсе функции открыты.",
+        "req_rejected_user": "❌ *Администрация отклонила заявку на доступ.*\n\nОбратитесь к руководству школы напрямую.",
+        "no_pending_requests": "✅ Нет заявок, ожидающих рассмотрения.",
+        "pending_requests_title": "🛎️ *Заявки на регистрацию в системе:*",
+        # Randevu ve Menü
+        "select_teacher_appointment": "🤝 Выберите учителя для записи:",
+        "prompt_appointment_note": "Укажите тему встречи и удобное для вас время:",
+        "appointment_sent": "✅ Заявка на встречу отправлена учителю.",
+        "appointment_approved_msg": "✅ Учитель подтвердил встречу!",
+        "appointment_rejected_msg": "❌ Учитель сообщил, что не сможет в это время.",
+        "no_pending_appointments": "✅ Нет записей, ожидающих ответа.",
+        "cafeteria_today_title": "🍲 *Меню школьной столовой ({date}):*\n\n{content}",
+        "schedule_title": "📅 *Расписание класса {class_name}:*\n\n{content}",
+        "prompt_menu_update": "🍲 Введите меню школьной столовой на сегодня:",
+        "menu_updated": "✅ Меню столовой успешно обновлено.",
+        # Reply Keyboard
+        "rk_admin_dash": "⚡ Панель управления",
+        "rk_cockpit": "📊 Утренний статус",
+        "rk_classes": "🏫 Классы и ученики",
+        "rk_requests": "🛎️ Заявки и справки",
+        "rk_attendance": "📋 Быстрая перекличка",
+        "rk_grade": "📝 Выставить оценки",
+        "rk_homework": "📢 Доска заданий",
+        "rk_appointments": "🤝 Записи родителей",
+        "rk_report": "📊 Табель успеваемости",
+        "rk_schedule": "📅 Расписание уроков",
+        "rk_cafeteria": "🍲 Меню столовой",
+        "rk_switch_student": "🧑‍🎓 Сменить ученика",
+        "rk_upload_medical": "🏥 Отправить справку",
+        "rk_main_menu": "🏠 Главное меню",
+        "rk_lang": "🌐 Сменить язык",
+        "rk_logout": "🚪 Выйти",
+        "rk_enter_code": "🔑 Ввести код доступа",
+        "rk_req_access": "📩 Запросить доступ"
     },
     "uz": {
         "lang_select": "🌍 Iltimos, tilni tanlang:",
         "lang_changed": "Til muvaffaqiyatli yangilandi: 🇺🇿 O'zbekcha",
-        "welcome_guest": "🎓 *Maktab boshqaruv tizimiga xush kelibsiz.*\n\nIltimos, maktab ma'muriyati bergan maxsus kodni kiriting:",
-        "auth_success": "✅ Kirish muvaffaqiyatli. Sizning rolingiz: *{role}*",
+        "welcome_guest": "🎓 *Maktab boshqaruv tizimiga xush kelibsiz.*\n\nIltimos, amalni tanlang yoki berilgan **kirish kodini** yozing:",
+        "auth_success": "✅ Kirish muvaffaqiyatli!\nXush kelibsiz: *{name}*\nSizning rolingiz: *{role}*",
         "auth_failed": "❌ Noto'g'ri kod! Qolgan urinishlar soni: {remaining}",
         "auth_locked": "⛔ Xavfsizlik sababli hisobingiz 1 soatga bloklandi.",
         "auth_blacklisted": "🚫 Hisobingiz butunlay to'xtatildi.",
         "maintenance_mode": "⚠️ Tizimda rejaviy texnik ishlar olib borilmoqda. Iltimos, keyinroq urinib ko'ring.",
         "admin_title": "⚡ *Maktab boshqaruv markazi (Admin)*",
-        "admin_stats": "📊 *Umumiy holat:*\n• Jami sinflar: *{c_cnt}*\n• Jami o'quvchilar: *{s_cnt}*\n• Jami o'qituvchilar: *{t_cnt}*\n• Sana: *{date}*",
+        "admin_stats": "📊 *Umumiy holat:*\n• Sinflar: *{c_cnt}* | O'quvchilar: *{s_cnt}* | O'qituvchilar: *{t_cnt}*\n• Arizalar: *{req_cnt}* | Ma'lumotnomalar: *{med_cnt}*\n• Sana: *{date}*",
         "btn_add_student": "➕ O'quvchi qo'shish",
         "btn_add_teacher": "➕ O'qituvchi qo'shish",
         "btn_classes": "🏫 Sinflar va o'quvchilar",
@@ -381,81 +527,133 @@ LOCALES = {
         "btn_excel": "📥 Excel orqali yuklash",
         "btn_cockpit": "📊 Tonggi hisobot",
         "btn_pdf": "📄 Parol kartalari (PDF)",
-        "btn_medical": "🏥 Tibbiy ma'lumotnomalar ({count})",
+        "btn_medical": "🏥 Ma'lumotnomalar ({count})",
+        "btn_requests": "🛎️ Kirish arizalari ({count})",
         "btn_broadcast": "📢 Ommaviy e'lon",
         "btn_maintenance_toggle": "🚨 Ta'mir rejimi ({status})",
-        "btn_test_roles": "🔄 Rollarni sinash",
+        "btn_cafeteria_edit": "🍲 Oshxona menyusini yangilash",
         "btn_lang": "🌐 Tilni o'zgartirish",
         "btn_back": "⬅️ Orqaga",
         "btn_main_menu": "🏠 Asosiy menyu",
         "btn_acknowledged": "✅ O'qidim / Xabardorman",
         "acknowledged_toast": "Tasdiqlaganingiz saqlandi.",
-        "no_classes_found": "⚠️ Hozircha birorta sinf ro'yxatdan o'tmagan. O'quvchi qo'shish yoki Excel yuklash orqali boshlashingiz mumkin.",
+        "no_classes_found": "⚠️ Hozircha birorta sinf mavjud emas.",
         "prompt_student_name": "👤 O'quvchining Familiyasi va Ismini kiriting:",
         "prompt_student_class": "🏫 O'quvchining sinfini kiriting (Masalan: `9-A`):",
         "prompt_student_no": "🔢 O'quvchining raqamini kiriting (Masalan: `101`):",
-        "student_added_card": "✅ *O'quvchi muvaffaqiyatli saqlandi!*\n\n👤 Ism: *{name}*\n🏫 Sinf: *{class_name}* | №: *{no}*\n\n🔑 *Kirish parollari:*\n• O'quvchi kodi: `{st_code}`\n• Ota-ona kodi: `{pr_code}`",
+        "student_added_card": "✅ *O'quvchi saqlandi!*\n\n👤 Ism: *{name}*\n🏫 Sinf: *{class_name}* | №: *{no}*\n\n🔑 *Kodlar:*\n• O'quvchi: `{st_code}`\n• Ota-ona: `{pr_code}`",
         "prompt_teacher_name": "👨‍🏫 O'qituvchining Familiyasi va Ismini kiriting:",
-        "prompt_teacher_subject": "📚 O'qituvchining fanini kiriting (Masalan: `Matematika`):",
-        "teacher_added_card": "✅ *O'qituvchi muvaffaqiyatli saqlandi!*\n\n👤 Ism: *{name}*\n📚 Fan: *{subject}*\n\n🔑 *O'qituvchi kodi:*\n`{code}`",
-        "student_card": "👤 *O'quvchi kartasi*\nF.I.SH: *{name}*\nSinf: *{class_name}* | №: *{no}*\n\n🔑 *Kodlar holati:*\n• O'quvchi: `{st_code}` ({st_status})\n• Ota-ona: `{pr_code}` ({pr_status})",
+        "prompt_teacher_subject": "📚 Fanni kiriting (Masalan: `Matematika`):",
+        "teacher_added_card": "✅ *O'qituvchi saqlandi!*\n\n👤 Ism: *{name}*\n📚 Fan: *{subject}*\n\n🔑 *O'qituvchi kodi:*\n`{code}`",
+        "student_card": "👤 *O'quvchi kartasi*\nF.I.SH: *{name}*\nSinf: *{class_name}* | №: *{no}*\n\n🔑 *Kodlar:*\n• O'quvchi: `{st_code}` ({st_status})\n• Ota-ona: `{pr_code}` ({pr_status})",
         "btn_reset_codes": "🔄 Kodlarni yangilash",
         "btn_del_student": "❌ O'quvchini o'chirish",
         "btn_student_grades": "📊 Baholari va davomati",
         "student_deleted": "🗑️ O'quvchi tizimdan o'chirildi.",
-        "codes_reset_done": "✅ Kodlar muvaffaqiyatli yangilandi!\n\n• Yangi O'quvchi kodi: `{st_code}`\n• Yangi Ota-ona kodi: `{pr_code}`",
-        "excel_info": "📥 *Excel orqali o'quvchilarni yuklash*\n\nIltimos, `.xlsx` faylini to'g'ridan-to'g'ri yuboring.\nBirinchi qator ustunlari:\n`Ad Soyad` | `Sinif` | `Numara`\n\nMisol:\n`Ali Valiyev` | `9-A` | `101`",
-        "excel_done": "✅ Excel qabul qilindi! Qo'shilgan o'quvchilar: *{count}*\nParollar biriktirilgan faylda shakllantirildi.",
-        "cockpit_report": "📊 *Tonggi hisobot ({date})*\n\n🏫 Jami o'quvchilar: *{total}*\n✅ Kelganlar: *{present}*\n❌ Kelmaganlar: *{absent}*\n\n⚠️ *Davomat olinmagan sinflar ({missing_cnt}):*\n{missing}",
-        "select_pdf_class": "📄 Parol kartalarini PDF sifatida yuklab olish uchun sinfni tanlang:",
-        "pdf_ready": "📄 *{class_name}* sinfi uchun tarqatishga tayyor parol kartalari (PDF) biriktirildi.",
+        "codes_reset_done": "✅ Kodlar yangilandi!\n\n• Yangi O'quvchi: `{st_code}`\n• Yangi Ota-ona: `{pr_code}`",
+        "excel_info": "📥 *Excel orqali yuklash*\n\n`.xlsx` faylini yuboring.\nUstunlar: `Ad Soyad` | `Sinif` | `Numara`",
+        "excel_done": "✅ Qabul qilindi! O'quvchilar: *{count}*\nParollar biriktirilgan faylda berildi.",
+        "cockpit_report": "📊 *Tonggi hisobot ({date})*\n\n🏫 Jami: *{total}* | ✅ Kelgan: *{present}* | ❌ Kelmagan: *{absent}*\n\n⚠️ *Davomat olinmagan ({missing_cnt}):*\n{missing}",
+        "select_pdf_class": "📄 Parol kartalari uchun sinfni tanlang:",
+        "pdf_ready": "📄 *{class_name}* kartalari tayyorlandi.",
         "pending_medical_title": "🏥 *Ko'rib chiqilishi kerak bo'lgan ma'lumotnomalar:*",
         "no_pending_medical": "✅ Kutilayotgan ma'lumotnomalar mavjud emas.",
-        "medical_approved": "✅ Ma'lumotnoma tasdiqlandi. O'quvchi sababli deb belgilandi.",
+        "medical_approved": "✅ Ma'lumotnoma tasdiqlandi.",
         "medical_rejected": "❌ Ma'lumotnoma rad etildi.",
-        "prompt_broadcast": "📢 Barcha foydalanuvchilarga yubormoqchi bo'lgan e'loningizni yozing:",
-        "broadcast_success": "📢 E'lon *{count}* ta foydalanuvchiga muvaffaqiyatli yetkazildi.",
-        "prompt_search_student": "🔍 Qidirilayotgan o'quvchining ismi yoki raqamini kiriting:",
-        "search_no_results": "❌ Mos keluvchi o'quvchi topilmadi.",
+        "prompt_broadcast": "📢 E'lon matnini yozing:",
+        "broadcast_success": "📢 E'lon *{count}* ta foydalanuvchiga yetkazildi.",
+        "prompt_search_student": "🔍 Ism yoki raqam kiriting:",
+        "search_no_results": "❌ O'quvchi topilmadi.",
         "search_results_title": "🔍 *Qidiruv natijalari:*",
-        "menu_teacher": "👨‍🏫 *O'qituvchi paneli*\nFan: *{subject}*",
+        "menu_teacher": "👨‍🏫 *O'qituvchi paneli*\nO'qituvchi: *{name}* ({subject})",
         "btn_attendance": "📋 Tezkor davomat",
         "btn_enter_grade": "📝 Baho qo'yish",
         "btn_homework_board": "📢 Vazifalar paneli",
-        "attendance_intro": "📋 *{class_name} sinfi davomati*\nHamma 'Keldi' deb belgilangan. Kelmaganlarni tanlab saqlang:",
-        "btn_save_att": "💾 Davomatni saqlash",
-        "att_saved": "✅ Davomat saqlandi. 15 daqiqalik tuzatish vaqti boshlandi.",
+        "btn_teacher_appointments": "🤝 Ota-onalar uchrashuvi ({count})",
+        "attendance_intro": "📋 *{class_name} davomati*\nKelmaganlarni belgilab saqlang:",
+        "btn_save_att": "💾 Saqlash",
+        "att_saved": "✅ Davomat saqlandi (15 daqiqa tuzatish vaqti).",
         "prompt_grade_score": "O'quvchi: *{name}* ({class_name})\nBahoni kiriting (0-100):",
-        "prompt_grade_badge": "Baholash toifasini tanlang:",
+        "prompt_grade_badge": "Toifani tanlang:",
         "badge_praise": "🟢 Maqtov / Muvaffaqiyat",
-        "badge_missing": "🟡 Kamchilik / O'rganishi kerak",
+        "badge_missing": "🟡 Kamchilik / O'rganish",
         "badge_warning": "🔴 Intizom / Ogohlantirish",
-        "grade_saved_success": "✅ Baho saqlandi va ota-onaga xabar yetkazildi.",
-        "prompt_hw_class": "Vazifa yuboriladigan sinfni tanlang:",
+        "grade_saved_success": "✅ Baho saqlandi va ota-onaga yuborildi.",
+        "prompt_hw_class": "Vazifa sinfini tanlang:",
         "prompt_hw_content": "Vazifa matnini yozing yoki doska rasmini yuboring:",
-        "hw_sent_success": "📢 Vazifa *{class_name}* sinfiga muvaffaqiyatli yuborildi.",
+        "hw_sent_success": "📢 Vazifa *{class_name}* sinfiga yuborildi.",
         "menu_parent": "👨‍👩‍👧‍👦 *Ota-ona paneli*\nO'quvchi: *{name}* ({class_name})",
-        "btn_report_card": "📊 Holat paneli",
+        "btn_report_card": "📊 Holat paneli (Kundalik)",
         "btn_switch_student": "🧑‍🎓 O'quvchini tanlash",
         "btn_upload_medical": "🏥 Ma'lumotnoma yuborish",
-        "upload_med_prompt": "Iltimos, ma'lumotnoma yoki ariza rasmini yuboring:",
-        "med_uploaded_success": "Ma'lumotnoma maktab ma'muriyatiga yuborildi.",
-        "student_switched_success": "Faol o'quvchi tanlandi: *{name}* ({class_name})",
-        "menu_student": "🎓 *O'quvchi paneli*\nSinf: *{class_name}* | №: *{no}*",
+        "btn_book_appointment": "🤝 O'qituvchi bilan uchrashuv",
+        "btn_view_schedule": "📅 Dars jadvali",
+        "btn_view_cafeteria": "🍲 Bugungi oshxona menyusi",
+        "upload_med_prompt": "Iltimos, ma'lumotnoma rasmini yuboring:",
+        "med_uploaded_success": "Ma'lumotnoma ma'muriyatga yuborildi.",
+        "student_switched_success": "Tanlangan o'quvchi: *{name}* ({class_name})",
+        "menu_student": "🎓 *O'quvchi paneli*\nO'quvchi: *{name}* ({class_name} - №: {no})",
         "no_grades": "Hozircha baholar mavjud emas.",
-        "evening_briefing_header": "🌙 *KUNLIK YAKUNIY HISOBOT (18:30)*\nO'quvchi: *{name}* ({class_name})\n\n📌 Bugungi davomat: *{att_status}*\n📝 Bugun qo'yilgan baholar:\n{grades}"
+        "no_linked_student": "⚠️ Sizga biriktirilgan o'quvchi topilmadi.",
+        "evening_briefing_header": "🌙 *KUNLIK YAKUNIY HISOBOT (18:30)*\nO'quvchi: *{name}* ({class_name})\n\n📌 Davomat: *{att_status}*\n📝 Baholar:\n{grades}",
+        "logged_out": "🚪 Tizimdan chiqildi.",
+        # Talep Sistemi
+        "btn_req_access": "📩 Ruxsat / Parol so'rash",
+        "req_role_select": "📩 *Tizimga kirish uchun ariza*\n\nIltimos, maktabdagi rolingizni tanlang:",
+        "req_name_prompt": "👤 Familiyangiz va Ismingizni kiriting:",
+        "req_phone_prompt": "📱 Telefon raqamingizni kiriting (Masalan: `+998901234567`):",
+        "req_details_teacher": "📚 O'qitadigan faningizni yozing (Masalan: `Matematika`):",
+        "req_details_student": "🏫 Sinfingiz va raqamingizni yozing (Masalan: `9-A / 101`):",
+        "req_details_parent": "🧑‍🎓 Farzandingizning F.I.SH, sinfi va raqamini yozing (Masalan: `Ali Valiyev, 9-A, 101`):",
+        "req_sent_success": "✅ *Arizangiz maktab ma'muriyatiga yuborildi!*\n\nTasdiqlangandan so'ng Telegram orqali xabarnoma olasiz.",
+        "req_already_pending": "⚠️ Sizda allaqachon ko'rib chiqilayotgan ariza mavjud. Iltimos, kuting.",
+        "req_cooldown": "⚠️ Oldingi arizangiz rad etilgan. 24 soatdan so'ng qayta ariza topshirishingiz mumkin.",
+        "req_approved_user": "🎉 *Tabriklaymiz! Maktab ma'muriyati arizangizni tasdiqladi.*\n\nRolingiz: *{role}*\nBarcha xizmatlar ochildi.",
+        "req_rejected_user": "❌ *Arizangiz maktab ma'muriyati tomonidan rad etildi.*\n\nIltimos, maktab bilan to'g'ridan-to'g'ri bog'laning.",
+        "no_pending_requests": "✅ Kutilayotgan arizalar mavjud emas.",
+        "pending_requests_title": "🛎️ *Ko'rib chiqilishi kerak bo'lgan arizalar:*",
+        # Randevu ve Menü
+        "select_teacher_appointment": "🤝 Uchrashmoqchi bo'lgan o'qituvchini tanlang:",
+        "prompt_appointment_note": "Uchrashuv mavzusi va o'zingizga qulay vaqtni yozing:",
+        "appointment_sent": "✅ Uchrashuv taklifi o'qituvchiga yuborildi.",
+        "appointment_approved_msg": "✅ O'qituvchi uchrashuvni qabul qildi!",
+        "appointment_rejected_msg": "❌ O'qituvchi bu vaqtda bo'sh emasligini bildirdi.",
+        "no_pending_appointments": "✅ Kutilayotgan uchrashuvlar mavjud emas.",
+        "cafeteria_today_title": "🍲 *Bugungi oshxona menyusi ({date}):*\n\n{content}",
+        "schedule_title": "📅 *{class_name} sinfi dars jadvali:*\n\n{content}",
+        "prompt_menu_update": "🍲 Bugungi oshxona menyusini kiriting:",
+        "menu_updated": "✅ Oshxona menyusi muvaffaqiyatli yangilandi.",
+        # Reply Keyboard
+        "rk_admin_dash": "⚡ Boshqaruv paneli",
+        "rk_cockpit": "📊 Tonggi hisobot",
+        "rk_classes": "🏫 Sinflar va o'quvchilar",
+        "rk_requests": "🛎️ Arizalar va arizachilar",
+        "rk_attendance": "📋 Tezkor davomat",
+        "rk_grade": "📝 Baho qo'yish",
+        "rk_homework": "📢 Vazifalar paneli",
+        "rk_appointments": "🤝 Ota-onalar uchrashuvi",
+        "rk_report": "📊 Holat paneli",
+        "rk_schedule": "📅 Dars jadvali",
+        "rk_cafeteria": "🍲 Oshxona menyusi",
+        "rk_switch_student": "🧑‍🎓 O'quvchini almashtirish",
+        "rk_upload_medical": "🏥 Ma'lumotnoma",
+        "rk_main_menu": "🏠 Asosiy menyu",
+        "rk_lang": "🌐 Tilni o'zgartirish",
+        "rk_logout": "🚪 Chiqish",
+        "rk_enter_code": "🔑 Kod kiritish",
+        "rk_req_access": "📩 Ruxsat so'rash"
     },
     "en": {
         "lang_select": "🌍 Please select your language:",
         "lang_changed": "Language successfully updated: 🇬🇧 English",
-        "welcome_guest": "🎓 *Welcome to School Management Ecosystem.*\n\nPlease enter the access code provided by the administration:",
-        "auth_success": "✅ Authentication successful. Your role: *{role}*",
+        "welcome_guest": "🎓 *Welcome to School Management Ecosystem.*\n\nPlease choose an action or enter your provided **access code**:",
+        "auth_success": "✅ Authentication successful!\nWelcome: *{name}*\nYour role: *{role}*",
         "auth_failed": "❌ Invalid access code! Remaining attempts: {remaining}",
         "auth_locked": "⛔ Account locked for 1 hour due to security restrictions.",
         "auth_blacklisted": "🚫 Account has been permanently suspended.",
         "maintenance_mode": "⚠️ The system is currently under maintenance. Please try again later.",
         "admin_title": "⚡ *School Administration Cockpit (Admin)*",
-        "admin_stats": "📊 *General Status:*\n• Total Classes: *{c_cnt}*\n• Total Students: *{s_cnt}*\n• Total Teachers: *{t_cnt}*\n• Date: *{date}*",
+        "admin_stats": "📊 *General Status:*\n• Classes: *{c_cnt}* | Students: *{s_cnt}* | Teachers: *{t_cnt}*\n• Requests: *{req_cnt}* | Medicals: *{med_cnt}*\n• Date: *{date}*",
         "btn_add_student": "➕ Add Student",
         "btn_add_teacher": "➕ Add Teacher",
         "btn_classes": "🏫 Classes & Students",
@@ -463,69 +661,121 @@ LOCALES = {
         "btn_excel": "📥 Import via Excel",
         "btn_cockpit": "📊 Morning Cockpit",
         "btn_pdf": "📄 Password Cards (PDF)",
-        "btn_medical": "🏥 Medical Reports ({count})",
+        "btn_medical": "🏥 Medicals ({count})",
+        "btn_requests": "🛎️ Access Requests ({count})",
         "btn_broadcast": "📢 Broadcast Notice",
         "btn_maintenance_toggle": "🚨 Maintenance ({status})",
-        "btn_test_roles": "🔄 Test Roles",
+        "btn_cafeteria_edit": "🍲 Update Cafeteria Menu",
         "btn_lang": "🌐 Change Language",
         "btn_back": "⬅️ Back",
         "btn_main_menu": "🏠 Main Menu",
         "btn_acknowledged": "✅ Read / Acknowledged",
         "acknowledged_toast": "Confirmation recorded.",
-        "no_classes_found": "⚠️ No classes registered yet. You can add a student manually or upload an Excel file.",
+        "no_classes_found": "⚠️ No classes registered yet.",
         "prompt_student_name": "👤 Enter Student Full Name:",
         "prompt_student_class": "🏫 Enter Student Class (e.g. `9-A`):",
         "prompt_student_no": "🔢 Enter Student Roll Number (e.g. `101`):",
         "student_added_card": "✅ *Student Added Successfully!*\n\n👤 Name: *{name}*\n🏫 Class: *{class_name}* | Roll: *{no}*\n\n🔑 *Access Codes:*\n• Student Code: `{st_code}`\n• Parent Code: `{pr_code}`",
         "prompt_teacher_name": "👨‍🏫 Enter Teacher Full Name:",
         "prompt_teacher_subject": "📚 Enter Teaching Subject (e.g. `Mathematics`):",
-        "teacher_added_card": "✅ *Teacher Registered Successfully!*\n\n👤 Name: *{name}*\n📚 Subject: *{subject}*\n\n🔑 *Teacher Access Code:*\n`{code}`",
+        "teacher_added_card": "✅ *Teacher Registered!*\n\n👤 Name: *{name}*\n📚 Subject: *{subject}*\n\n🔑 *Access Code:*\n`{code}`",
         "student_card": "👤 *Student Card*\nName: *{name}*\nClass: *{class_name}* | Roll: *{no}*\n\n🔑 *Code Status:*\n• Student: `{st_code}` ({st_status})\n• Parent: `{pr_code}` ({pr_status})",
         "btn_reset_codes": "🔄 Reset Codes",
         "btn_del_student": "❌ Delete Student",
         "btn_student_grades": "📊 Grades & Absences",
         "student_deleted": "🗑️ Student removed from system.",
-        "codes_reset_done": "✅ Access codes regenerated!\n\n• New Student Code: `{st_code}`\n• New Parent Code: `{pr_code}`",
-        "excel_info": "📥 *Batch Student Import via Excel*\n\nPlease send a `.xlsx` spreadsheet directly to this chat.\nFirst row headers:\n`Ad Soyad` | `Sinif` | `Numara`\n\nExample:\n`John Doe` | `9-A` | `101`",
-        "excel_done": "✅ Excel processed! Added students: *{count}*\nGenerated credentials attached.",
-        "cockpit_report": "📊 *Morning Briefing ({date})*\n\n🏫 Total Students: *{total}*\n✅ Present: *{present}*\n❌ Absent: *{absent}*\n\n⚠️ *Pending Attendance Classes ({missing_cnt}):*\n{missing}",
-        "select_pdf_class": "📄 Select a class to download printable password cards:",
-        "pdf_ready": "📄 Printable password cards for class *{class_name}* attached.",
+        "codes_reset_done": "✅ Credentials regenerated!\n\n• Student: `{st_code}`\n• Parent: `{pr_code}`",
+        "excel_info": "📥 *Import via Excel*\n\nSend a `.xlsx` spreadsheet.\nHeaders: `Ad Soyad` | `Sinif` | `Numara`",
+        "excel_done": "✅ Processed! Added students: *{count}*\nCredentials attached.",
+        "cockpit_report": "📊 *Morning Briefing ({date})*\n\n🏫 Total: *{total}* | ✅ Present: *{present}* | ❌ Absent: *{absent}*\n\n⚠️ *Pending Attendance Classes ({missing_cnt}):*\n{missing}",
+        "select_pdf_class": "📄 Select class for cards:",
+        "pdf_ready": "📄 Printable cards for *{class_name}* ready.",
         "pending_medical_title": "🏥 *Pending Medical Reports:*",
         "no_pending_medical": "✅ No pending medical excuses.",
-        "medical_approved": "✅ Medical excuse approved. Student marked excused.",
+        "medical_approved": "✅ Medical excuse approved.",
         "medical_rejected": "❌ Medical excuse rejected.",
-        "prompt_broadcast": "📢 Enter announcement text to broadcast to all users:",
-        "broadcast_success": "📢 Broadcast dispatched to *{count}* users.",
-        "prompt_search_student": "🔍 Enter student name or roll number to search:",
+        "prompt_broadcast": "📢 Enter announcement text:",
+        "broadcast_success": "📢 Dispatched to *{count}* users.",
+        "prompt_search_student": "🔍 Enter student name or roll number:",
         "search_no_results": "❌ No student found.",
         "search_results_title": "🔍 *Search Results:*",
-        "menu_teacher": "👨‍🏫 *Teacher Dashboard*\nSubject: *{subject}*",
+        "menu_teacher": "👨‍🏫 *Teacher Dashboard*\nTeacher: *{name}* ({subject})",
         "btn_attendance": "📋 Fast Attendance",
         "btn_enter_grade": "📝 Grade Book",
         "btn_homework_board": "📢 Homework Board",
-        "attendance_intro": "📋 *Attendance: Class {class_name}*\nAll marked Present. Tap absent students and save:",
+        "btn_teacher_appointments": "🤝 Parent Meetings ({count})",
+        "attendance_intro": "📋 *Attendance: {class_name}*\nTap absent students and save:",
         "btn_save_att": "💾 Save Attendance",
-        "att_saved": "✅ Attendance recorded. 15-minute edit window started.",
+        "att_saved": "✅ Recorded (15-min edit window started).",
         "prompt_grade_score": "Student: *{name}* ({class_name})\nEnter score (0-100):",
         "prompt_grade_badge": "Select performance badge:",
         "badge_praise": "🟢 Praise / Achievement",
         "badge_missing": "🟡 Missing / Needs Work",
         "badge_warning": "🔴 Discipline / Warning",
-        "grade_saved_success": "✅ Grade recorded and sent to parent.",
+        "grade_saved_success": "✅ Grade sent to parent.",
         "prompt_hw_class": "Select class for homework:",
-        "prompt_hw_content": "Provide homework description or send blackboard photo:",
-        "hw_sent_success": "📢 Homework dispatched to class *{class_name}*.",
+        "prompt_hw_content": "Provide description or send blackboard photo:",
+        "hw_sent_success": "📢 Homework dispatched to *{class_name}*.",
         "menu_parent": "👨‍👩‍👧‍👦 *Parent Dashboard*\nStudent: *{name}* ({class_name})",
-        "btn_report_card": "📊 Overview",
+        "btn_report_card": "📊 Report Card",
         "btn_switch_student": "🧑‍🎓 Switch Student",
         "btn_upload_medical": "🏥 Submit Medical Note",
-        "upload_med_prompt": "Please send a photo of the medical note or doctor statement:",
+        "btn_book_appointment": "🤝 Teacher Meeting",
+        "btn_view_schedule": "📅 Timetable",
+        "btn_view_cafeteria": "🍲 Cafeteria Menu",
+        "upload_med_prompt": "Please send a photo of the medical note:",
         "med_uploaded_success": "Report submitted to school administration.",
-        "student_switched_success": "Active student switched to: *{name}* ({class_name})",
-        "menu_student": "🎓 *Student Dashboard*\nClass: *{class_name}* | Roll: *{no}*",
+        "student_switched_success": "Active student: *{name}* ({class_name})",
+        "menu_student": "🎓 *Student Dashboard*\nStudent: *{name}* ({class_name} - Roll: {no})",
         "no_grades": "No grades recorded yet.",
-        "evening_briefing_header": "🌙 *DAILY SUMMARY (18:30)*\nStudent: *{name}* ({class_name})\n\n📌 Attendance Today: *{att_status}*\n📝 Today's Grades:\n{grades}"
+        "no_linked_student": "⚠️ No student linked to your account.",
+        "evening_briefing_header": "🌙 *DAILY SUMMARY (18:30)*\nStudent: *{name}* ({class_name})\n\n📌 Attendance: *{att_status}*\n📝 Grades:\n{grades}",
+        "logged_out": "🚪 Logged out successfully.",
+        # Talep Sistemi
+        "btn_req_access": "📩 Request Access",
+        "req_role_select": "📩 *Request System Access*\n\nPlease select your role at school:",
+        "req_name_prompt": "👤 Enter your Full Name:",
+        "req_phone_prompt": "📱 Enter your contact phone number (e.g. `+1234567890`):",
+        "req_details_teacher": "📚 Enter your teaching subject (e.g. `Mathematics`):",
+        "req_details_student": "🏫 Enter your Class & Roll Number (e.g. `9-A / 101`):",
+        "req_details_parent": "🧑‍🎓 Enter your child's Name, Class & Roll Number (e.g. `John Doe, 9-A, 101`):",
+        "req_sent_success": "✅ *Access Request Submitted!*\n\nOnce reviewed by the school administration, you will receive confirmation and credentials right here.",
+        "req_already_pending": "⚠️ You already have an active request pending review. Please wait.",
+        "req_cooldown": "⚠️ Your previous request was rejected. You can re-apply after 24 hours.",
+        "req_approved_user": "🎉 *Congratulations! School Administration approved your request.*\n\nYour role: *{role}*\nAll features are now unlocked.",
+        "req_rejected_user": "❌ *Your access request was rejected by administration.*\n\nPlease contact the school directly.",
+        "no_pending_requests": "✅ No pending registration requests.",
+        "pending_requests_title": "🛎️ *Pending Access Requests:*",
+        # Randevu ve Menü
+        "select_teacher_appointment": "🤝 Select a teacher to book a meeting:",
+        "prompt_appointment_note": "Please write the topic and your preferred time slot:",
+        "appointment_sent": "✅ Meeting request sent to the teacher.",
+        "appointment_approved_msg": "✅ The teacher approved your meeting request!",
+        "appointment_rejected_msg": "❌ The teacher is unavailable at the requested time.",
+        "no_pending_appointments": "✅ No pending appointments.",
+        "cafeteria_today_title": "🍲 *Cafeteria Menu for Today ({date}):*\n\n{content}",
+        "schedule_title": "📅 *Timetable for Class {class_name}:*\n\n{content}",
+        "prompt_menu_update": "🍲 Enter cafeteria menu for today:",
+        "menu_updated": "✅ Cafeteria menu updated successfully.",
+        # Reply Keyboard
+        "rk_admin_dash": "⚡ Admin Dashboard",
+        "rk_cockpit": "📊 Morning Cockpit",
+        "rk_classes": "🏫 Classes & Students",
+        "rk_requests": "🛎️ Requests & Reports",
+        "rk_attendance": "📋 Fast Attendance",
+        "rk_grade": "📝 Grade Book",
+        "rk_homework": "📢 Homework Board",
+        "rk_appointments": "🤝 Parent Meetings",
+        "rk_report": "📊 Report Card",
+        "rk_schedule": "📅 Timetable",
+        "rk_cafeteria": "🍲 Cafeteria Menu",
+        "rk_switch_student": "🧑‍🎓 Switch Student",
+        "rk_upload_medical": "🏥 Medical Note",
+        "rk_main_menu": "🏠 Main Menu",
+        "rk_lang": "🌐 Change Language",
+        "rk_logout": "🚪 Log Out",
+        "rk_enter_code": "🔑 Enter Access Code",
+        "rk_req_access": "📩 Request Access"
     }
 }
 
@@ -540,8 +790,47 @@ def get_text(key: str, lang: str = "tr", **kwargs) -> str:
     return template
 
 # ======================================================================
-# 4. ARAYÜZ VE IN-PLACE ETKİLEŞİM KLAVYELERİ
+# 4. ARAYÜZ VE ETKİLEŞİM KLAVYELERİ (SADE & DAĞINIK OLMAYAN HUB DÜZENİ)
 # ======================================================================
+
+def get_role_reply_kb(role: str, lang: str = "tr") -> ReplyKeyboardMarkup:
+    """
+    Sadeleştirilmiş, gözü yormayan kalıcı alt menü (Reply Keyboard).
+    Maksimum 3 satır, derli toplu ve en kritik işlemlere anında erişim.
+    """
+    keyboard = []
+    if role == "admin":
+        keyboard = [
+            [KeyboardButton(text=get_text("rk_admin_dash", lang)), KeyboardButton(text=get_text("rk_cockpit", lang))],
+            [KeyboardButton(text=get_text("rk_classes", lang)), KeyboardButton(text=get_text("rk_requests", lang))],
+            [KeyboardButton(text=get_text("rk_lang", lang)), KeyboardButton(text=get_text("rk_logout", lang))]
+        ]
+    elif role == "teacher":
+        keyboard = [
+            [KeyboardButton(text=get_text("rk_attendance", lang)), KeyboardButton(text=get_text("rk_grade", lang))],
+            [KeyboardButton(text=get_text("rk_homework", lang)), KeyboardButton(text=get_text("rk_appointments", lang))],
+            [KeyboardButton(text=get_text("rk_schedule", lang)), KeyboardButton(text=get_text("rk_logout", lang))]
+        ]
+    elif role == "parent":
+        keyboard = [
+            [KeyboardButton(text=get_text("rk_report", lang)), KeyboardButton(text=get_text("rk_appointments", lang))],
+            [KeyboardButton(text=get_text("rk_upload_medical", lang)), KeyboardButton(text=get_text("rk_schedule", lang))],
+            [KeyboardButton(text=get_text("rk_cafeteria", lang)), KeyboardButton(text=get_text("rk_switch_student", lang))],
+            [KeyboardButton(text=get_text("rk_lang", lang)), KeyboardButton(text=get_text("rk_logout", lang))]
+        ]
+    elif role == "student":
+        keyboard = [
+            [KeyboardButton(text=get_text("rk_report", lang)), KeyboardButton(text=get_text("rk_homework", lang))],
+            [KeyboardButton(text=get_text("rk_schedule", lang)), KeyboardButton(text=get_text("rk_cafeteria", lang))],
+            [KeyboardButton(text=get_text("rk_lang", lang)), KeyboardButton(text=get_text("rk_logout", lang))]
+        ]
+    else: # guest / giriş yapılmamış
+        keyboard = [
+            [KeyboardButton(text=get_text("rk_enter_code", lang)), KeyboardButton(text=get_text("rk_req_access", lang))],
+            [KeyboardButton(text=get_text("rk_lang", lang))]
+        ]
+
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, is_persistent=True)
 
 def get_language_inline_kb() -> InlineKeyboardMarkup:
     buttons = [
@@ -556,9 +845,10 @@ def get_language_inline_kb() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def get_admin_main_inline_kb(lang: str = "tr", med_count: int = 0, is_maintenance: bool = False) -> InlineKeyboardMarkup:
-    """Temiz, tertipli ve simetrik 2x6 Yönetici Kontrol Masası"""
+def get_admin_main_inline_kb(lang: str = "tr", med_count: int = 0, req_count: int = 0, is_maintenance: bool = False) -> InlineKeyboardMarkup:
+    """Temiz, düzenli ve 2'li bloklar halinde Yönetici Masası"""
     med_text = get_text("btn_medical", lang, count=med_count)
+    req_text = get_text("btn_requests", lang, count=req_count)
     maint_status = "AÇIK" if is_maintenance else "KAPALI"
     if lang == "ru":
         maint_status = "ВКЛ" if is_maintenance else "ВЫКЛ"
@@ -571,27 +861,30 @@ def get_admin_main_inline_kb(lang: str = "tr", med_count: int = 0, is_maintenanc
 
     buttons = [
         [
-            InlineKeyboardButton(text=get_text("btn_add_student", lang), callback_data="adm:add_student"),
-            InlineKeyboardButton(text=get_text("btn_add_teacher", lang), callback_data="adm:add_teacher")
-        ],
-        [
             InlineKeyboardButton(text=get_text("btn_classes", lang), callback_data="adm:classes"),
             InlineKeyboardButton(text=get_text("btn_search_student", lang), callback_data="adm:search_student")
         ],
         [
+            InlineKeyboardButton(text=get_text("btn_add_student", lang), callback_data="adm:add_student"),
+            InlineKeyboardButton(text=get_text("btn_add_teacher", lang), callback_data="adm:add_teacher")
+        ],
+        [
             InlineKeyboardButton(text=get_text("btn_cockpit", lang), callback_data="adm:cockpit"),
+            InlineKeyboardButton(text=req_text, callback_data="adm:requests_list")
+        ],
+        [
+            InlineKeyboardButton(text=med_text, callback_data="adm:medical_list"),
             InlineKeyboardButton(text=get_text("btn_pdf", lang), callback_data="adm:pdf_menu")
         ],
         [
             InlineKeyboardButton(text=get_text("btn_excel", lang), callback_data="adm:excel_info"),
-            InlineKeyboardButton(text=med_text, callback_data="adm:medical_list")
+            InlineKeyboardButton(text=get_text("btn_broadcast", lang), callback_data="adm:broadcast_init")
         ],
         [
-            InlineKeyboardButton(text=get_text("btn_broadcast", lang), callback_data="adm:broadcast_init"),
+            InlineKeyboardButton(text=get_text("btn_cafeteria_edit", lang), callback_data="adm:menu_edit"),
             InlineKeyboardButton(text=maint_text, callback_data="adm:toggle_maint")
         ],
         [
-            InlineKeyboardButton(text=get_text("btn_test_roles", lang), callback_data="adm:test_roles"),
             InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")
         ]
     ]
@@ -629,12 +922,13 @@ def get_ack_notification_kb(notification_id: int, lang: str = "tr") -> InlineKey
     ])
 
 # ======================================================================
-# 5. YARDIMCI SERVİSLER (EXCEL, PDF VE BİLDİRİM İŞÇİSİ)
+# 5. YARDIMCI SERVİSLER (KOD ÜRETİMİ, EXCEL, PDF VE ARKA PLAN İŞÇİLERİ)
 # ======================================================================
 
 def generate_secure_code(prefix: str) -> str:
-    nums = "".join(random.choices(string.digits, k=4))
-    return f"{prefix}-{nums}"
+    """6 haneli, yüksek entropili güvenli kod üretir"""
+    num_part = str(random.randint(100000, 999999))
+    return f"{prefix}-{num_part}"
 
 async def process_student_excel(file_bytes: bytes) -> tuple[int, io.BytesIO]:
     in_buffer = io.BytesIO(file_bytes)
@@ -685,7 +979,7 @@ async def process_student_excel(file_bytes: bytes) -> tuple[int, io.BytesIO]:
 
 async def generate_classroom_pdf_cards(class_name: str, lang: str = "tr") -> io.BytesIO:
     async with AsyncSessionLocal() as session:
-        stmt = select(Student).where(Student.class_name == class_name).order_by(Student.full_name)
+        stmt = select(Student).where(Student.class_name == class_name).order_by(Student.student_number)
         result = await session.execute(stmt)
         students = result.scalars().all()
 
@@ -693,21 +987,21 @@ async def generate_classroom_pdf_cards(class_name: str, lang: str = "tr") -> io.
     doc = SimpleDocTemplate(
         pdf_buffer,
         pagesize=A4,
-        rightMargin=20,
-        leftMargin=20,
-        topMargin=20,
-        bottomMargin=20
+        rightMargin=25,
+        leftMargin=25,
+        topMargin=25,
+        bottomMargin=25
     )
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
-        name="CardTitle", parent=styles["Heading2"], fontSize=12, leading=14, textColor=colors.HexColor("#1A365D")
+        name="CardTitle", parent=styles["Heading2"], fontSize=13, leading=16, textColor=colors.HexColor("#1A365D"), alignment=1
     )
     body_style = ParagraphStyle(
-        name="CardBody", parent=styles["Normal"], fontSize=9, leading=11, textColor=colors.HexColor("#2D3748")
+        name="CardBody", parent=styles["Normal"], fontSize=8.5, leading=12, textColor=colors.HexColor("#2D3748")
     )
 
     t_header = {
-        "tr": f"<b>{class_name} SINIFI - TELEGRAM GİRİŞ KARTLARI</b>",
+        "tr": f"<b>{class_name} SINIFI - TELEGRAM GİRİŞ ŞİFRE KARTLARI</b>",
         "ru": f"<b>КЛАСС {class_name} - КАРТОЧКИ ВХОДА TELEGRAM</b>",
         "uz": f"<b>{class_name} SINFI - TELEGRAM KIRISH KARTALARI</b>",
         "en": f"<b>CLASS {class_name} - TELEGRAM ACCESS CARDS</b>"
@@ -719,27 +1013,35 @@ async def generate_classroom_pdf_cards(class_name: str, lang: str = "tr") -> io.
 
     story = [
         Paragraph(t_header, title_style),
-        Spacer(1, 15)
+        Spacer(1, 12)
     ]
 
-    card_data = []
+    card_cells = []
+    row = []
     for s in students:
         text = (
-            f"<b>{lbl_st}:</b> {s.full_name} (№: {s.student_number})<br/>"
+            f"<b>{lbl_st}:</b> {s.full_name} (№ {s.student_number})<br/>"
             f"<b>{lbl_st_code}:</b> <code>{s.student_code}</code><br/>"
             f"<b>{lbl_pr_code}:</b> <code>{s.parent_code}</code>"
         )
-        card_data.append([Paragraph(text, body_style)])
+        row.append(Paragraph(text, body_style))
+        if len(row) == 2:
+            card_cells.append(row)
+            row = []
+    if row:
+        row.append(Paragraph("", body_style))
+        card_cells.append(row)
 
-    if card_data:
-        table = Table(card_data, colWidths=[540])
+    if card_cells:
+        table = Table(card_cells, colWidths=[265, 265])
         table.setStyle(TableStyle([
             ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#CBD5E0")),
             ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-            ("TOPPADDING", (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-            ("LEFTPADDING", (0, 0), (-1, -1), 12),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+            ("TOPPADDING", (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ]))
         story.append(table)
 
@@ -788,9 +1090,9 @@ async def run_attendance_delay_worker(bot: Bot):
                         )
                     except Exception:
                         pass
-            
+
             att.is_notified = True
-        
+
         await session.commit()
 
 async def run_evening_briefing_worker(bot: Bot):
@@ -799,7 +1101,6 @@ async def run_evening_briefing_worker(bot: Bot):
         now = datetime.utcnow()
         today = now.date()
 
-        # Kayıtlı velileri bul
         parents = (await session.execute(select(User).where(User.role == "parent", User.evening_briefing == True))).scalars().all()
         for p in parents:
             st_id = p.current_child_id
@@ -810,11 +1111,9 @@ async def run_evening_briefing_worker(bot: Bot):
                 continue
 
             lang = p.language
-            # Bugünkü devamsızlık
             att = (await session.execute(select(Attendance).where(Attendance.student_id == st.id, Attendance.date == today))).scalar_one_or_none()
             att_status = "✅ Geldi" if not att or att.status == "present" else ("❌ Gelmedi (Yok)" if att.status == "absent" else "🏥 İzinli")
 
-            # Bugünkü notlar
             grades = (await session.execute(select(Grade).where(Grade.student_id == st.id, func.date(Grade.created_at) == today))).scalars().all()
             grades_str = "\n".join([f"• {g.subject}: *{g.score}* ({g.badge})" for g in grades]) if grades else get_text("no_grades", lang)
 
@@ -830,25 +1129,39 @@ async def run_evening_briefing_worker(bot: Bot):
 
 class Form(StatesGroup):
     waiting_auth_code = State()
+    # Erişim Talebi Başvurusu Adımları
+    req_role = State()
+    req_name = State()
+    req_phone = State()
+    req_details = State()
+    # Öğrenci & Öğretmen Ekleme
     add_student_name = State()
     add_student_class = State()
     add_student_no = State()
     add_teacher_name = State()
     add_teacher_subject = State()
+    # Arama, Duyuru ve Mazeret
     waiting_search_query = State()
     waiting_broadcast_text = State()
     waiting_medical_photo = State()
+    # Not & Ödev
     grade_score = State()
     grade_badge = State()
     hw_content = State()
+    # Randevu ve Yemekhane
+    app_teacher = State()
+    app_note = State()
+    menu_update_text = State()
 
 router = Router()
 ATTENDANCE_CACHE = {}
 GRADE_CACHE = {}
 HW_CACHE = {}
+REQ_CACHE = {}
+APP_CACHE = {}
 
 # ======================================================================
-# 7. ROUTER: BAŞLANGIÇ, DİL VE ÇİFT KATMANLI KONTROL
+# 7. ROUTER: BAŞLANGIÇ, DİL VE ROLE ÖZEL KONTROL MASALARI
 # ======================================================================
 
 @router.message(CommandStart())
@@ -857,16 +1170,26 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
-        
-        total_admins = (await session.execute(select(func.count(User.telegram_id)).where(User.role == "admin"))).scalar() or 0
-        auto_admin = (len(ADMIN_IDS) == 0 and total_admins == 0) or (message.from_user.id in ADMIN_IDS)
+        is_admin_id = message.from_user.id in ADMIN_IDS
 
         if not user:
+            user = User(
+                telegram_id=message.from_user.id,
+                role="admin" if is_admin_id else "guest",
+                language="tr"
+            )
+            session.add(user)
+            await session.commit()
+
             await message.answer(
                 "🌍 Iltimos, tilni tanlang / Пожалуйста, выберите язык / Lütfen dil seçiniz / Please select language:",
                 reply_markup=get_language_inline_kb()
             )
             return
+
+        if is_admin_id and user.role != "admin":
+            user.role = "admin"
+            await session.commit()
 
         if user.is_blacklisted:
             await message.answer(get_text("auth_blacklisted", user.language))
@@ -883,11 +1206,38 @@ async def cmd_start(message: Message, state: FSMContext):
                 await message.answer(get_text("maintenance_mode", user.language))
                 return
 
-        if auto_admin and user.role != "admin":
-            user.role = "admin"
-            await session.commit()
+        # Eğer misafir ise sade karşılama ve alt menüyü göster
+        if user.role == "guest":
+            await prompt_guest_screen(message, user, state)
+            return
 
+        reply_kb = get_role_reply_kb(user.role, user.language)
+        await message.answer(
+            f"👋 *Hoş Geldiniz, {user.full_name or ''}*",
+            reply_markup=reply_kb,
+            parse_mode="Markdown"
+        )
         await render_clean_dashboard(message, user)
+
+async def prompt_guest_screen(target: Message | CallbackQuery, user: User, state: FSMContext):
+    """Misafire en sade, iki temel seçenekli giriş kartı sunar"""
+    lang = user.language
+    text = get_text("welcome_guest", lang)
+    reply_kb = get_role_reply_kb("guest", lang)
+
+    buttons = [
+        [InlineKeyboardButton(text="🔑 Şifre / Kod Gir", callback_data="act_enter_code")],
+        [InlineKeyboardButton(text="📩 Şifrem Yok (Erişim İste)", callback_data="act_req_access")],
+        [InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")]
+    ]
+    inline_kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    if isinstance(target, CallbackQuery):
+        await target.message.answer(text, reply_markup=reply_kb, parse_mode="Markdown")
+        await target.message.answer("Lütfen seçiminizi yapınız:", reply_markup=inline_kb)
+    else:
+        await target.answer(text, reply_markup=reply_kb, parse_mode="Markdown")
+        await target.answer("Lütfen seçiminizi yapınız:", reply_markup=inline_kb)
 
 @router.callback_query(F.data.startswith("set_lang:"))
 async def cb_set_lang(query: CallbackQuery, state: FSMContext):
@@ -895,20 +1245,20 @@ async def cb_set_lang(query: CallbackQuery, state: FSMContext):
     lang_code = query.data.split(":")[1]
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
-        total_admins = (await session.execute(select(func.count(User.telegram_id)).where(User.role == "admin"))).scalar() or 0
-        auto_admin = (len(ADMIN_IDS) == 0 and total_admins == 0) or (query.from_user.id in ADMIN_IDS)
-        role = "admin" if auto_admin else "guest"
-
         if not user:
-            user = User(telegram_id=query.from_user.id, language=lang_code, role=role)
+            is_admin_id = query.from_user.id in ADMIN_IDS
+            user = User(telegram_id=query.from_user.id, language=lang_code, role="admin" if is_admin_id else "guest")
             session.add(user)
         else:
             user.language = lang_code
-            if auto_admin:
-                user.role = "admin"
         await session.commit()
 
-    await render_clean_dashboard(query, user)
+    if user.role == "guest":
+        await prompt_guest_screen(query, user, state)
+    else:
+        reply_kb = get_role_reply_kb(user.role, user.language)
+        await query.message.answer(get_text("lang_changed", user.language), reply_markup=reply_kb)
+        await render_clean_dashboard(query, user)
     await query.answer()
 
 async def render_clean_dashboard(target: Message | CallbackQuery, user: User):
@@ -921,21 +1271,26 @@ async def render_clean_dashboard(target: Message | CallbackQuery, user: User):
             s_cnt = (await session.execute(select(func.count(Student.id)))).scalar() or 0
             t_cnt = (await session.execute(select(func.count(Teacher.id)))).scalar() or 0
             med_cnt = (await session.execute(select(func.count(MedicalReport.id)).where(MedicalReport.status == "pending"))).scalar() or 0
+            req_cnt = (await session.execute(select(func.count(AccessRequest.id)).where(AccessRequest.status == "pending"))).scalar() or 0
             maint_setting = await session.get(SystemSetting, "maintenance_mode")
             is_maint = maint_setting.value == "true" if maint_setting else False
             date_str = datetime.utcnow().strftime("%d.%m.%Y")
 
             text = (
                 f"{get_text('admin_title', lang)}\n\n"
-                f"{get_text('admin_stats', lang, c_cnt=c_cnt, s_cnt=s_cnt, t_cnt=t_cnt, date=date_str)}"
+                f"{get_text('admin_stats', lang, c_cnt=c_cnt, s_cnt=s_cnt, t_cnt=t_cnt, req_cnt=req_cnt, med_cnt=med_cnt, date=date_str)}"
             )
-            kb = get_admin_main_inline_kb(lang, med_count=med_cnt, is_maintenance=is_maint)
+            kb = get_admin_main_inline_kb(lang, med_count=med_cnt, req_count=req_cnt, is_maintenance=is_maint)
 
     elif user.role == "teacher":
         async with AsyncSessionLocal() as session:
             tch = (await session.execute(select(Teacher).where(Teacher.telegram_id == user.telegram_id))).scalar_one_or_none()
             subj = tch.subject if tch else "Ders"
-            text = get_text("menu_teacher", lang, subject=subj)
+            tch_name = tch.full_name if tch else (user.full_name or "Öğretmen")
+            tch_id = tch.id if tch else 0
+            app_cnt = (await session.execute(select(func.count(Appointment.id)).where(Appointment.teacher_id == tch_id, Appointment.status == "pending"))).scalar() or 0
+
+            text = get_text("menu_teacher", lang, name=tch_name, subject=subj)
             buttons = [
                 [
                     InlineKeyboardButton(text=get_text("btn_attendance", lang), callback_data="tch:classes"),
@@ -943,25 +1298,29 @@ async def render_clean_dashboard(target: Message | CallbackQuery, user: User):
                 ],
                 [
                     InlineKeyboardButton(text=get_text("btn_homework_board", lang), callback_data="tch:hw_classes"),
-                    InlineKeyboardButton(text=get_text("btn_test_roles", lang), callback_data="adm:test_roles")
+                    InlineKeyboardButton(text=get_text("btn_teacher_appointments", lang, count=app_cnt), callback_data="tch:appointments")
                 ]
             ]
             kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     elif user.role == "parent":
         async with AsyncSessionLocal() as session:
-            st = await session.get(Student, user.current_child_id if user.current_child_id else 1)
+            st = await session.get(Student, user.current_child_id) if user.current_child_id else None
             name = st.full_name if st else "-"
             cls_name = st.class_name if st else "-"
             text = get_text("menu_parent", lang, name=name, class_name=cls_name)
             buttons = [
                 [
                     InlineKeyboardButton(text=get_text("btn_report_card", lang), callback_data="act_view_report"),
-                    InlineKeyboardButton(text=get_text("btn_switch_student", lang), callback_data="parent:switch_student")
+                    InlineKeyboardButton(text=get_text("btn_book_appointment", lang), callback_data="act_book_app")
+                ],
+                [
+                    InlineKeyboardButton(text=get_text("btn_view_schedule", lang), callback_data="act_view_sched"),
+                    InlineKeyboardButton(text=get_text("btn_view_cafeteria", lang), callback_data="act_view_cafe")
                 ],
                 [
                     InlineKeyboardButton(text=get_text("btn_upload_medical", lang), callback_data="upload_medical_init"),
-                    InlineKeyboardButton(text=get_text("btn_test_roles", lang), callback_data="adm:test_roles")
+                    InlineKeyboardButton(text=get_text("btn_switch_student", lang), callback_data="parent:switch_student")
                 ]
             ]
             kb = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -969,21 +1328,27 @@ async def render_clean_dashboard(target: Message | CallbackQuery, user: User):
     elif user.role == "student":
         async with AsyncSessionLocal() as session:
             st = (await session.execute(select(Student).where(Student.student_telegram_id == user.telegram_id))).scalar_one_or_none()
+            st_name = st.full_name if st else (user.full_name or "Öğrenci")
             cls_name = st.class_name if st else "-"
             num_val = st.student_number if st else "-"
-            text = get_text("menu_student", lang, class_name=cls_name, no=num_val)
+            text = get_text("menu_student", lang, name=st_name, class_name=cls_name, no=num_val)
             buttons = [
-                [InlineKeyboardButton(text=get_text("btn_student_grades", lang), callback_data="act_view_report")],
-                [InlineKeyboardButton(text=get_text("btn_test_roles", lang), callback_data="adm:test_roles")]
+                [
+                    InlineKeyboardButton(text=get_text("btn_student_grades", lang), callback_data="act_view_report"),
+                    InlineKeyboardButton(text=get_text("btn_view_schedule", lang), callback_data="act_view_sched")
+                ],
+                [
+                    InlineKeyboardButton(text=get_text("btn_view_cafeteria", lang), callback_data="act_view_cafe")
+                ]
             ]
             kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     else: # guest
         text = get_text("welcome_guest", lang)
         buttons = [
-            [InlineKeyboardButton(text="🔑 Giriş Kodu Yaz", callback_data="act_enter_code")],
-            [InlineKeyboardButton(text="👑 Yönetici Yetkisi Al", callback_data="act_claim_admin")],
-            [InlineKeyboardButton(text="🌐 Dili Değiştir", callback_data="act_change_lang")]
+            [InlineKeyboardButton(text=get_text("rk_enter_code", lang), callback_data="act_enter_code")],
+            [InlineKeyboardButton(text=get_text("btn_req_access", lang), callback_data="act_req_access")],
+            [InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")]
         ]
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -996,7 +1361,702 @@ async def render_clean_dashboard(target: Message | CallbackQuery, user: User):
         await target.answer(text, reply_markup=kb, parse_mode="Markdown")
 
 # ======================================================================
-# 8. YÖNETİCİ: MANUEL ÖĞRENCİ & ÖĞRETMEN EKLEME FORMLARI
+# 8. KİMLİK DOĞRULAMA (AUTHENTICATION ENGINE - TEK KAPIDAN TÜM ROLLER)
+# ======================================================================
+
+async def process_auth_code_string(code: str, user_id: int, message: Message, state: FSMContext):
+    clean_code = code.strip().upper()
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            user = User(telegram_id=user_id, language="tr", role="guest")
+            session.add(user)
+            await session.commit()
+
+        lang = user.language
+
+        if user.is_blacklisted:
+            await message.answer(get_text("auth_blacklisted", lang))
+            return
+
+        if user.locked_until and user.locked_until > datetime.utcnow():
+            await message.answer(get_text("auth_locked", lang))
+            return
+
+        # 1. YÖNETİCİ ŞİFRESİ KONTROLÜ
+        if clean_code == ADMIN_CODE or user_id in ADMIN_IDS:
+            user.role = "admin"
+            user.failed_attempts = 0
+            user.locked_until = None
+            await session.commit()
+            await state.clear()
+
+            reply_kb = get_role_reply_kb("admin", lang)
+            success_txt = get_text("auth_success", lang, name="Yönetici", role="Okul İdaresi (Admin)")
+            await message.answer(success_txt, reply_markup=reply_kb, parse_mode="Markdown")
+            await render_clean_dashboard(message, user)
+            return
+
+        # 2. ÖĞRETMEN GİRİŞ KODU KONTROLÜ (HCA-XXXXXX)
+        t_stmt = select(Teacher).where(Teacher.auth_code == clean_code)
+        teacher = (await session.execute(t_stmt)).scalar_one_or_none()
+        if teacher:
+            teacher.telegram_id = user_id
+            teacher.is_code_burned = True
+            user.role = "teacher"
+            user.full_name = teacher.full_name
+            user.failed_attempts = 0
+            user.locked_until = None
+            await session.commit()
+            await state.clear()
+
+            reply_kb = get_role_reply_kb("teacher", lang)
+            success_txt = get_text("auth_success", lang, name=teacher.full_name, role=f"Öğretmen ({teacher.subject})")
+            await message.answer(success_txt, reply_markup=reply_kb, parse_mode="Markdown")
+            await render_clean_dashboard(message, user)
+            return
+
+        # 3. ÖĞRENCİ GİRİŞ KODU KONTROLÜ (OGR-XXXXXX)
+        s_stmt = select(Student).where(Student.student_code == clean_code)
+        student = (await session.execute(s_stmt)).scalar_one_or_none()
+        if student:
+            student.student_telegram_id = user_id
+            student.is_student_code_burned = True
+            user.role = "student"
+            user.full_name = student.full_name
+            user.failed_attempts = 0
+            user.locked_until = None
+            await session.commit()
+            await state.clear()
+
+            reply_kb = get_role_reply_kb("student", lang)
+            success_txt = get_text("auth_success", lang, name=student.full_name, role=f"Öğrenci ({student.class_name})")
+            await message.answer(success_txt, reply_markup=reply_kb, parse_mode="Markdown")
+            await render_clean_dashboard(message, user)
+            return
+
+        # 4. VELİ GİRİŞ KODU KONTROLÜ (VELI-XXXXXX)
+        p_stmt = select(Student).where(Student.parent_code == clean_code)
+        p_student = (await session.execute(p_stmt)).scalar_one_or_none()
+        if p_student:
+            p_student.is_parent_code_burned = True
+            user.role = "parent"
+            user.failed_attempts = 0
+            user.locked_until = None
+            user.current_child_id = p_student.id
+
+            rel_check = select(ParentStudent).where(
+                ParentStudent.parent_telegram_id == user_id,
+                ParentStudent.student_id == p_student.id
+            )
+            exists = (await session.execute(rel_check)).scalar_one_or_none()
+            if not exists:
+                session.add(ParentStudent(parent_telegram_id=user_id, student_id=p_student.id))
+
+            await session.commit()
+            await state.clear()
+
+            reply_kb = get_role_reply_kb("parent", lang)
+            success_txt = get_text("auth_success", lang, name=f"{p_student.full_name} Velisi", role=f"Veli ({p_student.class_name})")
+            await message.answer(success_txt, reply_markup=reply_kb, parse_mode="Markdown")
+            await render_clean_dashboard(message, user)
+            return
+
+        # BAŞARISIZ GİRİŞ
+        user.failed_attempts += 1
+        if user.failed_attempts >= 5:
+            user.is_blacklisted = True
+            await session.commit()
+            await message.answer(get_text("auth_blacklisted", lang))
+            await state.clear()
+            return
+        elif user.failed_attempts >= 3:
+            user.locked_until = datetime.utcnow() + timedelta(hours=1)
+            await session.commit()
+            await message.answer(get_text("auth_locked", lang))
+            await state.clear()
+            return
+
+        remaining = 3 - user.failed_attempts
+        await session.commit()
+        await message.answer(get_text("auth_failed", lang, remaining=remaining))
+
+@router.message(Form.waiting_auth_code)
+async def handle_auth_code_fsm(message: Message, state: FSMContext):
+    await process_auth_code_string(message.text, message.from_user.id, message, state)
+
+@router.callback_query(F.data == "act_enter_code")
+async def cb_act_enter_code(query: CallbackQuery, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+    await query.message.answer(
+        "🔑 *Lütfen size verilen giriş kodunu yazınız:* (Örn: `HCA-123456`, `VELI-123456`, `OGR-123456`)",
+        parse_mode="Markdown"
+    )
+    await state.set_state(Form.waiting_auth_code)
+    await query.answer()
+
+# ======================================================================
+# 9. YÖNETİCİDEN ERİŞİM / ŞİFRE TALEP ETME SİSTEMİ (SECURITY SHIELD)
+# ======================================================================
+
+@router.callback_query(F.data == "act_req_access")
+async def cb_act_req_access(query: CallbackQuery, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+        # 1. Bekleyen aktif talep var mı? (Spam Kalkanı)
+        pending = (await session.execute(
+            select(AccessRequest).where(AccessRequest.telegram_id == query.from_user.id, AccessRequest.status == "pending")
+        )).scalar_one_or_none()
+        if pending:
+            await query.answer(get_text("req_already_pending", lang), show_alert=True)
+            return
+
+        # 2. Son 24 saatte reddedilen talep var mı? (Cooldown Kalkanı)
+        yesterday = datetime.utcnow() - timedelta(hours=24)
+        rejected = (await session.execute(
+            select(AccessRequest).where(
+                AccessRequest.telegram_id == query.from_user.id,
+                AccessRequest.status == "rejected",
+                AccessRequest.reviewed_at >= yesterday
+            )
+        )).scalar_one_or_none()
+        if rejected:
+            await query.answer(get_text("req_cooldown", lang), show_alert=True)
+            return
+
+        buttons = [
+            [
+                InlineKeyboardButton(text="👨‍🏫 Öğretmen", callback_data="req_role:teacher"),
+                InlineKeyboardButton(text="👨‍👩‍👧‍👦 Veli", callback_data="req_role:parent")
+            ],
+            [
+                InlineKeyboardButton(text="🎓 Öğrenci", callback_data="req_role:student")
+            ],
+            [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
+        ]
+        await query.message.edit_text(get_text("req_role_select", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("req_role:"))
+async def cb_req_choose_role(query: CallbackQuery, state: FSMContext):
+    chosen_role = query.data.split(":")[1]
+    await state.update_data(role=chosen_role)
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+    await query.message.edit_text(
+        get_text("req_name_prompt", lang),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="act_req_access")]]),
+        parse_mode="Markdown"
+    )
+    await state.set_state(Form.req_name)
+    await query.answer()
+
+@router.message(Form.req_name)
+async def process_req_name(message: Message, state: FSMContext):
+    full_name = message.text.strip()
+    await state.update_data(full_name=full_name)
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        lang = user.language if user else "tr"
+
+    await message.answer(
+        get_text("req_phone_prompt", lang),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="act_req_access")]]),
+        parse_mode="Markdown"
+    )
+    await state.set_state(Form.req_phone)
+
+@router.message(Form.req_phone)
+async def process_req_phone(message: Message, state: FSMContext):
+    phone_val = message.text.strip()
+    await state.update_data(phone=phone_val)
+
+    data = await state.get_data()
+    role = data.get("role", "student")
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        lang = user.language if user else "tr"
+
+        prompt_key = "req_details_teacher" if role == "teacher" else ("req_details_parent" if role == "parent" else "req_details_student")
+        await message.answer(
+            get_text(prompt_key, lang),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="act_req_access")]]),
+            parse_mode="Markdown"
+        )
+    await state.set_state(Form.req_details)
+
+@router.message(Form.req_details)
+async def process_req_details(message: Message, state: FSMContext):
+    details_text = message.text.strip()
+    data = await state.get_data()
+    await state.clear()
+
+    role = data.get("role", "student")
+    full_name = data.get("full_name", "")
+    phone_val = data.get("phone", "")
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        lang = user.language if user else "tr"
+
+        # Veritabanında otomatik teyit araması
+        student_match = None
+        clean_det = details_text.lower()
+        if role in ["parent", "student"]:
+            all_st = (await session.execute(select(Student))).scalars().all()
+            for s in all_st:
+                if s.student_number in clean_det or s.full_name.lower() in clean_det:
+                    student_match = s
+                    break
+
+        # Talebi veritabanına kaydet
+        req = AccessRequest(
+            telegram_id=message.from_user.id,
+            role=role,
+            full_name=full_name,
+            phone=phone_val,
+            details=details_text,
+            student_match_id=student_match.id if student_match else None,
+            status="pending"
+        )
+        session.add(req)
+        await session.commit()
+
+        # Kullanıcıya başarı mesajı
+        await message.answer(get_text("req_sent_success", lang), parse_mode="Markdown")
+        await prompt_guest_screen(message, user, state)
+
+        # Tüm yöneticilere Telegram üzerinden anlık onay kartı gönder
+        role_label = {"teacher": "Öğretmen", "parent": "Veli", "student": "Öğrenci"}.get(role, role)
+        auto_check_badge = f"🟢 *Sistemde Doğrulandı:* {student_match.full_name} ({student_match.class_name} - No: {student_match.student_number})" if student_match else "🔴 *Otomatik Eşleşme Bulunamadı (Manuel İnceleyiniz)*"
+
+        adm_msg = (
+            f"🛎️ *YENİ ERİŞİM & ŞİFRE TALEBİ* (#{req.id})\n\n"
+            f"👤 *Başvuran:* {full_name}\n"
+            f"🆔 *Telegram:* @{message.from_user.username or 'gizli'} (`{message.from_user.id}`)\n"
+            f"📱 *Telefon:* `{phone_val}`\n"
+            f"🎯 *Talep Rolü:* *{role_label}*\n"
+            f"📝 *Açıklama / Bilgi:* {details_text}\n\n"
+            f"🔍 *Sistem Teyidi:*\n{auto_check_badge}"
+        )
+
+        adm_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Onayla ve Yetkilendir", callback_data=f"adm:appr_req:{req.id}"),
+                InlineKeyboardButton(text="❌ Reddet", callback_data=f"adm:rej_req:{req.id}")
+            ]
+        ])
+
+        admins = (await session.execute(select(User.telegram_id).where(User.role == "admin"))).scalars().all()
+        target_admin_ids = set(ADMIN_IDS + list(admins))
+        for a_id in target_admin_ids:
+            try:
+                await message.bot.send_message(chat_id=a_id, text=adm_msg, reply_markup=adm_kb, parse_mode="Markdown")
+            except Exception:
+                pass
+
+# --- YÖNETİCİ: ERİŞİM TALEPLERİ LİSTESİ VE ONAY İŞLEMLERİ ---
+
+@router.callback_query(F.data == "adm:requests_list")
+async def cb_admin_requests_list(query: CallbackQuery):
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+        requests = (await session.execute(
+            select(AccessRequest).where(AccessRequest.status == "pending").order_by(desc(AccessRequest.created_at))
+        )).scalars().all()
+
+        if not requests:
+            buttons = [get_nav_buttons(lang)]
+            await query.message.edit_text(get_text("no_pending_requests", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+            await query.answer()
+            return
+
+        buttons = []
+        for r in requests:
+            role_icon = "👨‍🏫" if r.role == "teacher" else ("👨‍👩‍👧‍👦" if r.role == "parent" else "🎓")
+            btn_text = f"{role_icon} {r.full_name} ({r.created_at.strftime('%H:%M')})"
+            buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"adm:view_req:{r.id}")])
+
+        buttons.append(get_nav_buttons(lang))
+        await query.message.edit_text(get_text("pending_requests_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:view_req:"))
+async def cb_admin_view_request(query: CallbackQuery):
+    req_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+        req = await session.get(AccessRequest, req_id)
+        if not req or req.status != "pending":
+            await query.answer("Bu talep zaten sonuçlandırılmış!", show_alert=True)
+            await cb_admin_requests_list(query)
+            return
+
+        role_label = {"teacher": "Öğretmen", "parent": "Veli", "student": "Öğrenci"}.get(req.role, req.role)
+        st_match_info = ""
+        if req.student_match_id:
+            st = await session.get(Student, req.student_match_id)
+            if st:
+                st_match_info = f"\n🔍 *Eşleşen Öğrenci:* {st.full_name} ({st.class_name} - No: {st.student_number})"
+
+        text = (
+            f"🛎️ *Erişim Talebi Detayı* (#{req.id})\n\n"
+            f"👤 *İsim:* {req.full_name}\n"
+            f"📱 *Telefon:* `{req.phone}`\n"
+            f"🎯 *Rol:* *{role_label}*\n"
+            f"📝 *Detay:* {req.details}"
+            f"{st_match_info}\n\n"
+            f"Lütfen yapılacak işlemi seçiniz:"
+        )
+
+        buttons = [
+            [
+                InlineKeyboardButton(text="✅ Onayla ve Yetkilendir", callback_data=f"adm:appr_req:{req.id}"),
+                InlineKeyboardButton(text="❌ Reddet", callback_data=f"adm:rej_req:{req.id}")
+            ],
+            [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="adm:requests_list")]
+        ]
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:appr_req:"))
+async def cb_admin_approve_request(query: CallbackQuery):
+    req_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        admin_user = await session.get(User, query.from_user.id)
+        if not admin_user or admin_user.role != "admin":
+            await query.answer("Yetkisiz işlem!", show_alert=True)
+            return
+
+        req = await session.get(AccessRequest, req_id)
+        if not req or req.status != "pending":
+            await query.answer("Bu talep daha önce işleme alınmış!", show_alert=True)
+            return
+
+        req.status = "approved"
+        req.reviewed_by = query.from_user.id
+        req.reviewed_at = datetime.utcnow()
+
+        target_user = await session.get(User, req.telegram_id)
+        if not target_user:
+            target_user = User(telegram_id=req.telegram_id, language="tr")
+            session.add(target_user)
+
+        target_user.role = req.role
+        target_user.full_name = req.full_name
+        target_user.failed_attempts = 0
+        target_user.locked_until = None
+
+        # Rol bazlı atama
+        if req.role == "teacher":
+            tch = (await session.execute(select(Teacher).where(Teacher.full_name == req.full_name))).scalar_one_or_none()
+            if not tch:
+                auth_c = generate_secure_code("HCA")
+                tch = Teacher(full_name=req.full_name, subject=req.details, auth_code=auth_c, telegram_id=req.telegram_id, is_code_burned=True)
+                session.add(tch)
+            else:
+                tch.telegram_id = req.telegram_id
+                tch.is_code_burned = True
+
+        elif req.role == "parent":
+            st_id = req.student_match_id
+            if not st_id:
+                # İsimden tekrar ara
+                all_st = (await session.execute(select(Student))).scalars().all()
+                for s in all_st:
+                    if s.full_name.lower() in req.details.lower():
+                        st_id = s.id
+                        break
+            if st_id:
+                target_user.current_child_id = st_id
+                rel = (await session.execute(select(ParentStudent).where(ParentStudent.parent_telegram_id == req.telegram_id, ParentStudent.student_id == st_id))).scalar_one_or_none()
+                if not rel:
+                    session.add(ParentStudent(parent_telegram_id=req.telegram_id, student_id=st_id))
+
+        elif req.role == "student":
+            if req.student_match_id:
+                st = await session.get(Student, req.student_match_id)
+                if st:
+                    st.student_telegram_id = req.telegram_id
+                    st.is_student_code_burned = True
+
+        await session.commit()
+
+        # Kullanıcıya Telegram üzerinden anında bildirim ve alt menü ilet
+        try:
+            role_tr = {"teacher": "Öğretmen", "parent": "Veli", "student": "Öğrenci"}.get(req.role, req.role)
+            user_msg = get_text("req_approved_user", target_user.language, role=role_tr)
+            reply_kb = get_role_reply_kb(req.role, target_user.language)
+            await query.message.bot.send_message(chat_id=req.telegram_id, text=user_msg, reply_markup=reply_kb, parse_mode="Markdown")
+            await render_clean_dashboard(query.message.bot, target_user)
+        except Exception:
+            pass
+
+        await query.message.edit_text(f"✅ *Talep Onaylandı (# {req.id})*\n{req.full_name} ({req.role}) başarıyla sisteme kaydedildi.", parse_mode="Markdown")
+    await query.answer("Onaylandı!")
+
+@router.callback_query(F.data.startswith("adm:rej_req:"))
+async def cb_admin_reject_request(query: CallbackQuery):
+    req_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        admin_user = await session.get(User, query.from_user.id)
+        if not admin_user or admin_user.role != "admin":
+            await query.answer("Yetkisiz işlem!", show_alert=True)
+            return
+
+        req = await session.get(AccessRequest, req_id)
+        if not req or req.status != "pending":
+            await query.answer("Bu talep daha önce işleme alınmış!", show_alert=True)
+            return
+
+        req.status = "rejected"
+        req.reviewed_by = query.from_user.id
+        req.reviewed_at = datetime.utcnow()
+        await session.commit()
+
+        # Kullanıcıya bilgilendirme gönder
+        try:
+            target_user = await session.get(User, req.telegram_id)
+            lang = target_user.language if target_user else "tr"
+            await query.message.bot.send_message(chat_id=req.telegram_id, text=get_text("req_rejected_user", lang), parse_mode="Markdown")
+        except Exception:
+            pass
+
+        await query.message.edit_text(f"❌ *Talep Reddedildi (# {req.id})*\n{req.full_name} adlı kullanıcının başvurusu reddedildi.", parse_mode="Markdown")
+    await query.answer("Reddedildi.")
+
+# ======================================================================
+# 10. VELİ - ÖĞRETMEN RANDEVU SİSTEMİ & DERS PROGRAMI / MENÜ
+# ======================================================================
+
+@router.callback_query(F.data == "act_book_app")
+async def cb_parent_book_app_init(query: CallbackQuery, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+        teachers = (await session.execute(select(Teacher).order_by(Teacher.full_name))).scalars().all()
+        if not teachers:
+            await query.answer("Kayıtlı öğretmen bulunamadı!", show_alert=True)
+            return
+
+        buttons = []
+        for t in teachers:
+            buttons.append([InlineKeyboardButton(text=f"👨‍🏫 {t.full_name} ({t.subject})", callback_data=f"book_tch:{t.id}")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")])
+
+        await query.message.edit_text(get_text("select_teacher_appointment", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await query.answer()
+
+@router.callback_query(F.data.startswith("book_tch:"))
+async def cb_parent_select_teacher(query: CallbackQuery, state: FSMContext):
+    tch_id = int(query.data.split(":")[1])
+    APP_CACHE[query.from_user.id] = {"teacher_id": tch_id}
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+    await query.message.edit_text(get_text("prompt_appointment_note", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=[get_nav_buttons(lang)]))
+    await state.set_state(Form.app_note)
+    await query.answer()
+
+@router.message(Form.app_note)
+async def process_appointment_note(message: Message, state: FSMContext):
+    note_text = message.text.strip()
+    data = APP_CACHE.pop(message.from_user.id, {})
+    tch_id = data.get("teacher_id")
+    await state.clear()
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        lang = user.language if user else "tr"
+        tch = await session.get(Teacher, tch_id) if tch_id else None
+        st = await session.get(Student, user.current_child_id) if user and user.current_child_id else None
+
+        app = Appointment(
+            parent_telegram_id=message.from_user.id,
+            teacher_id=tch_id,
+            preferred_time=note_text,
+            note=note_text,
+            status="pending"
+        )
+        session.add(app)
+        await session.commit()
+
+        await message.answer(get_text("appointment_sent", lang))
+        await render_clean_dashboard(message, user)
+
+        # Öğretmene anlık kart gönder
+        if tch and tch.telegram_id:
+            try:
+                st_name = st.full_name if st else "Öğrenci"
+                cls_name = st.class_name if st else ""
+                t_text = (
+                    f"🤝 *YENİ VELİ GÖRÜŞME TALEBİ*\n\n"
+                    f"👤 *Veli:* {user.full_name or 'Veli'}\n"
+                    f"🧑‍🎓 *Öğrenci:* {st_name} ({cls_name})\n"
+                    f"📝 *Talep / Zaman:* {note_text}"
+                )
+                t_kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="✅ Kabul Et", callback_data=f"tch:appr_app:{app.id}"),
+                        InlineKeyboardButton(text="❌ Müsait Değilim", callback_data=f"tch:rej_app:{app.id}")
+                    ]
+                ])
+                await message.bot.send_message(chat_id=tch.telegram_id, text=t_text, reply_markup=t_kb, parse_mode="Markdown")
+            except Exception:
+                pass
+
+@router.callback_query(F.data == "tch:appointments")
+async def cb_teacher_appointments_list(query: CallbackQuery):
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        tch = (await session.execute(select(Teacher).where(Teacher.telegram_id == query.from_user.id))).scalar_one_or_none()
+        tch_id = tch.id if tch else 0
+
+        apps = (await session.execute(
+            select(Appointment).where(Appointment.teacher_id == tch_id, Appointment.status == "pending")
+        )).scalars().all()
+
+        if not apps:
+            buttons = [get_nav_buttons(lang)]
+            await query.message.edit_text(get_text("no_pending_appointments", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+            await query.answer()
+            return
+
+        buttons = []
+        for a in apps:
+            btn_txt = f"🤝 Randevu #{a.id} ({a.preferred_time[:20]})"
+            buttons.append([InlineKeyboardButton(text=btn_txt, callback_data=f"tch:view_app:{a.id}")])
+        buttons.append(get_nav_buttons(lang))
+
+        await query.message.edit_text("🤝 *Bekleyen Veli Randevuları:*", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("tch:appr_app:"))
+async def cb_teacher_approve_app(query: CallbackQuery):
+    app_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        app = await session.get(Appointment, app_id)
+        if app and app.status == "pending":
+            app.status = "approved"
+            await session.commit()
+            try:
+                await query.message.bot.send_message(chat_id=app.parent_telegram_id, text=get_text("appointment_approved_msg", "tr"), parse_mode="Markdown")
+            except Exception:
+                pass
+            await query.message.edit_text("✅ Randevu onaylandı ve veliye bildirildi.")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("tch:rej_app:"))
+async def cb_teacher_reject_app(query: CallbackQuery):
+    app_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        app = await session.get(Appointment, app_id)
+        if app and app.status == "pending":
+            app.status = "rejected"
+            await session.commit()
+            try:
+                await query.message.bot.send_message(chat_id=app.parent_telegram_id, text=get_text("appointment_rejected_msg", "tr"), parse_mode="Markdown")
+            except Exception:
+                pass
+            await query.message.edit_text("❌ Randevu talebi reddedildi.")
+    await query.answer()
+
+# --- DERS PROGRAMI VE GÜNÜN MENÜSÜ ---
+
+@router.callback_query(F.data == "act_view_sched")
+async def cb_view_schedule(query: CallbackQuery):
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+        cls_name = "9-A"
+        if user and user.role == "parent" and user.current_child_id:
+            st = await session.get(Student, user.current_child_id)
+            if st: cls_name = st.class_name
+        elif user and user.role == "student":
+            st = (await session.execute(select(Student).where(Student.student_telegram_id == query.from_user.id))).scalar_one_or_none()
+            if st: cls_name = st.class_name
+
+        sched = (await session.execute(select(ScheduleItem).where(ScheduleItem.class_name == cls_name))).scalar_one_or_none()
+        content = sched.schedule_text if sched else "• 1. Ders: 09:00 - Matematik\n• 2. Ders: 09:50 - Fizik\n• 3. Ders: 10:40 - Türkçe\n• 4. Ders: 11:30 - Tarih\n• 5. Ders: 13:00 - Biyoloji"
+
+        text = get_text("schedule_title", lang, class_name=cls_name, content=content)
+        buttons = [get_nav_buttons(lang)]
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data == "act_view_cafe")
+async def cb_view_cafeteria(query: CallbackQuery):
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        today = datetime.utcnow().date()
+
+        menu = (await session.execute(select(CafeteriaMenu).where(CafeteriaMenu.date == today))).scalar_one_or_none()
+        content = menu.menu_text if menu else "🍲 Mercimek Çorbası\n🍗 Fırında Tavuk & Pilav\n🥗 Mevsim Salatası\n🍎 Meyve / Ayran"
+
+        text = get_text("cafeteria_today_title", lang, date=today.strftime("%d.%m.%Y"), content=content)
+        buttons = [get_nav_buttons(lang)]
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data == "adm:menu_edit")
+async def cb_admin_menu_edit(query: CallbackQuery, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+    buttons = [get_nav_buttons(lang)]
+    await query.message.edit_text(get_text("prompt_menu_update", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await state.set_state(Form.menu_update_text)
+    await query.answer()
+
+@router.message(Form.menu_update_text)
+async def process_menu_update_text(message: Message, state: FSMContext):
+    m_text = message.text.strip()
+    await state.clear()
+    today = datetime.utcnow().date()
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        lang = user.language if user else "tr"
+
+        menu = (await session.execute(select(CafeteriaMenu).where(CafeteriaMenu.date == today))).scalar_one_or_none()
+        if not menu:
+            menu = CafeteriaMenu(date=today, menu_text=m_text)
+            session.add(menu)
+        else:
+            menu.menu_text = m_text
+        await session.commit()
+
+        await message.answer(get_text("menu_updated", lang))
+        await render_clean_dashboard(message, user)
+
+# ======================================================================
+# 11. YÖNETİCİ: ÖĞRENCİ, ÖĞRETMEN, SINIFLAR, KOKPİT VE PDF İŞLEMLERİ
 # ======================================================================
 
 @router.callback_query(F.data == "adm:add_student")
@@ -1074,8 +2134,6 @@ async def process_student_no(message: Message, state: FSMContext):
         ]
         await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
 
-# --- ÖĞRETMEN EKLEME ---
-
 @router.callback_query(F.data == "adm:add_teacher")
 async def cb_start_add_teacher(query: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -1128,10 +2186,6 @@ async def process_teacher_subject(message: Message, state: FSMContext):
         ]
         await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
 
-# ======================================================================
-# 9. YÖNETİCİ: HIZLI ÖĞRENCİ ARAMA (SEARCH ENGINE)
-# ======================================================================
-
 @router.callback_query(F.data == "adm:search_student")
 async def cb_search_student_init(query: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -1153,7 +2207,6 @@ async def process_search_query(message: Message, state: FSMContext):
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
 
-        # İsim veya numaraya göre ara
         stmt = select(Student).where(
             (Student.full_name.ilike(f"%{query_text}%")) |
             (Student.student_number == query_text)
@@ -1174,10 +2227,6 @@ async def process_search_query(message: Message, state: FSMContext):
 
         buttons.append(get_nav_buttons(lang))
         await message.answer(get_text("search_results_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
-
-# ======================================================================
-# 10. YÖNETİCİ: SINIFLAR, ÖĞRENCİ KARTI, KOD SIFIRLAMA VE SİLME
-# ======================================================================
 
 @router.callback_query(F.data == "adm:classes")
 async def cb_classes_list(query: CallbackQuery, state: FSMContext):
@@ -1222,14 +2271,8 @@ async def cb_show_class_students(query: CallbackQuery):
 
         students = (await session.execute(select(Student).where(Student.class_name == class_name).order_by(Student.student_number))).scalars().all()
         buttons = []
-        row = []
         for s in students:
-            row.append(InlineKeyboardButton(text=f"👤 {s.full_name} ({s.student_number})", callback_data=f"adm:st_card:{s.id}"))
-            if len(row) == 1:
-                buttons.append(row)
-                row = []
-        if row:
-            buttons.append(row)
+            buttons.append([InlineKeyboardButton(text=f"👤 {s.full_name} ({s.student_number})", callback_data=f"adm:st_card:{s.id}")])
 
         buttons.append([InlineKeyboardButton(text=f"📄 {class_name} Şifre Kartları (PDF)", callback_data=f"adm:gen_pdf:{class_name}")])
         buttons.append(get_nav_buttons(lang, back_callback="adm:classes"))
@@ -1298,10 +2341,6 @@ async def cb_delete_student(query: CallbackQuery):
             await cb_show_class_students(query)
             return
     await query.answer()
-
-# ======================================================================
-# 11. YÖNETİCİ: KOKPİT, PDF, EXCEL, BAKIM MODU VE MAZERET MERKEZİ
-# ======================================================================
 
 @router.callback_query(F.data == "adm:dashboard")
 async def cb_admin_dashboard(query: CallbackQuery, state: FSMContext):
@@ -1413,9 +2452,9 @@ async def cb_toggle_maintenance(query: CallbackQuery):
             maint.value = "false" if maint.value == "true" else "true"
         await session.commit()
     await render_clean_dashboard(query, user)
-    await query.answer("Bakım modu durumu güncellendi.")
+    await query.answer("Bakım modu güncellendi.")
 
-# --- MAZERET RAPORLARI ONAY MERKEZİ ---
+# --- MAZERET RAPORLARI ---
 
 @router.callback_query(F.data == "adm:medical_list")
 async def cb_medical_list(query: CallbackQuery):
@@ -1529,7 +2568,7 @@ async def cb_reject_medical(query: CallbackQuery):
     await query.answer()
     await cb_admin_dashboard(query, None)
 
-# --- TOPLU DUYURU (BROADCAST) ---
+# --- TOPLU DUYURU ---
 
 @router.callback_query(F.data == "adm:broadcast_init")
 async def cb_broadcast_init(query: CallbackQuery, state: FSMContext):
@@ -1564,61 +2603,8 @@ async def process_broadcast_text(message: Message, state: FSMContext):
         await message.answer(get_text("broadcast_success", lang, count=sent_cnt), parse_mode="Markdown")
         await render_clean_dashboard(message, user)
 
-# --- ROLLERİ TEST ETME LABORATUVARI ---
-
-@router.callback_query(F.data == "adm:test_roles")
-async def cb_test_roles(query: CallbackQuery, state: FSMContext):
-    await state.clear()
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, query.from_user.id)
-        lang = user.language if user else "tr"
-
-    buttons = [
-        [
-            InlineKeyboardButton(text="👨‍🏫 Öğretmen Modu", callback_data="switch_role:teacher"),
-            InlineKeyboardButton(text="👨‍👩‍👧‍👦 Veli Modu", callback_data="switch_role:parent")
-        ],
-        [
-            InlineKeyboardButton(text="🎓 Öğrenci Modu", callback_data="switch_role:student"),
-            InlineKeyboardButton(text="👑 Yönetici (Admin)", callback_data="switch_role:admin")
-        ],
-        get_nav_buttons(lang)
-    ]
-    text = "🔄 *Rol Değiştirme ve Test Laboratuvarı:*\nİstediğiniz role geçip arayüzü test edebilirsiniz:"
-    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
-    await query.answer()
-
-@router.callback_query(F.data.startswith("switch_role:"))
-async def cb_switch_role(query: CallbackQuery, state: FSMContext):
-    await state.clear()
-    new_role = query.data.split(":")[1]
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, query.from_user.id)
-        if user:
-            user.role = new_role
-            if new_role == "parent":
-                st = (await session.execute(select(Student).limit(1))).scalar_one_or_none()
-                if st:
-                    user.current_child_id = st.id
-                    # Bağlantı tablosuna da ekle
-                    rel = await session.execute(select(ParentStudent).where(ParentStudent.parent_telegram_id == user.telegram_id, ParentStudent.student_id == st.id))
-                    if not rel.scalar_one_or_none():
-                        session.add(ParentStudent(parent_telegram_id=user.telegram_id, student_id=st.id))
-            elif new_role == "student":
-                st = (await session.execute(select(Student).limit(1))).scalar_one_or_none()
-                if st:
-                    st.student_telegram_id = user.telegram_id
-            elif new_role == "teacher":
-                tch = (await session.execute(select(Teacher).limit(1))).scalar_one_or_none()
-                if tch:
-                    tch.telegram_id = user.telegram_id
-            await session.commit()
-
-    await render_clean_dashboard(query, user)
-    await query.answer()
-
 # ======================================================================
-# 12. ÖĞRETMEN MODÜLÜ: HIZLI YOKLAMA, ROZETLİ NOT VE ÖDEV PANOSU
+# 12. ÖĞRETMEN MODÜLÜ: HIZLI YOKLAMA, NOT VE ÖDEV PANOSU
 # ======================================================================
 
 @router.callback_query(F.data == "tch:classes")
@@ -1690,11 +2676,10 @@ async def cb_attendance_save(query: CallbackQuery):
 
         for st_id, is_absent in cache.items():
             new_status = "absent" if is_absent else "present"
-            # Mükerrer yoklamayı önleyen UPSERT sorgusu
             att_stmt = select(Attendance).where(Attendance.student_id == st_id, Attendance.date == now.date())
             existing = (await session.execute(att_stmt)).scalar_one_or_none()
             if existing:
-                if existing.status != "excused": # Önceden mazeretli olanı ezme
+                if existing.status != "excused":
                     existing.status = new_status
                     existing.notify_at = notify_time
                     existing.is_notified = False
@@ -1715,7 +2700,7 @@ async def cb_attendance_save(query: CallbackQuery):
         await query.message.edit_text(get_text("att_saved", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
-# --- NOT GİRİŞİ AKIŞI (ROZETLİ) ---
+# --- NOT GİRİŞİ ---
 
 @router.callback_query(F.data == "tch:grade_classes")
 async def cb_grade_classes(query: CallbackQuery, state: FSMContext):
@@ -1813,7 +2798,6 @@ async def cb_grade_save_final(query: CallbackQuery, state: FSMContext):
         session.add(grade)
         await session.commit()
 
-        # Veliye anında bildirim gönder
         parents = (await session.execute(select(ParentStudent.parent_telegram_id).where(ParentStudent.student_id == st_id))).scalars().all()
         for p_id in parents:
             try:
@@ -1876,7 +2860,6 @@ async def process_hw_content(message: Message, state: FSMContext):
         session.add(hw)
         await session.commit()
 
-        # Sınıfın tüm öğrenci ve velilerini bulup ilet
         st_ids = (await session.execute(select(Student.id).where(Student.class_name == class_name))).scalars().all()
         parent_tg_ids = (await session.execute(select(ParentStudent.parent_telegram_id).where(ParentStudent.student_id.in_(st_ids)))).scalars().all()
         student_tg_ids = (await session.execute(select(Student.student_telegram_id).where(Student.id.in_(st_ids), Student.student_telegram_id.isnot(None)))).scalars().all()
@@ -1896,7 +2879,7 @@ async def process_hw_content(message: Message, state: FSMContext):
         await render_clean_dashboard(message, user)
 
 # ======================================================================
-# 13. VELİ MODÜLÜ: ÇOKLU ÖĞRENCİ DEĞİŞTİRİCİ, KARNE VE RAPOR
+# 13. VELİ & ÖĞRENCİ MODÜLÜ: KARNE, ÖĞRENCİ SEÇİCİ VE MAZERET BELGESİ
 # ======================================================================
 
 @router.callback_query(F.data == "parent:switch_student")
@@ -1906,7 +2889,6 @@ async def cb_parent_switch_student(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-        # Veliye bağlı tüm öğrencileri getir
         stmt = select(Student).join(ParentStudent, ParentStudent.student_id == Student.id).where(ParentStudent.parent_telegram_id == user.telegram_id)
         children = (await session.execute(stmt)).scalars().all()
 
@@ -1944,18 +2926,19 @@ async def cb_view_report_card(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, user_id)
         lang = user.language if user else "tr"
 
-        st_id = user.current_child_id if user and user.role == "parent" else None
-        if not st_id:
+        st = None
+        if user and user.role == "parent" and user.current_child_id:
+            st = await session.get(Student, user.current_child_id)
+        elif user and user.role == "student":
             st = (await session.execute(select(Student).where(Student.student_telegram_id == user_id))).scalar_one_or_none()
-            if not st:
-                st = (await session.execute(select(Student).limit(1))).scalar_one_or_none()
-            st_id = st.id if st else None
 
-        if not st_id:
-            await query.answer("Görüntülenecek öğrenci kaydı bulunamadı!", show_alert=True)
+        if not st:
+            text = get_text("no_linked_student", lang)
+            buttons = [get_nav_buttons(lang)]
+            await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+            await query.answer()
             return
 
-        st = await session.get(Student, st_id)
         att_stmt = select(Attendance).where(Attendance.student_id == st.id)
         attendances = (await session.execute(att_stmt)).scalars().all()
         absent_count = sum(1 for a in attendances if a.status == "absent")
@@ -1994,10 +2977,15 @@ async def handle_medical_photo(message: Message, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
-        st = await session.get(Student, user.current_child_id if user and user.current_child_id else 1)
+        st = await session.get(Student, user.current_child_id) if user and user.current_child_id else None
+
+        if not st:
+            await message.answer(get_text("no_linked_student", lang))
+            await state.clear()
+            return
 
         report = MedicalReport(
-            student_id=st.id if st else 1,
+            student_id=st.id,
             parent_telegram_id=user.telegram_id,
             file_id=photo_file_id,
             caption=message.caption or "Sağlık Raporu"
@@ -2020,119 +3008,171 @@ async def cb_ack_notification(query: CallbackQuery):
     await query.answer(get_text("acknowledged_toast", "tr"), show_alert=True)
     await query.message.edit_reply_markup(reply_markup=None)
 
-# --- DİĞER ORTAK CALLBACK'LER ---
-
 @router.callback_query(F.data == "act_change_lang")
 async def cb_change_lang_screen(query: CallbackQuery, state: FSMContext):
     await state.clear()
-    await query.message.edit_text("🌍 Lütfen bir dil seçiniz / Tilni tanlang / Select language:", reply_markup=get_language_inline_kb())
+    await query.message.edit_text(get_text("lang_select", "tr"), reply_markup=get_language_inline_kb())
     await query.answer()
 
-@router.callback_query(F.data == "act_enter_code")
-async def cb_enter_code_screen(query: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await query.message.answer("Lütfen size verilen kodu yazınız (Örn: `VELI-1234`, `HCA-1234`, `OGR-1234`):", parse_mode="Markdown")
-    await state.set_state(Form.waiting_auth_code)
-    await query.answer()
+# ======================================================================
+# 14. SABİT ALT MENÜ (REPLY KEYBOARD) VE GLOBAL METİN YÖNLENDİRİCİSİ
+# ======================================================================
 
-@router.callback_query(F.data == "act_claim_admin")
-async def cb_claim_admin(query: CallbackQuery, state: FSMContext):
-    await state.clear()
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, query.from_user.id)
-        if user:
-            user.role = "admin"
-            await session.commit()
-    await query.answer("👑 Yönetici yetkisi tanımlandı.", show_alert=True)
-    await render_clean_dashboard(query, user)
+REPLY_BUTTON_ACTIONS = {
+    # Ortak
+    "rk_logout": "act_logout",
+    "rk_main_menu": "act_main_menu",
+    "rk_admin_dash": "act_main_menu",
+    "rk_lang": "act_lang",
+    "rk_enter_code": "act_enter_code",
+    "rk_req_access": "act_req_access",
+    # Yönetici
+    "rk_cockpit": "act_cockpit",
+    "rk_classes": "act_classes",
+    "rk_requests": "act_requests",
+    # Öğretmen
+    "rk_attendance": "act_attendance",
+    "rk_grade": "act_grade",
+    "rk_homework": "act_homework",
+    # Veli & Öğrenci
+    "rk_report": "act_report",
+    "rk_appointments": "act_appointments",
+    "rk_schedule": "act_schedule",
+    "rk_cafeteria": "act_cafeteria",
+    "rk_switch_student": "act_switch_student",
+    "rk_upload_medical": "act_upload_medical"
+}
 
-@router.message(Form.waiting_auth_code)
-async def handle_auth_code(message: Message, state: FSMContext):
-    code = message.text.strip().upper()
+def match_reply_button(text: str) -> str | None:
+    if not text:
+        return None
+    clean_text = text.strip()
+    for key, action in REPLY_BUTTON_ACTIONS.items():
+        for lang_code in LOCALES:
+            btn_txt = LOCALES[lang_code].get(key, "")
+            if btn_txt and btn_txt == clean_text:
+                return action
+    return None
+
+@router.message(F.text)
+async def global_text_router(message: Message, state: FSMContext):
+    action = match_reply_button(message.text)
     user_id = message.from_user.id
-
-    if code == "ADMIN-2026":
-        async with AsyncSessionLocal() as session:
-            user = await session.get(User, user_id)
-            user.role = "admin"
-            await session.commit()
-        await state.clear()
-        await message.answer("👑 *Yönetici yetkisi açıldı.*", parse_mode="Markdown")
-        await render_clean_dashboard(message, user)
-        return
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
-        lang = user.language if user else "tr"
-
-        t_stmt = select(Teacher).where(Teacher.auth_code == code)
-        teacher = (await session.execute(t_stmt)).scalar_one_or_none()
-        if teacher:
-            teacher.telegram_id = user_id
-            user.role = "teacher"
-            user.full_name = teacher.full_name
-            user.failed_attempts = 0
+        if not user:
+            user = User(telegram_id=user_id, language="tr", role="guest")
+            session.add(user)
             await session.commit()
-            await state.clear()
-            await message.answer(get_text("auth_success", lang, role="Öğretmen"))
+        lang = user.language
+
+    if action:
+        await state.clear()
+        if action == "act_logout":
+            async with AsyncSessionLocal() as session:
+                u = await session.get(User, user_id)
+                if u:
+                    u.role = "guest"
+                    await session.commit()
+            reply_kb = get_role_reply_kb("guest", lang)
+            await message.answer(get_text("logged_out", lang), reply_markup=reply_kb)
+            await prompt_guest_screen(message, user, state)
+            return
+
+        elif action == "act_main_menu":
             await render_clean_dashboard(message, user)
             return
 
-        s_stmt = select(Student).where(Student.student_code == code)
-        student = (await session.execute(s_stmt)).scalar_one_or_none()
-        if student:
-            student.student_telegram_id = user_id
-            user.role = "student"
-            user.full_name = student.full_name
-            user.failed_attempts = 0
-            await session.commit()
-            await state.clear()
-            await message.answer(get_text("auth_success", lang, role="Öğrenci"))
-            await render_clean_dashboard(message, user)
+        elif action == "act_lang":
+            await message.answer(get_text("lang_select", lang), reply_markup=get_language_inline_kb())
             return
 
-        p_stmt = select(Student).where(Student.parent_code == code)
-        p_student = (await session.execute(p_stmt)).scalar_one_or_none()
-        if p_student:
-            user.role = "parent"
-            user.failed_attempts = 0
-            if not user.current_child_id:
-                user.current_child_id = p_student.id
-
-            rel_check = select(ParentStudent).where(
-                ParentStudent.parent_telegram_id == user_id,
-                ParentStudent.student_id == p_student.id
-            )
-            exists = (await session.execute(rel_check)).scalar_one_or_none()
-            if not exists:
-                session.add(ParentStudent(parent_telegram_id=user_id, student_id=p_student.id))
-
-            await session.commit()
-            await state.clear()
-            await message.answer(get_text("auth_success", lang, role="Veli"))
-            await render_clean_dashboard(message, user)
+        elif action == "act_enter_code":
+            await message.answer("🔑 *Lütfen giriş kodunu yazınız:* (Örn: `HCA-123456`, `VELI-123456`, `OGR-123456`)", parse_mode="Markdown")
+            await state.set_state(Form.waiting_auth_code)
             return
 
-        user.failed_attempts += 1
-        if user.failed_attempts >= 5:
-            user.is_blacklisted = True
-            await session.commit()
-            await message.answer(get_text("auth_blacklisted", lang))
-            await state.clear()
-            return
-        elif user.failed_attempts >= 3:
-            user.locked_until = datetime.utcnow() + timedelta(hours=1)
-            await session.commit()
-            await message.answer(get_text("auth_locked", lang))
-            await state.clear()
+        elif action == "act_req_access":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_req_access")
+            await cb_act_req_access(dummy_q, state)
             return
 
-        remaining = 3 - user.failed_attempts
-        await session.commit()
-        await message.answer(get_text("auth_failed", lang, remaining=remaining))
+        # Yönetici Eylemleri
+        elif action == "act_cockpit" and user.role == "admin":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:cockpit")
+            await cb_cockpit(dummy_q)
+            return
+
+        elif action == "act_classes" and user.role == "admin":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:classes")
+            await cb_classes_list(dummy_q, state)
+            return
+
+        elif action == "act_requests" and user.role == "admin":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:requests_list")
+            await cb_admin_requests_list(dummy_q)
+            return
+
+        # Öğretmen Eylemleri
+        elif action == "act_attendance" and user.role == "teacher":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:classes")
+            await cb_teacher_classes(dummy_q, state)
+            return
+
+        elif action == "act_grade" and user.role == "teacher":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:grade_classes")
+            await cb_grade_classes(dummy_q, state)
+            return
+
+        elif action == "act_homework" and user.role == "teacher":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:hw_classes")
+            await cb_hw_classes(dummy_q, state)
+            return
+
+        elif action == "act_appointments" and user.role == "teacher":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:appointments")
+            await cb_teacher_appointments_list(dummy_q)
+            return
+
+        # Veli & Öğrenci Eylemleri
+        elif action == "act_report" and user.role in ["parent", "student"]:
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_report")
+            await cb_view_report_card(dummy_q, state)
+            return
+
+        elif action == "act_appointments" and user.role == "parent":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_book_app")
+            await cb_parent_book_app_init(dummy_q, state)
+            return
+
+        elif action == "act_schedule" and user.role in ["teacher", "parent", "student"]:
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_sched")
+            await cb_view_schedule(dummy_q)
+            return
+
+        elif action == "act_cafeteria" and user.role in ["parent", "student"]:
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_cafe")
+            await cb_view_cafeteria(dummy_q)
+            return
+
+        elif action == "act_switch_student" and user.role == "parent":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="parent:switch_student")
+            await cb_parent_switch_student(dummy_q, state)
+            return
+
+        elif action == "act_upload_medical" and user.role == "parent":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="upload_medical_init")
+            await cb_upload_med_init(dummy_q, state)
+            return
+
+    # Eğer misafir kullanıcı doğrudan şifresini yazdıysa
+    if user.role == "guest":
+        await process_auth_code_string(message.text, user_id, message, state)
+        return
 
 # ======================================================================
-# 14. FASTAPI VE ARKA PLAN DÖNGÜLERİ (LIFESPAN & PINGER)
+# 15. FASTAPI VE ARKA PLAN DÖNGÜLERİ (LIFESPAN & PINGER)
 # ======================================================================
 
 bot = Bot(token=BOT_TOKEN)
@@ -2171,11 +3211,10 @@ async def background_evening_briefing_loop():
     """Her gün 18:30'da velilere gün sonu özeti gönderen zamanlayıcı"""
     while True:
         try:
-            # Türkiye / Yerel saat kontrolü (UTC+3)
-            now_utc3 = datetime.utcnow() + timedelta(hours=3)
-            if now_utc3.hour == 18 and now_utc3.minute == 30:
+            now_local = datetime.utcnow() + timedelta(hours=TIMEZONE_OFFSET)
+            if now_local.hour == 18 and now_local.minute == 30:
                 await run_evening_briefing_worker(bot)
-                await asyncio.sleep(70) # Aynı dakikada mükerrer atmaması için
+                await asyncio.sleep(70)
         except Exception:
             pass
         await asyncio.sleep(30)
@@ -2219,9 +3258,9 @@ async def lifespan(app: FastAPI):
     print("--> [4/5] Gecikmeli yoklama, Self-Pinger ve 18:30 Akşam Brifingi aktif.")
     print("--> [5/5] SİSTEM CANLI VE HAZIR.")
     print("=" * 60)
-    
+
     yield
-    
+
     t1.cancel()
     t2.cancel()
     t3.cancel()
@@ -2273,3 +3312,4 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="info")
+
