@@ -207,6 +207,11 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default="guest") # admin, teacher, parent, student, guest
     language: Mapped[str] = mapped_column(String(5), default="tr")
     full_name: Mapped[str] = mapped_column(String(100), nullable=True)
+    username: Mapped[str] = mapped_column(String(100), nullable=True)
+    phone: Mapped[str] = mapped_column(String(30), nullable=True)
+    admin_type: Mapped[str] = mapped_column(String(20), default="none") # permanent, temporary, none
+    admin_until: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    previous_role: Mapped[str] = mapped_column(String(20), default="guest")
     failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     is_blacklisted: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -361,7 +366,33 @@ async def init_db():
                 pass
         await conn.run_sync(Base.metadata.create_all)
 
-        # Otomatik Sütun Göçü: grades tablosunda exam_type sütunu yoksa ekle
+        # Otomatik Sütun Göçü: users tablosunda username, phone, admin_type, admin_until, previous_role ekle
+    try:
+        if "sqlite" in DATABASE_URL:
+            res = await conn.exec_driver_sql("PRAGMA table_info(users);")
+            cols = [r[1] for r in res.fetchall()]
+            for c_name, c_type in [
+                ("username", "VARCHAR(100)"),
+                ("phone", "VARCHAR(30)"),
+                ("admin_type", "VARCHAR(20) DEFAULT 'none'"),
+                ("admin_until", "DATETIME"),
+                ("previous_role", "VARCHAR(20) DEFAULT 'guest'")
+            ]:
+                if c_name not in cols:
+                    await conn.exec_driver_sql(f"ALTER TABLE users ADD COLUMN {c_name} {c_type};")
+        else:
+            for c_name, c_type in [
+                ("username", "VARCHAR(100)"),
+                ("phone", "VARCHAR(30)"),
+                ("admin_type", "VARCHAR(20) DEFAULT 'none'"),
+                ("admin_until", "TIMESTAMP"),
+                ("previous_role", "VARCHAR(20) DEFAULT 'guest'")
+            ]:
+                await conn.exec_driver_sql(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {c_name} {c_type};")
+    except Exception:
+        pass
+
+    # Otomatik Sütun Göçü: grades tablosunda exam_type sütunu yoksa ekle
         try:
             if "sqlite" in DATABASE_URL:
                 res = await conn.exec_driver_sql("PRAGMA table_info(grades);")
@@ -377,7 +408,7 @@ async def init_db():
 # 3. KUSURSUZ 4 DİLLİ METİN SÖZLÜĞÜ (TR, RU, UZ, EN)
 # ======================================================================
 
-LOCALES = {'tr': {'btn_add_another': '➕ Başka Ekle', 'btn_add_new_teacher': '➕ Yeni Öğretmen Ekle', 'btn_prev': '⬅️ Önceki', 'btn_appr_medical': '✅ Onayla (İzinli Say)', 'btn_appr_request': '✅ Onayla ve Yetkilendir', 'btn_reject': '❌ Reddet', 'btn_not_available': '❌ Müsait Değilim', 'btn_del_teacher': '❌ Öğretmeni Sil', 'btn_edit_name': '👤 İsim Değiştir', 'btn_edit_class': '🏫 Sınıf / Nakil', 'btn_edit_no': '🔢 Numara Değiştir', 'btn_unlink_parent': '👨‍👩‍👧‍👦 Veli Bağlantısını Kopar', 'btn_school_admins': '👨‍💼 Okul Yöneticileri', 'btn_manage_schedule': '📅 Ders Programı Yönetimi', 'btn_search_teacher': '🔍 Öğretmen Ara', 'btn_unack_notifs': '⚠️ Onaylanmamış Devamsızlıklar', 'btn_teachers_pdf': '👨‍🏫 Tüm Öğretmen Şifre Kartları (PDF)', 'btn_add_admin_id': '➕ Telegram ID ile Yönetici Ekle', 'btn_gen_admin_code': '🔑 Tek Kullanımlık Yönetici Kodu Üret', 'btn_recent_grades_menu': '📝 Son Girilen Notlar (Düzenle / Sil)', 'btn_export_all_data': '📤 Tüm Okul Verisini İndir (Yedek)', 'btn_upload_excel': '📥 Toplu Öğrenci Yükle (Excel)', 'btn_search_again': '🔍 Tekrar Ara', 'role_student_btn': '🎓 Öğrenci', 'role_teacher_btn': '👨‍🏫 Öğretmen', 'role_parent_btn': '👨‍👩‍👧‍👦 Veli', 'btn_cancel_action': '⬅️ İptal', 'btn_delete_action': '❌ Sil', 'auth_internal_error': '⚠️ Doğrulama sırasında hata oluştu. Lütfen tekrar deneyiniz.', 'req_approved_admin_msg': '✅ *Talep Onaylandı (# {id})*\\n{name} ({role}) başarıyla sisteme kaydedildi.', 'req_rejected_admin_msg': '❌ *Talep Reddedildi (# {id})*\\n{name} adlı kullanıcının başvurusu reddedildi.', 'pending_appointments_title': '🤝 *Bekleyen Veli Randevuları:*', 'no_permission_appointment': '⛔ Bu randevuyu yanıtlama yetkiniz bulunmuyor!', 'appointment_confirmed_toast': '✅ Randevu onaylandı ve veliye bildirildi.', 'setting_updated_toast': 'Ayar güncellendi.', 'maintenance_mode_updated': 'Bakım modu güncellendi.', 'admin_sched_edit_title': '📅 *Ders Programı Düzenleme Masası*\\n\\nDers programını girmek veya güncellemek istediğiniz sınıfı seçiniz:', 'admin_sched_updated': '✅ *{class_name} Sınıfı Ders Programı Güncellendi!*', 'student_name_invalid': '⚠️ *Hatalı Giriş:* Lütfen öğrencinin adını ve soyadını eksiksiz yazınız (en az 3 karakter):', 'teacher_name_invalid': '⚠️ *Hatalı Giriş:* Lütfen öğretmenin adını ve soyadını eksiksiz yazınız (en az 3 karakter):', 'teacher_search_prompt': '🔍 Lütfen aramak istediğiniz öğretmenin adını veya branşını yazınız (Örn: Ahmet veya Matematik):', 'teacher_search_no_results': '❌ Eşleşen öğretmen bulunamadı.', 'teacher_search_results_title': '🔍 *Öğretmen Arama Sonuçları:*', 'student_info_updated': '✅ *Öğrenci Bilgisi Güncellendi:* {name} ({class_name} - No: {no})', 'parent_unlinked_success': '✅ Veli bağlantıları koparıldı. Yeni Veli Kodu: {code}', 'all_notifs_acknowledged': '✅ *Tüm Devamsızlık Bildirimleri Velilerce Onaylandı!*\\n\\nSon 36 saatte velisi tarafından okunmamış hiçbir bildirim bulunmamaktadır.', 'admin_add_tg_id_prompt': '👤 Lütfen yeni yöneticinin Telegram ID numarasını yazınız (Örn: `123456789`):\\n\\n*(Kişi bota /start yazdığında ID numarasını görebilir)*', 'admin_invalid_tg_id': '⚠️ Lütfen sadece rakamlardan oluşan geçerli bir Telegram ID yazınız:', 'admin_add_name_prompt': '👤 Lütfen yeni yöneticinin Adını, Soyadını ve Unvanını yazınız (Örn: `Ahmet Yılmaz - Müdür Yrd.`):', 'admin_added_success': '✅ *Yönetici Başarıyla Eklendi:* {name} (`{id}`)', 'permanent_admin_protected': '⛔ Kalıcı / Kurucu yöneticinin yetkisi kaldırılamaz!', 'admin_demoted_toast': 'Yönetici yetkisi kaldırıldı.', 'no_students_in_class': 'Sınıfta öğrenci bulunamadı!', 'image_load_error': 'Görsel yüklenemedi!', 'published_homeworks_title': '📚 *Yayınladığınız Son Ödevler:*', 'homework_deleted_toast': 'Ödev silindi.', 'action_cancelled': '❌ *İşlem iptal edildi.*', 'unauthorized_action': '⛔ Yetkisiz işlem!', 'request_already_handled': 'Bu talep daha önce işleme alınmış!', 'teacher_not_found': 'Öğretmen bulunamadı!', 'student_not_found': 'Öğrenci bulunamadı!', 'no_registered_teachers': 'Kayıtlı öğretmen bulunamadı!', 'no_registered_students': 'Kayıtlı öğrenci bulunamadı!', 'appointment_not_found': 'Randevu bulunamadı!', 'report_not_found': 'Rapor bulunamadı!', 'no_permission_grade': 'Bu nota erişim yetkiniz yok!', 'no_permission_report_card': '⛔ Bu karneye erişim izniniz bulunmamaktadır!', 'no_permission_student_record': '⛔ Yetkisiz İşlem: Bu öğrenci kaydına erişim izniniz yok!', 'invalid_name_error': '⚠️ *Hatalı İsim:* Lütfen adınızı ve soyadınızı eksiksiz yazınız (en az 3 karakter):', 'invalid_phone_error': '⚠️ *Hatalı Telefon:* Lütfen geçerli bir telefon numarası giriniz (en az 7 rakam):', 'invalid_score_format': '⚠️ Lütfen geçerli bir sayı giriniz (0-100):', 'invalid_score_range': '⚠️ Not 0 ile 100 arasında olmalıdır. Lütfen tekrar giriniz (0-100):', 'invalid_parent_code': '❌ *Geçersiz Veli Kodu!* Lütfen kodu kontrol ediniz.', 'lock_countdown_msg': '⛔ *Güvenlik Kilidi:* Hesabınız geçici olarak kilitlidir.\n\nKalan süre: *{mins} dakika*. Lütfen sürenin dolmasını bekleyiniz.', 'attendance_weekend_lock': '⚠️ Hafta sonu günlerinde yoklama kaydedilemez!', 'attendance_hours_lock': '⚠️ Ders saatleri dışında (07:00 - 18:30) yoklama kaydedilemez!', 'attendance_select_class': '📋 Yoklama alacağınız sınıfı seçiniz:', 'attendance_correction_notification': 'ℹ️ *DEVAMSIZLIK DÜZELTME BİLDİRİMİ*\n\nÖğrenciniz *{name}* için daha önce iletilen devamsızlık kaydı öğretmen tarafından *DÜZELTİLMİŞTİR* (Öğrenci derstedir).', 'grade_select_class': '📝 Not gireceğiniz sınıfı seçiniz:', 'grade_select_student': '📝 *{class_name} Sınıfı* - Öğrenciyi seçiniz:', 'grade_parent_notification': '📝 *YENİ DERS NOTU*\n\nÖğrenciniz *{name}*, {subject} ({exam_type}) sınavından *{score}* aldı. ({badge})', 'schedule_select_class': '📅 Ders programını incelemek istediğiniz sınıfı seçiniz:', 'homework_board_title': '📚 *{class_name} Sınıfı Son Ödevleri:*', 'no_active_homeworks': '📚 *{class_name} Sınıfı Ödev Panosu*\n\nŞu anda aktif veya bekleyen bir ödev bulunmamaktadır.', 'photo_expected_medical': '⚠️ *Fotoğraf Bekleniyor:* Lütfen sağlık raporu veya mazeret belgesinin net bir fotoğrafını gönderiniz.\n\n*(İptal etmek için aşağıdaki \'❌ İşlemi İptal Et\' butonuna basabilirsiniz.)*', 'parent_choose_child': '🧑‍🎓 Lütfen durumunu incelemek istediğiniz öğrenciyi seçiniz:', 'unauthorized_excel_upload': '⛔ *Yetkisiz İşlem:* Yalnızca okul yöneticileri Excel ile toplu öğrenci yükleyebilir!', 'excel_format_error': '⚠️ *Dosya İşleme Hatası:* Excel dosyası okunamadı veya formatı geçersiz.\n\nLütfen ilk satır başlıklarının \'Ad Soyad | Sinif | Numara\' olduğundan emin olunuz.', 'medical_approved_parent': '✅ *Sağlık / Mazeret raporunuz okul idaresi tarafından onaylandı. Öğrenci izinli sayıldı.*', 'medical_rejected_parent': '❌ *Sağlık / Mazeret raporunuz okul idaresi tarafından reddedildi.*', 'admin_unban_notification': '🟢 *Hesabınızın engeli okul yönetimi tarafından kaldırılmıştır. Tekrar giriş yapabilirsiniz.*', 'admin_demoted_notification': 'ℹ️ *Okul yönetici yetkiniz idare tarafından sonlandırılmıştır.*', 'admin_promoted_notification': '🎉 *Tebrikler, {name}!*\n\nOkul yönetim sistemi üzerinde *Okul İdaresi (Admin)* olarak yetkilendirildiniz. Alt menüden yönetim işlemlerinizi gerçekleştirebilirsiniz.', 'rk_restart': '🔄 Yeniden Başlat', 'lang_select': '🌍 Lütfen bir dil seçiniz / Tilni tanlang / Select language:',
+LOCALES = {'tr': {'admin_users_hub_title': '👥 *Okul Botu Kullanıcı Rehberi* (Sayfa {page}/{total_pages}):\\n\\nToplam Kayıtlı Kullanıcı: *{total}*\\nDetaylarını görmek veya işlem yapmak için kullanıcıya dokunun:\\n', 'btn_search_user': '🔍 Kullanıcı Ara', 'search_user_prompt': '🔍 Lütfen aramak istediğiniz kullanıcının Adını, Soyadını, @kullanıcı adını veya Telegram ID\'sini yazınız:', 'search_user_no_results': '❌ Eşleşen kullanıcı bulunamadı.', 'search_user_results_title': '🔍 *Kullanıcı Arama Sonuçları:*', 'user_not_found_toast': 'Kullanıcı veritabanında bulunamadı!', 'btn_make_perm_admin': '👑 Kalıcı Yönetici Yap', 'btn_make_temp_admin': '⏱️ Geçici Yönetici Yap', 'btn_revoke_admin_perm': '❌ Yönetici Yetkisini Al', 'btn_send_dm': '✉️ Özel Mesaj Gönder', 'btn_req_chat': '📞 1:1 İletişim İsteği Gönder', 'btn_ban_user': '🚫 Kullanıcıyı Engelle (Ban)', 'btn_unban_user': '🟢 Engeli Kaldır (Unban)', 'btn_refresh_data': '🔄 Verileri Yenile', 'btn_users_list': '⬅️ Kullanıcı Listesi', 'perm_admin_assigned_toast': '✅ Kullanıcı kalıcı yönetici olarak yetkilendirildi.', 'temp_admin_choose_title': '⏱️ *Geçici Yöneticilik Süresi Seçiniz:*\\n\\nKullanıcı seçilen süre boyunca tüm yönetici yetkilerine sahip olacak; süre bitiminde otomatik olarak eski rolüne geri dönecektir.', 'btn_dur_24h': '⏱️ 24 Saat', 'btn_dur_7d': '⏱️ 7 Gün', 'btn_dur_30d': '⏱️ 30 Gün', 'temp_admin_assigned_toast': '✅ Kullanıcı {dur} süreyle geçici yönetici yapıldı.', 'user_banned_toast': 'Kullanıcı engellendi.', 'user_unbanned_toast': 'Kullanıcının engeli kaldırıldı.', 'send_dm_prompt': '✉️ *Özel Mesaj Gönder:*\\n\\nLütfen `{id}` ID\'li kullanıcıya iletmek istediğiniz mesajı yazıp gönderiniz:', 'dm_sent_success': '✅ *Mesaj kullanıcıya (`{id}`) başarıyla iletildi!*', 'dm_delivery_error': '⚠️ *İletim Hatası:* Kullanıcı botu engellemiş veya mesaj alınamıyor.', 'chat_req_sent_toast': '✅ 1:1 İletişim isteği kullanıcıya iletildi!', 'chat_req_error_toast': '⚠️ Kullanıcı botu engellediği için çağrı iletilemedi!', 'admin_restart_confirmed': '🔄 *Yönetici Paneli Yeniden Başlatıldı.*', 'btn_users_hub': '👥 Kullanıcı Rehberi', 'btn_write_to_admin': '💬 İdareciye Mesaj Yaz', 'btn_add_another': '➕ Başka Ekle', 'btn_add_new_teacher': '➕ Yeni Öğretmen Ekle', 'btn_prev': '⬅️ Önceki', 'btn_appr_medical': '✅ Onayla (İzinli Say)', 'btn_appr_request': '✅ Onayla ve Yetkilendir', 'btn_reject': '❌ Reddet', 'btn_not_available': '❌ Müsait Değilim', 'btn_del_teacher': '❌ Öğretmeni Sil', 'btn_edit_name': '👤 İsim Değiştir', 'btn_edit_class': '🏫 Sınıf / Nakil', 'btn_edit_no': '🔢 Numara Değiştir', 'btn_unlink_parent': '👨‍👩‍👧‍👦 Veli Bağlantısını Kopar', 'btn_school_admins': '👨‍💼 Okul Yöneticileri', 'btn_manage_schedule': '📅 Ders Programı Yönetimi', 'btn_search_teacher': '🔍 Öğretmen Ara', 'btn_unack_notifs': '⚠️ Onaylanmamış Devamsızlıklar', 'btn_teachers_pdf': '👨‍🏫 Tüm Öğretmen Şifre Kartları (PDF)', 'btn_add_admin_id': '➕ Telegram ID ile Yönetici Ekle', 'btn_gen_admin_code': '🔑 Tek Kullanımlık Yönetici Kodu Üret', 'btn_recent_grades_menu': '📝 Son Girilen Notlar (Düzenle / Sil)', 'btn_export_all_data': '📤 Tüm Okul Verisini İndir (Yedek)', 'btn_upload_excel': '📥 Toplu Öğrenci Yükle (Excel)', 'btn_search_again': '🔍 Tekrar Ara', 'role_student_btn': '🎓 Öğrenci', 'role_teacher_btn': '👨‍🏫 Öğretmen', 'role_parent_btn': '👨‍👩‍👧‍👦 Veli', 'btn_cancel_action': '⬅️ İptal', 'btn_delete_action': '❌ Sil', 'auth_internal_error': '⚠️ Doğrulama sırasında hata oluştu. Lütfen tekrar deneyiniz.', 'req_approved_admin_msg': '✅ *Talep Onaylandı (# {id})*\\n{name} ({role}) başarıyla sisteme kaydedildi.', 'req_rejected_admin_msg': '❌ *Talep Reddedildi (# {id})*\\n{name} adlı kullanıcının başvurusu reddedildi.', 'pending_appointments_title': '🤝 *Bekleyen Veli Randevuları:*', 'no_permission_appointment': '⛔ Bu randevuyu yanıtlama yetkiniz bulunmuyor!', 'appointment_confirmed_toast': '✅ Randevu onaylandı ve veliye bildirildi.', 'setting_updated_toast': 'Ayar güncellendi.', 'maintenance_mode_updated': 'Bakım modu güncellendi.', 'admin_sched_edit_title': '📅 *Ders Programı Düzenleme Masası*\\n\\nDers programını girmek veya güncellemek istediğiniz sınıfı seçiniz:', 'admin_sched_updated': '✅ *{class_name} Sınıfı Ders Programı Güncellendi!*', 'student_name_invalid': '⚠️ *Hatalı Giriş:* Lütfen öğrencinin adını ve soyadını eksiksiz yazınız (en az 3 karakter):', 'teacher_name_invalid': '⚠️ *Hatalı Giriş:* Lütfen öğretmenin adını ve soyadını eksiksiz yazınız (en az 3 karakter):', 'teacher_search_prompt': '🔍 Lütfen aramak istediğiniz öğretmenin adını veya branşını yazınız (Örn: Ahmet veya Matematik):', 'teacher_search_no_results': '❌ Eşleşen öğretmen bulunamadı.', 'teacher_search_results_title': '🔍 *Öğretmen Arama Sonuçları:*', 'student_info_updated': '✅ *Öğrenci Bilgisi Güncellendi:* {name} ({class_name} - No: {no})', 'parent_unlinked_success': '✅ Veli bağlantıları koparıldı. Yeni Veli Kodu: {code}', 'all_notifs_acknowledged': '✅ *Tüm Devamsızlık Bildirimleri Velilerce Onaylandı!*\\n\\nSon 36 saatte velisi tarafından okunmamış hiçbir bildirim bulunmamaktadır.', 'admin_add_tg_id_prompt': '👤 Lütfen yeni yöneticinin Telegram ID numarasını yazınız (Örn: `123456789`):\\n\\n*(Kişi bota /start yazdığında ID numarasını görebilir)*', 'admin_invalid_tg_id': '⚠️ Lütfen sadece rakamlardan oluşan geçerli bir Telegram ID yazınız:', 'admin_add_name_prompt': '👤 Lütfen yeni yöneticinin Adını, Soyadını ve Unvanını yazınız (Örn: `Ahmet Yılmaz - Müdür Yrd.`):', 'admin_added_success': '✅ *Yönetici Başarıyla Eklendi:* {name} (`{id}`)', 'permanent_admin_protected': '⛔ Kalıcı / Kurucu yöneticinin yetkisi kaldırılamaz!', 'admin_demoted_toast': 'Yönetici yetkisi kaldırıldı.', 'no_students_in_class': 'Sınıfta öğrenci bulunamadı!', 'image_load_error': 'Görsel yüklenemedi!', 'published_homeworks_title': '📚 *Yayınladığınız Son Ödevler:*', 'homework_deleted_toast': 'Ödev silindi.', 'action_cancelled': '❌ *İşlem iptal edildi.*', 'unauthorized_action': '⛔ Yetkisiz işlem!', 'request_already_handled': 'Bu talep daha önce işleme alınmış!', 'teacher_not_found': 'Öğretmen bulunamadı!', 'student_not_found': 'Öğrenci bulunamadı!', 'no_registered_teachers': 'Kayıtlı öğretmen bulunamadı!', 'no_registered_students': 'Kayıtlı öğrenci bulunamadı!', 'appointment_not_found': 'Randevu bulunamadı!', 'report_not_found': 'Rapor bulunamadı!', 'no_permission_grade': 'Bu nota erişim yetkiniz yok!', 'no_permission_report_card': '⛔ Bu karneye erişim izniniz bulunmamaktadır!', 'no_permission_student_record': '⛔ Yetkisiz İşlem: Bu öğrenci kaydına erişim izniniz yok!', 'invalid_name_error': '⚠️ *Hatalı İsim:* Lütfen adınızı ve soyadınızı eksiksiz yazınız (en az 3 karakter):', 'invalid_phone_error': '⚠️ *Hatalı Telefon:* Lütfen geçerli bir telefon numarası giriniz (en az 7 rakam):', 'invalid_score_format': '⚠️ Lütfen geçerli bir sayı giriniz (0-100):', 'invalid_score_range': '⚠️ Not 0 ile 100 arasında olmalıdır. Lütfen tekrar giriniz (0-100):', 'invalid_parent_code': '❌ *Geçersiz Veli Kodu!* Lütfen kodu kontrol ediniz.', 'lock_countdown_msg': '⛔ *Güvenlik Kilidi:* Hesabınız geçici olarak kilitlidir.\n\nKalan süre: *{mins} dakika*. Lütfen sürenin dolmasını bekleyiniz.', 'attendance_weekend_lock': '⚠️ Hafta sonu günlerinde yoklama kaydedilemez!', 'attendance_hours_lock': '⚠️ Ders saatleri dışında (07:00 - 18:30) yoklama kaydedilemez!', 'attendance_select_class': '📋 Yoklama alacağınız sınıfı seçiniz:', 'attendance_correction_notification': 'ℹ️ *DEVAMSIZLIK DÜZELTME BİLDİRİMİ*\n\nÖğrenciniz *{name}* için daha önce iletilen devamsızlık kaydı öğretmen tarafından *DÜZELTİLMİŞTİR* (Öğrenci derstedir).', 'grade_select_class': '📝 Not gireceğiniz sınıfı seçiniz:', 'grade_select_student': '📝 *{class_name} Sınıfı* - Öğrenciyi seçiniz:', 'grade_parent_notification': '📝 *YENİ DERS NOTU*\n\nÖğrenciniz *{name}*, {subject} ({exam_type}) sınavından *{score}* aldı. ({badge})', 'schedule_select_class': '📅 Ders programını incelemek istediğiniz sınıfı seçiniz:', 'homework_board_title': '📚 *{class_name} Sınıfı Son Ödevleri:*', 'no_active_homeworks': '📚 *{class_name} Sınıfı Ödev Panosu*\n\nŞu anda aktif veya bekleyen bir ödev bulunmamaktadır.', 'photo_expected_medical': '⚠️ *Fotoğraf Bekleniyor:* Lütfen sağlık raporu veya mazeret belgesinin net bir fotoğrafını gönderiniz.\n\n*(İptal etmek için aşağıdaki \'❌ İşlemi İptal Et\' butonuna basabilirsiniz.)*', 'parent_choose_child': '🧑‍🎓 Lütfen durumunu incelemek istediğiniz öğrenciyi seçiniz:', 'unauthorized_excel_upload': '⛔ *Yetkisiz İşlem:* Yalnızca okul yöneticileri Excel ile toplu öğrenci yükleyebilir!', 'excel_format_error': '⚠️ *Dosya İşleme Hatası:* Excel dosyası okunamadı veya formatı geçersiz.\n\nLütfen ilk satır başlıklarının \'Ad Soyad | Sinif | Numara\' olduğundan emin olunuz.', 'medical_approved_parent': '✅ *Sağlık / Mazeret raporunuz okul idaresi tarafından onaylandı. Öğrenci izinli sayıldı.*', 'medical_rejected_parent': '❌ *Sağlık / Mazeret raporunuz okul idaresi tarafından reddedildi.*', 'admin_unban_notification': '🟢 *Hesabınızın engeli okul yönetimi tarafından kaldırılmıştır. Tekrar giriş yapabilirsiniz.*', 'admin_demoted_notification': 'ℹ️ *Okul yönetici yetkiniz idare tarafından sonlandırılmıştır.*', 'admin_promoted_notification': '🎉 *Tebrikler, {name}!*\n\nOkul yönetim sistemi üzerinde *Okul İdaresi (Admin)* olarak yetkilendirildiniz. Alt menüden yönetim işlemlerinizi gerçekleştirebilirsiniz.', 'rk_restart': '🔄 Yeniden Başlat', 'lang_select': '🌍 Lütfen bir dil seçiniz / Tilni tanlang / Select language:',
         'lang_changed': 'Dil başarıyla güncellendi: 🇹🇷 Türkçe',
         'prompt_enter_code_direct': '🔑 *Lütfen size verilen giriş kodunu yazınız:* (Örn: `HCA-123456`, `VELI-123456`, '
                                     '`OGR-123456`)',
@@ -670,7 +701,7 @@ LOCALES = {'tr': {'btn_add_another': '➕ Başka Ekle', 'btn_add_new_teacher': '
         'rk_logout': '🚪 Çıkış Yap',
         'rk_enter_code': '🔑 Şifre / Kod Gir',
         'rk_req_access': '📩 Şifre / Erişim İste'},
- 'ru': {'btn_add_another': '➕ Добавить еще', 'btn_add_new_teacher': '➕ Добавить нового учителя', 'btn_prev': '⬅️ Назад', 'btn_appr_medical': '✅ Одобрить (По уважительной)', 'btn_appr_request': '✅ Одобрить и авторизовать', 'btn_reject': '❌ Отклонить', 'btn_not_available': '❌ Не могу принять', 'btn_del_teacher': '❌ Удалить учителя', 'btn_edit_name': '👤 Изменить имя', 'btn_edit_class': '🏫 Класс / Перевод', 'btn_edit_no': '🔢 Изменить номер', 'btn_unlink_parent': '👨‍👩‍👧‍👦 Отвязать родителей', 'btn_school_admins': '👨‍💼 Администрация школы', 'btn_manage_schedule': '📅 Расписание уроков', 'btn_search_teacher': '🔍 Поиск учителей', 'btn_unack_notifs': '⚠️ Непрочитанные пропуски', 'btn_teachers_pdf': '👨‍🏫 Пароли всех учителей (PDF)', 'btn_add_admin_id': '➕ Добавить администратора по Telegram ID', 'btn_gen_admin_code': '🔑 Создать одноразовый код администратора', 'btn_recent_grades_menu': '📝 Выставленные оценки (Редактировать / Удалить)', 'btn_export_all_data': '📤 Скачать все данные (Резервная копия)', 'btn_upload_excel': '📥 Загрузить учеников (Excel)', 'btn_search_again': '🔍 Искать снова', 'role_student_btn': '🎓 Ученик', 'role_teacher_btn': '👨‍🏫 Учитель', 'role_parent_btn': '👨‍👩‍👧‍👦 Родитель', 'btn_cancel_action': '⬅️ Отмена', 'btn_delete_action': '❌ Удалить', 'auth_internal_error': '⚠️ Ошибка при авторизации. Пожалуйста, попробуйте снова.', 'req_approved_admin_msg': '✅ *Заявка одобрена (# {id})*\\n{name} ({role}) успешно добавлен(а) в систему.', 'req_rejected_admin_msg': '❌ *Заявка отклонена (# {id})*\\nЗапрос пользователя {name} отклонен.', 'pending_appointments_title': '🤝 *Ожидающие встречи с родителями:*', 'no_permission_appointment': '⛔ У вас нет прав для ответа на эту запись!', 'appointment_confirmed_toast': '✅ Запись подтверждена, родитель уведомлен.', 'setting_updated_toast': 'Настройка обновлена.', 'maintenance_mode_updated': 'Режим обслуживания обновлен.', 'admin_sched_edit_title': '📅 *Редактор расписания*\\n\\nВыберите класс для ввода или обновления расписания:', 'admin_sched_updated': '✅ *Расписание класса {class_name} обновлено!*', 'student_name_invalid': '⚠️ *Ошибка ввода:* Введите имя и фамилию ученика полностью (не менее 3 символов):', 'teacher_name_invalid': '⚠️ *Ошибка ввода:* Введите имя и фамилию учителя полностью (не менее 3 символов):', 'teacher_search_prompt': '🔍 Введите имя или предмет учителя для поиска (напр. Ахмет или Математика):', 'teacher_search_no_results': '❌ Подходящих учителей не найдено.', 'teacher_search_results_title': '🔍 *Результаты поиска учителей:*', 'student_info_updated': '✅ *Данные ученика обновлены:* {name} ({class_name} - №{no})', 'parent_unlinked_success': '✅ Привязки родителей сброшены. Новый код родителя: {code}', 'all_notifs_acknowledged': '✅ *Все уведомления о посещаемости прочитаны родителями!*\\n\\nЗа последние 36 часов нет непрочитанных уведомлений.', 'admin_add_tg_id_prompt': '👤 Введите Telegram ID нового администратора (напр. `123456789`):', 'admin_invalid_tg_id': '⚠️ Пожалуйста, введите корректный Telegram ID из цифр:', 'admin_add_name_prompt': '👤 Введите имя, фамилию и должность нового администратора (напр. `Иван Иванов - Завуч`):', 'admin_added_success': '✅ *Администратор успешно добавлен:* {name} (`{id}`)', 'permanent_admin_protected': '⛔ Права главного/постоянного администратора не могут быть отозваны!', 'admin_demoted_toast': 'Права администратора отозваны.', 'no_students_in_class': 'В классе нет учеников!', 'image_load_error': 'Не удалось загрузить изображение!', 'published_homeworks_title': '📚 *Опубликованные вами домашние задания:*', 'homework_deleted_toast': 'Задание удалено.', 'action_cancelled': '❌ *Действие отменено.*', 'unauthorized_action': '⛔ Недостаточно прав!', 'request_already_handled': 'Эта заявка уже обработана!', 'teacher_not_found': 'Учитель не найден!', 'student_not_found': 'Ученик не найден!', 'no_registered_teachers': 'Зарегистрированные учителя не найдены!', 'no_registered_students': 'Зарегистрированные ученики не найдены!', 'appointment_not_found': 'Запись на прием не найдена!', 'report_not_found': 'Справка не найдена!', 'no_permission_grade': 'У вас нет прав для доступа к этой оценке!', 'no_permission_report_card': '⛔ У вас нет доступа к этому табелю!', 'no_permission_student_record': '⛔ Доступ запрещен: у вас нет прав на этого ученика!', 'invalid_name_error': '⚠️ *Некорректное имя:* Введите фамилию и имя полностью (не менее 3 символов):', 'invalid_phone_error': '⚠️ *Некорректный телефон:* Введите правильный номер телефона (не менее 7 цифр):', 'invalid_score_format': '⚠️ Пожалуйста, введите число от 0 до 100:', 'invalid_score_range': '⚠️ Оценка должна быть от 0 до 100. Попробуйте снова (0-100):', 'invalid_parent_code': '❌ *Неверный код родителя!* Пожалуйста, проверьте код.', 'lock_countdown_msg': '⛔ *Блокировка безопасности:* Аккаунт временно заблокирован.\n\nОсталось: *{mins} мин.* Пожалуйста, подождите.', 'attendance_weekend_lock': '⚠️ В выходные дни перекличка не сохраняется!', 'attendance_hours_lock': '⚠️ Вне учебных часов (07:00 - 18:30) перекличка недоступна!', 'attendance_select_class': '📋 Выберите класс для проведения переклички:', 'attendance_correction_notification': 'ℹ️ *ИСПРАВЛЕНИЕ ДАННЫХ О ПОСЕЩАЕМОСТИ*\n\nРанее отправленная отметка об отсутствии ученика *{name}* была *ИСПРАВЛЕНА* учителем (ученик на уроке).', 'grade_select_class': '📝 Выберите класс для выставления оценок:', 'grade_select_student': '📝 *Класс {class_name}* - Выберите ученика:', 'grade_parent_notification': '📝 *НОВАЯ ОЦЕНКА*\n\nВаш ребенок *{name}* получил(а) *{score}* за {subject} ({exam_type}). ({badge})', 'schedule_select_class': '📅 Выберите класс для просмотра расписания:', 'homework_board_title': '📚 *Последние задания класса {class_name}:*', 'no_active_homeworks': '📚 *Доска заданий класса {class_name}*\n\nВ настоящее время активных заданий нет.', 'photo_expected_medical': '⚠️ *Ожидается фото:* Пожалуйста, отправьте четкое фото медицинской справки или документа.\n\n*(Для отмены нажмите \'❌ Отменить действие\')*', 'parent_choose_child': '🧑‍🎓 Пожалуйста, выберите ученика для просмотра:', 'unauthorized_excel_upload': '⛔ *Доступ запрещен:* Только администраторы могут загружать списки через Excel!', 'excel_format_error': '⚠️ *Ошибка обработки:* Файл Excel не прочитан или имеет неверный формат.\n\nУбедитесь, что заголовки первой строки: \'Ad Soyad | Sinif | Numara\'.', 'medical_approved_parent': '✅ *Медицинская справка одобрена администрацией. Ученик(ца) отмечен(а) как отсутствующий(ая) по уважительной причине.*', 'medical_rejected_parent': '❌ *Медицинская справка отклонена администрацией школы.*', 'admin_unban_notification': '🟢 *Блокировка вашего аккаунта снята администрацией школы. Вы можете войти снова.*', 'admin_demoted_notification': 'ℹ️ *Ваши права администратора школы были отозваны.*', 'admin_promoted_notification': '🎉 *Поздравляем, {name}!*\n\nВам предоставлены права *Администратора школы*. Вы можете пользоваться функциями управления в меню ниже.', 'rk_restart': '🔄 Перезапуск', 'lang_select': '🌍 Пожалуйста, выберите язык:',
+ 'ru': {'admin_users_hub_title': '👥 *Справочник пользователей школьного бота* (Стр. {page}/{total_pages}):\\n\\nВсего пользователей: *{total}*\\nНажмите на пользователя для просмотра или управления:\\n', 'btn_search_user': '🔍 Поиск пользователя', 'search_user_prompt': '🔍 Введите имя, @username или Telegram ID пользователя для поиска:', 'search_user_no_results': '❌ Пользователь не найден.', 'search_user_results_title': '🔍 *Результаты поиска пользователей:*', 'user_not_found_toast': 'Пользователь не найден в базе данных!', 'btn_make_perm_admin': '👑 Назначить постоянным админом', 'btn_make_temp_admin': '⏱️ Назначить временным админом', 'btn_revoke_admin_perm': '❌ Отозвать права администратора', 'btn_send_dm': '✉️ Отправить личное сообщение', 'btn_req_chat': '📞 Запросить личную связь (1:1)', 'btn_ban_user': '🚫 Заблокировать пользователя (Бан)', 'btn_unban_user': '🟢 Разблокировать (Разбан)', 'btn_refresh_data': '🔄 Обновить данные', 'btn_users_list': '⬅️ Список пользователей', 'perm_admin_assigned_toast': '✅ Пользователю присвоены права постоянного администратора.', 'temp_admin_choose_title': '⏱️ *Выберите срок временных прав администратора:*\\n\\nПользователь получит полный доступ администратора на указанный срок, после чего вернется к исходной роли.', 'btn_dur_24h': '⏱️ 24 часа', 'btn_dur_7d': '⏱️ 7 дней', 'btn_dur_30d': '⏱️ 30 дней', 'temp_admin_assigned_toast': '✅ Пользователь назначен временным администратором на {dur}.', 'user_banned_toast': 'Пользователь заблокирован.', 'user_unbanned_toast': 'Пользователь разблокирован.', 'send_dm_prompt': '✉️ *Отправить личное сообщение:*\\n\\nВведите сообщение для пользователя с ID `{id}`:', 'dm_sent_success': '✅ *Сообщение успешно доставлено пользователю (`{id}`)!*', 'dm_delivery_error': '⚠️ *Ошибка доставки:* Пользователь заблокировал бота или недоступен.', 'chat_req_sent_toast': '✅ Запрос на связь 1:1 отправлен пользователю!', 'chat_req_error_toast': '⚠️ Не удалось связаться: пользователь заблокировал бота!', 'admin_restart_confirmed': '🔄 *Панель администратора перезапущена.*', 'btn_users_hub': '👥 Пользователи', 'btn_write_to_admin': '💬 Написать администратору', 'btn_add_another': '➕ Добавить еще', 'btn_add_new_teacher': '➕ Добавить нового учителя', 'btn_prev': '⬅️ Назад', 'btn_appr_medical': '✅ Одобрить (По уважительной)', 'btn_appr_request': '✅ Одобрить и авторизовать', 'btn_reject': '❌ Отклонить', 'btn_not_available': '❌ Не могу принять', 'btn_del_teacher': '❌ Удалить учителя', 'btn_edit_name': '👤 Изменить имя', 'btn_edit_class': '🏫 Класс / Перевод', 'btn_edit_no': '🔢 Изменить номер', 'btn_unlink_parent': '👨‍👩‍👧‍👦 Отвязать родителей', 'btn_school_admins': '👨‍💼 Администрация школы', 'btn_manage_schedule': '📅 Расписание уроков', 'btn_search_teacher': '🔍 Поиск учителей', 'btn_unack_notifs': '⚠️ Непрочитанные пропуски', 'btn_teachers_pdf': '👨‍🏫 Пароли всех учителей (PDF)', 'btn_add_admin_id': '➕ Добавить администратора по Telegram ID', 'btn_gen_admin_code': '🔑 Создать одноразовый код администратора', 'btn_recent_grades_menu': '📝 Выставленные оценки (Редактировать / Удалить)', 'btn_export_all_data': '📤 Скачать все данные (Резервная копия)', 'btn_upload_excel': '📥 Загрузить учеников (Excel)', 'btn_search_again': '🔍 Искать снова', 'role_student_btn': '🎓 Ученик', 'role_teacher_btn': '👨‍🏫 Учитель', 'role_parent_btn': '👨‍👩‍👧‍👦 Родитель', 'btn_cancel_action': '⬅️ Отмена', 'btn_delete_action': '❌ Удалить', 'auth_internal_error': '⚠️ Ошибка при авторизации. Пожалуйста, попробуйте снова.', 'req_approved_admin_msg': '✅ *Заявка одобрена (# {id})*\\n{name} ({role}) успешно добавлен(а) в систему.', 'req_rejected_admin_msg': '❌ *Заявка отклонена (# {id})*\\nЗапрос пользователя {name} отклонен.', 'pending_appointments_title': '🤝 *Ожидающие встречи с родителями:*', 'no_permission_appointment': '⛔ У вас нет прав для ответа на эту запись!', 'appointment_confirmed_toast': '✅ Запись подтверждена, родитель уведомлен.', 'setting_updated_toast': 'Настройка обновлена.', 'maintenance_mode_updated': 'Режим обслуживания обновлен.', 'admin_sched_edit_title': '📅 *Редактор расписания*\\n\\nВыберите класс для ввода или обновления расписания:', 'admin_sched_updated': '✅ *Расписание класса {class_name} обновлено!*', 'student_name_invalid': '⚠️ *Ошибка ввода:* Введите имя и фамилию ученика полностью (не менее 3 символов):', 'teacher_name_invalid': '⚠️ *Ошибка ввода:* Введите имя и фамилию учителя полностью (не менее 3 символов):', 'teacher_search_prompt': '🔍 Введите имя или предмет учителя для поиска (напр. Ахмет или Математика):', 'teacher_search_no_results': '❌ Подходящих учителей не найдено.', 'teacher_search_results_title': '🔍 *Результаты поиска учителей:*', 'student_info_updated': '✅ *Данные ученика обновлены:* {name} ({class_name} - №{no})', 'parent_unlinked_success': '✅ Привязки родителей сброшены. Новый код родителя: {code}', 'all_notifs_acknowledged': '✅ *Все уведомления о посещаемости прочитаны родителями!*\\n\\nЗа последние 36 часов нет непрочитанных уведомлений.', 'admin_add_tg_id_prompt': '👤 Введите Telegram ID нового администратора (напр. `123456789`):', 'admin_invalid_tg_id': '⚠️ Пожалуйста, введите корректный Telegram ID из цифр:', 'admin_add_name_prompt': '👤 Введите имя, фамилию и должность нового администратора (напр. `Иван Иванов - Завуч`):', 'admin_added_success': '✅ *Администратор успешно добавлен:* {name} (`{id}`)', 'permanent_admin_protected': '⛔ Права главного/постоянного администратора не могут быть отозваны!', 'admin_demoted_toast': 'Права администратора отозваны.', 'no_students_in_class': 'В классе нет учеников!', 'image_load_error': 'Не удалось загрузить изображение!', 'published_homeworks_title': '📚 *Опубликованные вами домашние задания:*', 'homework_deleted_toast': 'Задание удалено.', 'action_cancelled': '❌ *Действие отменено.*', 'unauthorized_action': '⛔ Недостаточно прав!', 'request_already_handled': 'Эта заявка уже обработана!', 'teacher_not_found': 'Учитель не найден!', 'student_not_found': 'Ученик не найден!', 'no_registered_teachers': 'Зарегистрированные учителя не найдены!', 'no_registered_students': 'Зарегистрированные ученики не найдены!', 'appointment_not_found': 'Запись на прием не найдена!', 'report_not_found': 'Справка не найдена!', 'no_permission_grade': 'У вас нет прав для доступа к этой оценке!', 'no_permission_report_card': '⛔ У вас нет доступа к этому табелю!', 'no_permission_student_record': '⛔ Доступ запрещен: у вас нет прав на этого ученика!', 'invalid_name_error': '⚠️ *Некорректное имя:* Введите фамилию и имя полностью (не менее 3 символов):', 'invalid_phone_error': '⚠️ *Некорректный телефон:* Введите правильный номер телефона (не менее 7 цифр):', 'invalid_score_format': '⚠️ Пожалуйста, введите число от 0 до 100:', 'invalid_score_range': '⚠️ Оценка должна быть от 0 до 100. Попробуйте снова (0-100):', 'invalid_parent_code': '❌ *Неверный код родителя!* Пожалуйста, проверьте код.', 'lock_countdown_msg': '⛔ *Блокировка безопасности:* Аккаунт временно заблокирован.\n\nОсталось: *{mins} мин.* Пожалуйста, подождите.', 'attendance_weekend_lock': '⚠️ В выходные дни перекличка не сохраняется!', 'attendance_hours_lock': '⚠️ Вне учебных часов (07:00 - 18:30) перекличка недоступна!', 'attendance_select_class': '📋 Выберите класс для проведения переклички:', 'attendance_correction_notification': 'ℹ️ *ИСПРАВЛЕНИЕ ДАННЫХ О ПОСЕЩАЕМОСТИ*\n\nРанее отправленная отметка об отсутствии ученика *{name}* была *ИСПРАВЛЕНА* учителем (ученик на уроке).', 'grade_select_class': '📝 Выберите класс для выставления оценок:', 'grade_select_student': '📝 *Класс {class_name}* - Выберите ученика:', 'grade_parent_notification': '📝 *НОВАЯ ОЦЕНКА*\n\nВаш ребенок *{name}* получил(а) *{score}* за {subject} ({exam_type}). ({badge})', 'schedule_select_class': '📅 Выберите класс для просмотра расписания:', 'homework_board_title': '📚 *Последние задания класса {class_name}:*', 'no_active_homeworks': '📚 *Доска заданий класса {class_name}*\n\nВ настоящее время активных заданий нет.', 'photo_expected_medical': '⚠️ *Ожидается фото:* Пожалуйста, отправьте четкое фото медицинской справки или документа.\n\n*(Для отмены нажмите \'❌ Отменить действие\')*', 'parent_choose_child': '🧑‍🎓 Пожалуйста, выберите ученика для просмотра:', 'unauthorized_excel_upload': '⛔ *Доступ запрещен:* Только администраторы могут загружать списки через Excel!', 'excel_format_error': '⚠️ *Ошибка обработки:* Файл Excel не прочитан или имеет неверный формат.\n\nУбедитесь, что заголовки первой строки: \'Ad Soyad | Sinif | Numara\'.', 'medical_approved_parent': '✅ *Медицинская справка одобрена администрацией. Ученик(ца) отмечен(а) как отсутствующий(ая) по уважительной причине.*', 'medical_rejected_parent': '❌ *Медицинская справка отклонена администрацией школы.*', 'admin_unban_notification': '🟢 *Блокировка вашего аккаунта снята администрацией школы. Вы можете войти снова.*', 'admin_demoted_notification': 'ℹ️ *Ваши права администратора школы были отозваны.*', 'admin_promoted_notification': '🎉 *Поздравляем, {name}!*\n\nВам предоставлены права *Администратора школы*. Вы можете пользоваться функциями управления в меню ниже.', 'rk_restart': '🔄 Перезапуск', 'lang_select': '🌍 Пожалуйста, выберите язык:',
         'lang_changed': 'Язык успешно изменен: 🇷🇺 Русский',
         'prompt_enter_code_direct': '🔑 *Введите ваш код доступа:* (Например: `HCA-123456`, `VELI-123456`, '
                                     '`OGR-123456`)',
@@ -950,7 +981,7 @@ LOCALES = {'tr': {'btn_add_another': '➕ Başka Ekle', 'btn_add_new_teacher': '
         'rk_logout': '🚪 Выйти',
         'rk_enter_code': '🔑 Ввести код доступа',
         'rk_req_access': '📩 Запросить доступ'},
- 'uz': {'btn_add_another': '➕ Yana qo\'shish', 'btn_add_new_teacher': '➕ Yangi o\'qituvchi qo\'shish', 'btn_prev': '⬅️ Oldingi', 'btn_appr_medical': '✅ Tasdiqlash (Sababli)', 'btn_appr_request': '✅ Tasdiqlash va ruxsat berish', 'btn_reject': '❌ Rad etish', 'btn_not_available': '❌ Bandman', 'btn_del_teacher': '❌ O\'qituvchini o\'chirish', 'btn_edit_name': '👤 Ismni o\'zgartirish', 'btn_edit_class': '🏫 Sinf / Ko\'chirish', 'btn_edit_no': '🔢 Raqamni o\'zgartirish', 'btn_unlink_parent': '👨‍👩‍👧‍👦 Ota-onani ajratish', 'btn_school_admins': '👨‍💼 Maktab ma\'muriyati', 'btn_manage_schedule': '📅 Dars jadvali boshqaruvi', 'btn_search_teacher': '🔍 O\'qituvchini qidirish', 'btn_unack_notifs': '⚠️ Tasdiqlanmagan davomatlar', 'btn_teachers_pdf': '👨‍🏫 O\'qituvchilar parollari (PDF)', 'btn_add_admin_id': '➕ Telegram ID orqali ma\'mur qo\'shish', 'btn_gen_admin_code': '🔑 Bir martalik ma\'mur kodini yaratish', 'btn_recent_grades_menu': '📝 So\'nggi baholar (Tahrirlash / O\'chirish)', 'btn_export_all_data': '📤 Barcha ma\'lumotlarni yuklab olish (Zaxira)', 'btn_upload_excel': '📥 O\'quvchilarni yuklash (Excel)', 'btn_search_again': '🔍 Qaytadan qidirish', 'role_student_btn': '🎓 O\'quvchi', 'role_teacher_btn': '👨‍🏫 O\'qituvchi', 'role_parent_btn': '👨‍👩‍👧‍👦 Ota-ona', 'btn_cancel_action': '⬅️ Bekor qilish', 'btn_delete_action': '❌ O\'chirish', 'auth_internal_error': '⚠️ Tasdiqlashda xatolik yuz berdi. Qaytadan urinib ko\'ring.', 'req_approved_admin_msg': '✅ *Ariza tasdiqlandi (# {id})*\\n{name} ({role}) tizimga muvaffaqiyatli saqlandi.', 'req_rejected_admin_msg': '❌ *Ariza rad etildi (# {id})*\\nFoydalanuvchi {name} arizasi rad etildi.', 'pending_appointments_title': '🤝 *Kutilayotgan ota-onalar uchrashuvlari:*', 'no_permission_appointment': '⛔ Ushbu uchrashuvga javob berish huquqingiz yo\'q!', 'appointment_confirmed_toast': '✅ Uchrashuv tasdiqlandi va ota-onaga xabar berildi.', 'setting_updated_toast': 'Sozlama yangilandi.', 'maintenance_mode_updated': 'Texnik rejim yangilandi.', 'admin_sched_edit_title': '📅 *Dars jadvalini tahrirlash*\\n\\nDars jadvalini kiritish yoki yangilash uchun sinfni tanlang:', 'admin_sched_updated': '✅ *{class_name} sinfi dars jadvali yangilandi!*', 'student_name_invalid': '⚠️ *Xato kiritish:* Iltimos, o\'quvchining ism va familiyasini to\'liq kiriting (kamida 3 belgi):', 'teacher_name_invalid': '⚠️ *Xato kiritish:* Iltimos, o\'qituvchining ism va familiyasini to\'liq kiriting (kamida 3 belgi):', 'teacher_search_prompt': '🔍 Qidirmoqchi bo\'lgan o\'qituvchining ismi yoki fanini kiriting (masalan, Ali yoki Matematika):', 'teacher_search_no_results': '❌ Mos o\'qituvchi topilmadi.', 'teacher_search_results_title': '🔍 *O\'qituvchilar qidiruv natijalari:*', 'student_info_updated': '✅ *O\'quvchi ma\'lumotlari yangilandi:* {name} ({class_name} - №{no})', 'parent_unlinked_success': '✅ Ota-ona hisoblari ajratildi. Yangi ota-ona kodi: {code}', 'all_notifs_acknowledged': '✅ *Barcha davomat xabarlari ota-onalar tomonidan tasdiqlandi!*\\n\\nSo\'nggi 36 soatda o\'qilmagan xabarlar mavjud emas.', 'admin_add_tg_id_prompt': '👤 Yangi ma\'murning Telegram ID raqamini kiriting (masalan, `123456789`):', 'admin_invalid_tg_id': '⚠️ Iltimos, faqat raqamlardan iborat haqiqiy Telegram ID kiriting:', 'admin_add_name_prompt': '👤 Yangi ma\'murning ismi, familiyasi va lavozimini kiriting (masalan, `Ali Valiyev - O\'IBDO\'`):', 'admin_added_success': '✅ *Ma\'mur muvaffaqiyatli qo\'shildi:* {name} (`{id}`)', 'permanent_admin_protected': '⛔ Asosiy/doimiy ma\'mur vakolatlarini bekor qilib bo\'lmaydi!', 'admin_demoted_toast': 'Ma\'mur vakolatlari bekor qilindi.', 'no_students_in_class': 'Sinfda o\'quvchi topilmadi!', 'image_load_error': 'Rasmni yuklab bo\'lmadi!', 'published_homeworks_title': '📚 *Siz chiqargan so\'nggi vazifalar:*', 'homework_deleted_toast': 'Vazifa o\'chirildi.', 'action_cancelled': '❌ *Amal bekor qilindi.*', 'unauthorized_action': '⛔ Ruxsat etilmagan amal!', 'request_already_handled': 'Ushbu ariza allaqachon ko\'rib chiqilgan!', 'teacher_not_found': 'O\'qituvchi topilmadi!', 'student_not_found': 'O\'quvchi topilmadi!', 'no_registered_teachers': 'Ro\'yxatdan o\'tgan o\'qituvchilar topilmadi!', 'no_registered_students': 'Ro\'yxatdan o\'tgan o\'quvchilar topilmadi!', 'appointment_not_found': 'Uchrashuv topilmadi!', 'report_not_found': 'Ma\'lumotnoma topilmadi!', 'no_permission_grade': 'Ushbu bahoga kirish huquqiga ega emassiz!', 'no_permission_report_card': '⛔ Ushbu kundalikka kirish ruxsatingiz yo\'q!', 'no_permission_student_record': '⛔ Ruxsat yo\'q: ushbu o\'quvchi ma\'lumotlariga kirish huquqingiz yo\'q!', 'invalid_name_error': '⚠️ *Noto\'g\'ri ism:* Iltimos, ism va familiyangizni to\'liq kiriting (kamida 3 belgi):', 'invalid_phone_error': '⚠️ *Noto\'g\'ri telefon:* Iltimos, haqiqiy telefon raqamini kiriting (kamida 7 ta raqam):', 'invalid_score_format': '⚠️ Iltimos, 0 dan 100 gacha bo\'lgan son kiriting:', 'invalid_score_range': '⚠️ Baho 0 va 100 oralig\'ida bo\'lishi kerak. Qaytadan kiriting (0-100):', 'invalid_parent_code': '❌ *Noto\'g\'ri ota-ona kodi!* Iltimos, kodni tekshiring.', 'lock_countdown_msg': '⛔ *Xavfsizlik bloki:* Hisobingiz vaqtincha bloklangan.\n\nQolgan vaqt: *{mins} daqiqa*. Iltimos, kuting.', 'attendance_weekend_lock': '⚠️ Dam olish kunlarida davomat saqlanmaydi!', 'attendance_hours_lock': '⚠️ Dars vaqtidan tashqari (07:00 - 18:30) davomat olinmaydi!', 'attendance_select_class': '📋 Davomat olmoqchi bo\'lgan sinfni tanlang:', 'attendance_correction_notification': 'ℹ️ *DAVOMAT TUZATISH BILDIRISHNOMASI*\n\nFarzandingiz *{name}* uchun yuborilgan kelmadi xabari o\'qituvchi tomonidan *TUZATILDI* (o\'quvchi darsda).', 'grade_select_class': '📝 Baho qo\'ymoqchi bo\'lgan sinfni tanlang:', 'grade_select_student': '📝 *{class_name} sinfi* - O\'quvchini tanlang:', 'grade_parent_notification': '📝 *YANGI BAHO*\n\nFarzandingiz *{name}*, {subject} fanidan ({exam_type}) *{score}* oldi. ({badge})', 'schedule_select_class': '📅 Dars jadvalini ko\'rmoqchi bo\'lgan sinfni tanlang:', 'homework_board_title': '📚 *{class_name} sinfining so\'nggi vazifalari:*', 'no_active_homeworks': '📚 *{class_name} sinfi vazifalar paneli*\n\nHozirda faol vazifalar mavjud emas.', 'photo_expected_medical': '⚠️ *Rasm kutilmoqda:* Iltimos, ma\'lumotnoma rasmini yuboring.\n\n*(Bekor qilish uchun \'❌ Bekor qilish\' tugmasini bosing)*', 'parent_choose_child': '🧑‍🎓 Iltimos, ko\'rmoqchi bo\'lgan o\'quvchini tanlang:', 'unauthorized_excel_upload': '⛔ *Ruxsat etilmagan:* Faqat maktab ma\'murlari Excel orqali yuklashlari mumkin!', 'excel_format_error': '⚠️ *Fayl xatosi:* Excel fayli o\'qilmadi yoki formati noto\'g\'ri.\n\nBirinchi qator sarlavhalari \'Ad Soyad | Sinif | Numara\' ekanligiga ishonch hosil qiling.', 'medical_approved_parent': '✅ *Tibbiy ma\'lumotnoma ma\'muriyat tomonidan tasdiqlandi. O\'quvchi sababli deb qayd etildi.*', 'medical_rejected_parent': '❌ *Tibbiy ma\'lumotnoma maktab ma\'muriyati tomonidan rad etildi.*', 'admin_unban_notification': '🟢 *Hisobingiz blokdan chiqarildi. Qaytadan kirishingiz mumkin.*', 'admin_demoted_notification': 'ℹ️ *Maktab ma\'muri vakolatlaringiz bekor qilindi.*', 'admin_promoted_notification': '🎉 *Tabriklaymiz, {name}!*\n\nSizga *Maktab Ma\'muriyati (Admin)* vakolatlari berildi. Quyidagi menyu orqali boshqaruv amallarini bajarishingiz mumkin.', 'rk_restart': "🔄 Qayta ishga tushirish", 'lang_select': '🌍 Iltimos, tilni tanlang:',
+ 'uz': {'admin_users_hub_title': '👥 *Maktab boti foydalanuvchilar ro\'yxati* (Sahifa {page}/{total_pages}):\\n\\nJami foydalanuvchilar: *{total}*\\nBatafsil ko\'rish yoki boshqarish uchun foydalanuvchini tanlang:\\n', 'btn_search_user': '🔍 Foydalanuvchini qidirish', 'search_user_prompt': '🔍 Qidirmoqchi bo\'lgan foydalanuvchining ismi, @username yoki Telegram ID sini kiriting:', 'search_user_no_results': '❌ Mos foydalanuvchi topilmadi.', 'search_user_results_title': '🔍 *Foydalanuvchilar qidiruv natijalari:*', 'user_not_found_toast': 'Foydalanuvchi ma\'lumotlar bazasida topilmadi!', 'btn_make_perm_admin': '👑 Doimiy ma\'mur qilish', 'btn_make_temp_admin': '⏱️ Vaqtinchalik ma\'mur qilish', 'btn_revoke_admin_perm': '❌ Ma\'mur vakolatini olish', 'btn_send_dm': '✉️ Shaxsiy xabar yuborish', 'btn_req_chat': '📞 1:1 aloqa so\'rovini yuborish', 'btn_ban_user': '🚫 Foydalanuvchini bloklash (Ban)', 'btn_unban_user': '🟢 Blokdan chiqarish (Unban)', 'btn_refresh_data': '🔄 Ma\'lumotlarni yangilash', 'btn_users_list': '⬅️ Foydalanuvchilar ro\'yxati', 'perm_admin_assigned_toast': '✅ Foydalanuvchiga doimiy ma\'mur vakolati berildi.', 'temp_admin_choose_title': '⏱️ *Vaqtinchalik ma\'murlik muddatini tanlang:*\\n\\nFoydalanuvchi ko\'rsatilgan muddat davomida to\'liq ma\'mur huquqlariga ega bo\'ladi, muddat tugagach avvalgi roliga qaytadi.', 'btn_dur_24h': '⏱️ 24 soat', 'btn_dur_7d': '⏱️ 7 kun', 'btn_dur_30d': '⏱️ 30 kun', 'temp_admin_assigned_toast': '✅ Foydalanuvchiga {dur} muddatga vaqtinchalik ma\'murlik berildi.', 'user_banned_toast': 'Foydalanuvchi bloklandi.', 'user_unbanned_toast': 'Foydalanuvchi blokdan chiqarildi.', 'send_dm_prompt': '✉️ *Shaxsiy xabar yuborish:*\\n\\nIltimos, ID raqami `{id}` bo\'lgan foydalanuvchiga xabaringizni yozing:', 'dm_sent_success': '✅ *Xabar foydalanuvchiga (`{id}`) muvaffaqiyatli yetkazildi!*', 'dm_delivery_error': '⚠️ *Yetkazish xatosi:* Foydalanuvchi botni bloklagan yoki xabarlarni qabul qilmayapti.', 'chat_req_sent_toast': '✅ 1:1 aloqa so\'rovi foydalanuvchiga yetkazildi!', 'chat_req_error_toast': '⚠️ Foydalanuvchi botni bloklagani sababli chaqiruv yetkazilmadi!', 'admin_restart_confirmed': '🔄 *Boshqaruv paneli qayta ishga tushirildi.*', 'btn_users_hub': '👥 Foydalanuvchilar', 'btn_write_to_admin': '💬 Ma\'murga yozish', 'btn_add_another': '➕ Yana qo\'shish', 'btn_add_new_teacher': '➕ Yangi o\'qituvchi qo\'shish', 'btn_prev': '⬅️ Oldingi', 'btn_appr_medical': '✅ Tasdiqlash (Sababli)', 'btn_appr_request': '✅ Tasdiqlash va ruxsat berish', 'btn_reject': '❌ Rad etish', 'btn_not_available': '❌ Bandman', 'btn_del_teacher': '❌ O\'qituvchini o\'chirish', 'btn_edit_name': '👤 Ismni o\'zgartirish', 'btn_edit_class': '🏫 Sinf / Ko\'chirish', 'btn_edit_no': '🔢 Raqamni o\'zgartirish', 'btn_unlink_parent': '👨‍👩‍👧‍👦 Ota-onani ajratish', 'btn_school_admins': '👨‍💼 Maktab ma\'muriyati', 'btn_manage_schedule': '📅 Dars jadvali boshqaruvi', 'btn_search_teacher': '🔍 O\'qituvchini qidirish', 'btn_unack_notifs': '⚠️ Tasdiqlanmagan davomatlar', 'btn_teachers_pdf': '👨‍🏫 O\'qituvchilar parollari (PDF)', 'btn_add_admin_id': '➕ Telegram ID orqali ma\'mur qo\'shish', 'btn_gen_admin_code': '🔑 Bir martalik ma\'mur kodini yaratish', 'btn_recent_grades_menu': '📝 So\'nggi baholar (Tahrirlash / O\'chirish)', 'btn_export_all_data': '📤 Barcha ma\'lumotlarni yuklab olish (Zaxira)', 'btn_upload_excel': '📥 O\'quvchilarni yuklash (Excel)', 'btn_search_again': '🔍 Qaytadan qidirish', 'role_student_btn': '🎓 O\'quvchi', 'role_teacher_btn': '👨‍🏫 O\'qituvchi', 'role_parent_btn': '👨‍👩‍👧‍👦 Ota-ona', 'btn_cancel_action': '⬅️ Bekor qilish', 'btn_delete_action': '❌ O\'chirish', 'auth_internal_error': '⚠️ Tasdiqlashda xatolik yuz berdi. Qaytadan urinib ko\'ring.', 'req_approved_admin_msg': '✅ *Ariza tasdiqlandi (# {id})*\\n{name} ({role}) tizimga muvaffaqiyatli saqlandi.', 'req_rejected_admin_msg': '❌ *Ariza rad etildi (# {id})*\\nFoydalanuvchi {name} arizasi rad etildi.', 'pending_appointments_title': '🤝 *Kutilayotgan ota-onalar uchrashuvlari:*', 'no_permission_appointment': '⛔ Ushbu uchrashuvga javob berish huquqingiz yo\'q!', 'appointment_confirmed_toast': '✅ Uchrashuv tasdiqlandi va ota-onaga xabar berildi.', 'setting_updated_toast': 'Sozlama yangilandi.', 'maintenance_mode_updated': 'Texnik rejim yangilandi.', 'admin_sched_edit_title': '📅 *Dars jadvalini tahrirlash*\\n\\nDars jadvalini kiritish yoki yangilash uchun sinfni tanlang:', 'admin_sched_updated': '✅ *{class_name} sinfi dars jadvali yangilandi!*', 'student_name_invalid': '⚠️ *Xato kiritish:* Iltimos, o\'quvchining ism va familiyasini to\'liq kiriting (kamida 3 belgi):', 'teacher_name_invalid': '⚠️ *Xato kiritish:* Iltimos, o\'qituvchining ism va familiyasini to\'liq kiriting (kamida 3 belgi):', 'teacher_search_prompt': '🔍 Qidirmoqchi bo\'lgan o\'qituvchining ismi yoki fanini kiriting (masalan, Ali yoki Matematika):', 'teacher_search_no_results': '❌ Mos o\'qituvchi topilmadi.', 'teacher_search_results_title': '🔍 *O\'qituvchilar qidiruv natijalari:*', 'student_info_updated': '✅ *O\'quvchi ma\'lumotlari yangilandi:* {name} ({class_name} - №{no})', 'parent_unlinked_success': '✅ Ota-ona hisoblari ajratildi. Yangi ota-ona kodi: {code}', 'all_notifs_acknowledged': '✅ *Barcha davomat xabarlari ota-onalar tomonidan tasdiqlandi!*\\n\\nSo\'nggi 36 soatda o\'qilmagan xabarlar mavjud emas.', 'admin_add_tg_id_prompt': '👤 Yangi ma\'murning Telegram ID raqamini kiriting (masalan, `123456789`):', 'admin_invalid_tg_id': '⚠️ Iltimos, faqat raqamlardan iborat haqiqiy Telegram ID kiriting:', 'admin_add_name_prompt': '👤 Yangi ma\'murning ismi, familiyasi va lavozimini kiriting (masalan, `Ali Valiyev - O\'IBDO\'`):', 'admin_added_success': '✅ *Ma\'mur muvaffaqiyatli qo\'shildi:* {name} (`{id}`)', 'permanent_admin_protected': '⛔ Asosiy/doimiy ma\'mur vakolatlarini bekor qilib bo\'lmaydi!', 'admin_demoted_toast': 'Ma\'mur vakolatlari bekor qilindi.', 'no_students_in_class': 'Sinfda o\'quvchi topilmadi!', 'image_load_error': 'Rasmni yuklab bo\'lmadi!', 'published_homeworks_title': '📚 *Siz chiqargan so\'nggi vazifalar:*', 'homework_deleted_toast': 'Vazifa o\'chirildi.', 'action_cancelled': '❌ *Amal bekor qilindi.*', 'unauthorized_action': '⛔ Ruxsat etilmagan amal!', 'request_already_handled': 'Ushbu ariza allaqachon ko\'rib chiqilgan!', 'teacher_not_found': 'O\'qituvchi topilmadi!', 'student_not_found': 'O\'quvchi topilmadi!', 'no_registered_teachers': 'Ro\'yxatdan o\'tgan o\'qituvchilar topilmadi!', 'no_registered_students': 'Ro\'yxatdan o\'tgan o\'quvchilar topilmadi!', 'appointment_not_found': 'Uchrashuv topilmadi!', 'report_not_found': 'Ma\'lumotnoma topilmadi!', 'no_permission_grade': 'Ushbu bahoga kirish huquqiga ega emassiz!', 'no_permission_report_card': '⛔ Ushbu kundalikka kirish ruxsatingiz yo\'q!', 'no_permission_student_record': '⛔ Ruxsat yo\'q: ushbu o\'quvchi ma\'lumotlariga kirish huquqingiz yo\'q!', 'invalid_name_error': '⚠️ *Noto\'g\'ri ism:* Iltimos, ism va familiyangizni to\'liq kiriting (kamida 3 belgi):', 'invalid_phone_error': '⚠️ *Noto\'g\'ri telefon:* Iltimos, haqiqiy telefon raqamini kiriting (kamida 7 ta raqam):', 'invalid_score_format': '⚠️ Iltimos, 0 dan 100 gacha bo\'lgan son kiriting:', 'invalid_score_range': '⚠️ Baho 0 va 100 oralig\'ida bo\'lishi kerak. Qaytadan kiriting (0-100):', 'invalid_parent_code': '❌ *Noto\'g\'ri ota-ona kodi!* Iltimos, kodni tekshiring.', 'lock_countdown_msg': '⛔ *Xavfsizlik bloki:* Hisobingiz vaqtincha bloklangan.\n\nQolgan vaqt: *{mins} daqiqa*. Iltimos, kuting.', 'attendance_weekend_lock': '⚠️ Dam olish kunlarida davomat saqlanmaydi!', 'attendance_hours_lock': '⚠️ Dars vaqtidan tashqari (07:00 - 18:30) davomat olinmaydi!', 'attendance_select_class': '📋 Davomat olmoqchi bo\'lgan sinfni tanlang:', 'attendance_correction_notification': 'ℹ️ *DAVOMAT TUZATISH BILDIRISHNOMASI*\n\nFarzandingiz *{name}* uchun yuborilgan kelmadi xabari o\'qituvchi tomonidan *TUZATILDI* (o\'quvchi darsda).', 'grade_select_class': '📝 Baho qo\'ymoqchi bo\'lgan sinfni tanlang:', 'grade_select_student': '📝 *{class_name} sinfi* - O\'quvchini tanlang:', 'grade_parent_notification': '📝 *YANGI BAHO*\n\nFarzandingiz *{name}*, {subject} fanidan ({exam_type}) *{score}* oldi. ({badge})', 'schedule_select_class': '📅 Dars jadvalini ko\'rmoqchi bo\'lgan sinfni tanlang:', 'homework_board_title': '📚 *{class_name} sinfining so\'nggi vazifalari:*', 'no_active_homeworks': '📚 *{class_name} sinfi vazifalar paneli*\n\nHozirda faol vazifalar mavjud emas.', 'photo_expected_medical': '⚠️ *Rasm kutilmoqda:* Iltimos, ma\'lumotnoma rasmini yuboring.\n\n*(Bekor qilish uchun \'❌ Bekor qilish\' tugmasini bosing)*', 'parent_choose_child': '🧑‍🎓 Iltimos, ko\'rmoqchi bo\'lgan o\'quvchini tanlang:', 'unauthorized_excel_upload': '⛔ *Ruxsat etilmagan:* Faqat maktab ma\'murlari Excel orqali yuklashlari mumkin!', 'excel_format_error': '⚠️ *Fayl xatosi:* Excel fayli o\'qilmadi yoki formati noto\'g\'ri.\n\nBirinchi qator sarlavhalari \'Ad Soyad | Sinif | Numara\' ekanligiga ishonch hosil qiling.', 'medical_approved_parent': '✅ *Tibbiy ma\'lumotnoma ma\'muriyat tomonidan tasdiqlandi. O\'quvchi sababli deb qayd etildi.*', 'medical_rejected_parent': '❌ *Tibbiy ma\'lumotnoma maktab ma\'muriyati tomonidan rad etildi.*', 'admin_unban_notification': '🟢 *Hisobingiz blokdan chiqarildi. Qaytadan kirishingiz mumkin.*', 'admin_demoted_notification': 'ℹ️ *Maktab ma\'muri vakolatlaringiz bekor qilindi.*', 'admin_promoted_notification': '🎉 *Tabriklaymiz, {name}!*\n\nSizga *Maktab Ma\'muriyati (Admin)* vakolatlari berildi. Quyidagi menyu orqali boshqaruv amallarini bajarishingiz mumkin.', 'rk_restart': "🔄 Qayta ishga tushirish", 'lang_select': '🌍 Iltimos, tilni tanlang:',
         'lang_changed': "Til muvaffaqiyatli yangilandi: 🇺🇿 O'zbekcha",
         'prompt_enter_code_direct': '🔑 *Iltimos, sizga berilgan kirish kodini yozing:* (Masalan: `HCA-123456`, '
                                     '`VELI-123456`, `OGR-123456`)',
@@ -1238,7 +1269,7 @@ LOCALES = {'tr': {'btn_add_another': '➕ Başka Ekle', 'btn_add_new_teacher': '
         'rk_logout': '🚪 Chiqish',
         'rk_enter_code': '🔑 Kod kiritish',
         'rk_req_access': "📩 Ruxsat so'rash"},
- 'en': {'btn_add_another': '➕ Add Another', 'btn_add_new_teacher': '➕ Add New Teacher', 'btn_prev': '⬅️ Previous', 'btn_appr_medical': '✅ Approve (Mark Excused)', 'btn_appr_request': '✅ Approve & Authorize', 'btn_reject': '❌ Reject', 'btn_not_available': '❌ Not Available', 'btn_del_teacher': '❌ Delete Teacher', 'btn_edit_name': '👤 Edit Name', 'btn_edit_class': '🏫 Class / Transfer', 'btn_edit_no': '🔢 Edit Roll Number', 'btn_unlink_parent': '👨‍👩‍👧‍👦 Unlink Parents', 'btn_school_admins': '👨‍💼 School Administrators', 'btn_manage_schedule': '📅 Timetable Management', 'btn_search_teacher': '🔍 Search Teachers', 'btn_unack_notifs': '⚠️ Unacknowledged Absences', 'btn_teachers_pdf': '👨‍🏫 Teacher Password Cards (PDF)', 'btn_add_admin_id': '➕ Add Admin by Telegram ID', 'btn_gen_admin_code': '🔑 Generate One-Time Admin Code', 'btn_recent_grades_menu': '📝 Recent Grades (Edit / Delete)', 'btn_export_all_data': '📤 Export All School Data (Backup)', 'btn_upload_excel': '📥 Bulk Student Import (Excel)', 'btn_search_again': '🔍 Search Again', 'role_student_btn': '🎓 Student', 'role_teacher_btn': '👨‍🏫 Teacher', 'role_parent_btn': '👨‍👩‍👧‍👦 Parent', 'btn_cancel_action': '⬅️ Cancel', 'btn_delete_action': '❌ Delete', 'auth_internal_error': '⚠️ Error during authentication. Please try again.', 'req_approved_admin_msg': '✅ *Request Approved (# {id})*\\n{name} ({role}) has been registered.', 'req_rejected_admin_msg': '❌ *Request Rejected (# {id})*\\nApplication for {name} has been rejected.', 'pending_appointments_title': '🤝 *Pending Parent Appointments:*', 'no_permission_appointment': '⛔ You do not have permission to respond to this appointment!', 'appointment_confirmed_toast': '✅ Appointment confirmed and parent notified.', 'setting_updated_toast': 'Setting updated.', 'maintenance_mode_updated': 'Maintenance mode updated.', 'admin_sched_edit_title': '📅 *Timetable Editor*\\n\\nSelect a class to enter or update its timetable:', 'admin_sched_updated': '✅ *Timetable for Class {class_name} updated!*', 'student_name_invalid': '⚠️ *Invalid Input:* Please enter student\'s full name (at least 3 characters):', 'teacher_name_invalid': '⚠️ *Invalid Input:* Please enter teacher\'s full name (at least 3 characters):', 'teacher_search_prompt': '🔍 Enter teacher name or subject to search (e.g. John or Mathematics):', 'teacher_search_no_results': '❌ No matching teachers found.', 'teacher_search_results_title': '🔍 *Teacher Search Results:*', 'student_info_updated': '✅ *Student Record Updated:* {name} ({class_name} - No: {no})', 'parent_unlinked_success': '✅ Parent links reset. New Parent Code: {code}', 'all_notifs_acknowledged': '✅ *All Absence Notifications Acknowledged!*\\n\\nThere are no unacknowledged notifications in the last 36 hours.', 'admin_add_tg_id_prompt': '👤 Please enter the Telegram ID of the new administrator (e.g. `123456789`):', 'admin_invalid_tg_id': '⚠️ Please enter a valid Telegram ID containing only digits:', 'admin_add_name_prompt': '👤 Please enter new admin\'s full name and title (e.g. `John Doe - Vice Principal`):', 'admin_added_success': '✅ *Administrator Successfully Added:* {name} (`{id}`)', 'permanent_admin_protected': '⛔ Permanent/Founder administrator privileges cannot be revoked!', 'admin_demoted_toast': 'Administrator privileges revoked.', 'no_students_in_class': 'No students found in class!', 'image_load_error': 'Could not load image!', 'published_homeworks_title': '📚 *Your Published Homework Assignments:*', 'homework_deleted_toast': 'Homework deleted.', 'action_cancelled': '❌ *Action cancelled.*', 'unauthorized_action': '⛔ Unauthorized action!', 'request_already_handled': 'This request has already been processed!', 'teacher_not_found': 'Teacher not found!', 'student_not_found': 'Student not found!', 'no_registered_teachers': 'No registered teachers found!', 'no_registered_students': 'No registered students found!', 'appointment_not_found': 'Appointment not found!', 'report_not_found': 'Report not found!', 'no_permission_grade': 'You do not have permission to access this grade!', 'no_permission_report_card': '⛔ You do not have permission to access this report card!', 'no_permission_student_record': '⛔ Unauthorized: you do not have permission for this student record!', 'invalid_name_error': '⚠️ *Invalid Name:* Please enter your full name (at least 3 characters):', 'invalid_phone_error': '⚠️ *Invalid Phone:* Please enter a valid phone number (at least 7 digits):', 'invalid_score_format': '⚠️ Please enter a valid number (0-100):', 'invalid_score_range': '⚠️ Score must be between 0 and 100. Please enter again (0-100):', 'invalid_parent_code': '❌ *Invalid Parent Code!* Please verify the code.', 'lock_countdown_msg': '⛔ *Security Lockout:* Your account is temporarily locked.\n\nTime remaining: *{mins} minutes*. Please wait.', 'attendance_weekend_lock': '⚠️ Attendance cannot be recorded on weekends!', 'attendance_hours_lock': '⚠️ Attendance can only be recorded during school hours (07:00 - 18:30)!', 'attendance_select_class': '📋 Select a class to record attendance:', 'attendance_correction_notification': 'ℹ️ *ATTENDANCE CORRECTION ALERT*\n\nThe previous absence record for your student *{name}* has been *CORRECTED* by the teacher (student is in class).', 'grade_select_class': '📝 Select a class to enter grades:', 'grade_select_student': '📝 *Class {class_name}* - Select student:', 'grade_parent_notification': '📝 *NEW GRADE POSTED*\n\nYour student *{name}* received *{score}* in {subject} ({exam_type}). ({badge})', 'schedule_select_class': '📅 Select a class to view timetable:', 'homework_board_title': '📚 *Latest Homework for Class {class_name}:*', 'no_active_homeworks': '📚 *Homework Board for Class {class_name}*\n\nThere are currently no pending homework assignments.', 'photo_expected_medical': '⚠️ *Photo Expected:* Please send a clear photo of the medical certificate or excuse note.\n\n*(To cancel, tap \'❌ Cancel Action\')*', 'parent_choose_child': '🧑‍🎓 Please select the student to view status:', 'unauthorized_excel_upload': '⛔ *Unauthorized:* Only school administrators can import students via Excel!', 'excel_format_error': '⚠️ *File Processing Error:* Excel file could not be read or has an invalid format.\n\nPlease ensure headers in the first row are \'Ad Soyad | Sinif | Numara\'.', 'medical_approved_parent': '✅ *Medical certificate has been approved by school administration. Student is marked excused.*', 'medical_rejected_parent': '❌ *Medical certificate has been rejected by school administration.*', 'admin_unban_notification': '🟢 *Your account restriction has been lifted by school administration. You may log in again.*', 'admin_demoted_notification': 'ℹ️ *Your school administrator privileges have been revoked by administration.*', 'admin_promoted_notification': '🎉 *Congratulations, {name}!*\n\nYou have been granted *School Administrator (Admin)* privileges. You can now access administrative actions via the menu below.', 'rk_restart': '🔄 Restart Bot', 'lang_select': '🌍 Please select your language:',
+ 'en': {'admin_users_hub_title': '👥 *School Bot User Directory* (Page {page}/{total_pages}):\\n\\nTotal Registered Users: *{total}*\\nTap on a user to view details or manage permissions:\\n', 'btn_search_user': '🔍 Search User', 'search_user_prompt': '🔍 Please enter the user\'s Full Name, @username, or Telegram ID to search:', 'search_user_no_results': '❌ No matching users found.', 'search_user_results_title': '🔍 *User Search Results:*', 'user_not_found_toast': 'User not found in database!', 'btn_make_perm_admin': '👑 Make Permanent Admin', 'btn_make_temp_admin': '⏱️ Make Temporary Admin', 'btn_revoke_admin_perm': '❌ Revoke Admin Role', 'btn_send_dm': '✉️ Send Direct Message', 'btn_req_chat': '📞 Request 1:1 Direct Chat', 'btn_ban_user': '🚫 Ban User', 'btn_unban_user': '🟢 Unban User', 'btn_refresh_data': '🔄 Refresh Data', 'btn_users_list': '⬅️ User Directory', 'perm_admin_assigned_toast': '✅ User has been granted permanent administrator privileges.', 'temp_admin_choose_title': '⏱️ *Select Temporary Administrator Duration:*\\n\\nThe user will hold full administrator privileges for the selected period, reverting to their prior role upon expiry.', 'btn_dur_24h': '⏱️ 24 Hours', 'btn_dur_7d': '⏱️ 7 Days', 'btn_dur_30d': '⏱️ 30 Days', 'temp_admin_assigned_toast': '✅ User granted temporary administrator privileges for {dur}.', 'user_banned_toast': 'User banned.', 'user_unbanned_toast': 'User unbanned.', 'send_dm_prompt': '✉️ *Send Direct Message:*\\n\\nPlease write the message you wish to deliver to user `{id}`:', 'dm_sent_success': '✅ *Message delivered successfully to user (`{id}`)!*', 'dm_delivery_error': '⚠️ *Delivery Error:* User has blocked the bot or is currently unreachable.', 'chat_req_sent_toast': '✅ 1:1 Contact request delivered to user!', 'chat_req_error_toast': '⚠️ Cannot reach user: bot is blocked!', 'admin_restart_confirmed': '🔄 *Administrator Panel Restarted.*', 'btn_users_hub': '👥 User Directory', 'btn_write_to_admin': '💬 Message Administrator', 'btn_add_another': '➕ Add Another', 'btn_add_new_teacher': '➕ Add New Teacher', 'btn_prev': '⬅️ Previous', 'btn_appr_medical': '✅ Approve (Mark Excused)', 'btn_appr_request': '✅ Approve & Authorize', 'btn_reject': '❌ Reject', 'btn_not_available': '❌ Not Available', 'btn_del_teacher': '❌ Delete Teacher', 'btn_edit_name': '👤 Edit Name', 'btn_edit_class': '🏫 Class / Transfer', 'btn_edit_no': '🔢 Edit Roll Number', 'btn_unlink_parent': '👨‍👩‍👧‍👦 Unlink Parents', 'btn_school_admins': '👨‍💼 School Administrators', 'btn_manage_schedule': '📅 Timetable Management', 'btn_search_teacher': '🔍 Search Teachers', 'btn_unack_notifs': '⚠️ Unacknowledged Absences', 'btn_teachers_pdf': '👨‍🏫 Teacher Password Cards (PDF)', 'btn_add_admin_id': '➕ Add Admin by Telegram ID', 'btn_gen_admin_code': '🔑 Generate One-Time Admin Code', 'btn_recent_grades_menu': '📝 Recent Grades (Edit / Delete)', 'btn_export_all_data': '📤 Export All School Data (Backup)', 'btn_upload_excel': '📥 Bulk Student Import (Excel)', 'btn_search_again': '🔍 Search Again', 'role_student_btn': '🎓 Student', 'role_teacher_btn': '👨‍🏫 Teacher', 'role_parent_btn': '👨‍👩‍👧‍👦 Parent', 'btn_cancel_action': '⬅️ Cancel', 'btn_delete_action': '❌ Delete', 'auth_internal_error': '⚠️ Error during authentication. Please try again.', 'req_approved_admin_msg': '✅ *Request Approved (# {id})*\\n{name} ({role}) has been registered.', 'req_rejected_admin_msg': '❌ *Request Rejected (# {id})*\\nApplication for {name} has been rejected.', 'pending_appointments_title': '🤝 *Pending Parent Appointments:*', 'no_permission_appointment': '⛔ You do not have permission to respond to this appointment!', 'appointment_confirmed_toast': '✅ Appointment confirmed and parent notified.', 'setting_updated_toast': 'Setting updated.', 'maintenance_mode_updated': 'Maintenance mode updated.', 'admin_sched_edit_title': '📅 *Timetable Editor*\\n\\nSelect a class to enter or update its timetable:', 'admin_sched_updated': '✅ *Timetable for Class {class_name} updated!*', 'student_name_invalid': '⚠️ *Invalid Input:* Please enter student\'s full name (at least 3 characters):', 'teacher_name_invalid': '⚠️ *Invalid Input:* Please enter teacher\'s full name (at least 3 characters):', 'teacher_search_prompt': '🔍 Enter teacher name or subject to search (e.g. John or Mathematics):', 'teacher_search_no_results': '❌ No matching teachers found.', 'teacher_search_results_title': '🔍 *Teacher Search Results:*', 'student_info_updated': '✅ *Student Record Updated:* {name} ({class_name} - No: {no})', 'parent_unlinked_success': '✅ Parent links reset. New Parent Code: {code}', 'all_notifs_acknowledged': '✅ *All Absence Notifications Acknowledged!*\\n\\nThere are no unacknowledged notifications in the last 36 hours.', 'admin_add_tg_id_prompt': '👤 Please enter the Telegram ID of the new administrator (e.g. `123456789`):', 'admin_invalid_tg_id': '⚠️ Please enter a valid Telegram ID containing only digits:', 'admin_add_name_prompt': '👤 Please enter new admin\'s full name and title (e.g. `John Doe - Vice Principal`):', 'admin_added_success': '✅ *Administrator Successfully Added:* {name} (`{id}`)', 'permanent_admin_protected': '⛔ Permanent/Founder administrator privileges cannot be revoked!', 'admin_demoted_toast': 'Administrator privileges revoked.', 'no_students_in_class': 'No students found in class!', 'image_load_error': 'Could not load image!', 'published_homeworks_title': '📚 *Your Published Homework Assignments:*', 'homework_deleted_toast': 'Homework deleted.', 'action_cancelled': '❌ *Action cancelled.*', 'unauthorized_action': '⛔ Unauthorized action!', 'request_already_handled': 'This request has already been processed!', 'teacher_not_found': 'Teacher not found!', 'student_not_found': 'Student not found!', 'no_registered_teachers': 'No registered teachers found!', 'no_registered_students': 'No registered students found!', 'appointment_not_found': 'Appointment not found!', 'report_not_found': 'Report not found!', 'no_permission_grade': 'You do not have permission to access this grade!', 'no_permission_report_card': '⛔ You do not have permission to access this report card!', 'no_permission_student_record': '⛔ Unauthorized: you do not have permission for this student record!', 'invalid_name_error': '⚠️ *Invalid Name:* Please enter your full name (at least 3 characters):', 'invalid_phone_error': '⚠️ *Invalid Phone:* Please enter a valid phone number (at least 7 digits):', 'invalid_score_format': '⚠️ Please enter a valid number (0-100):', 'invalid_score_range': '⚠️ Score must be between 0 and 100. Please enter again (0-100):', 'invalid_parent_code': '❌ *Invalid Parent Code!* Please verify the code.', 'lock_countdown_msg': '⛔ *Security Lockout:* Your account is temporarily locked.\n\nTime remaining: *{mins} minutes*. Please wait.', 'attendance_weekend_lock': '⚠️ Attendance cannot be recorded on weekends!', 'attendance_hours_lock': '⚠️ Attendance can only be recorded during school hours (07:00 - 18:30)!', 'attendance_select_class': '📋 Select a class to record attendance:', 'attendance_correction_notification': 'ℹ️ *ATTENDANCE CORRECTION ALERT*\n\nThe previous absence record for your student *{name}* has been *CORRECTED* by the teacher (student is in class).', 'grade_select_class': '📝 Select a class to enter grades:', 'grade_select_student': '📝 *Class {class_name}* - Select student:', 'grade_parent_notification': '📝 *NEW GRADE POSTED*\n\nYour student *{name}* received *{score}* in {subject} ({exam_type}). ({badge})', 'schedule_select_class': '📅 Select a class to view timetable:', 'homework_board_title': '📚 *Latest Homework for Class {class_name}:*', 'no_active_homeworks': '📚 *Homework Board for Class {class_name}*\n\nThere are currently no pending homework assignments.', 'photo_expected_medical': '⚠️ *Photo Expected:* Please send a clear photo of the medical certificate or excuse note.\n\n*(To cancel, tap \'❌ Cancel Action\')*', 'parent_choose_child': '🧑‍🎓 Please select the student to view status:', 'unauthorized_excel_upload': '⛔ *Unauthorized:* Only school administrators can import students via Excel!', 'excel_format_error': '⚠️ *File Processing Error:* Excel file could not be read or has an invalid format.\n\nPlease ensure headers in the first row are \'Ad Soyad | Sinif | Numara\'.', 'medical_approved_parent': '✅ *Medical certificate has been approved by school administration. Student is marked excused.*', 'medical_rejected_parent': '❌ *Medical certificate has been rejected by school administration.*', 'admin_unban_notification': '🟢 *Your account restriction has been lifted by school administration. You may log in again.*', 'admin_demoted_notification': 'ℹ️ *Your school administrator privileges have been revoked by administration.*', 'admin_promoted_notification': '🎉 *Congratulations, {name}!*\n\nYou have been granted *School Administrator (Admin)* privileges. You can now access administrative actions via the menu below.', 'rk_restart': '🔄 Restart Bot', 'lang_select': '🌍 Please select your language:',
         'lang_changed': 'Language successfully updated: 🇬🇧 English',
         'prompt_enter_code_direct': '🔑 *Please enter your access code:* (e.g. `HCA-123456`, `VELI-123456`, '
                                     '`OGR-123456`)',
@@ -1686,7 +1717,12 @@ def is_admin_user(user: User | None, user_id: int) -> bool:
     """Kullanıcının yönetici yetkisini tam ve kesin olarak doğrular"""
     if user_id in ADMIN_IDS:
         return True
-    return bool(user and user.role == "admin")
+    if not user or user.role != "admin":
+        return False
+    if user.admin_type == "temporary" and user.admin_until:
+        if user.admin_until <= datetime.utcnow():
+            return False
+    return True
 
 def generate_secure_code(prefix: str) -> str:
     """6 haneli, yüksek entropili güvenli kod üretir"""
@@ -2243,6 +2279,8 @@ class Form(StatesGroup):
     waiting_admin_name = State()
     waiting_search_teacher_query = State()
     sched_update_text = State()
+    waiting_search_user_query = State()
+    waiting_admin_dm_text = State()
     # Erişim Talebi Başvurusu Adımları
     req_role = State()
     req_name = State()
@@ -2332,14 +2370,27 @@ async def cmd_start(message: Message, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         is_admin_id = message.from_user.id in ADMIN_IDS
+        tg_user = message.from_user
 
         if not user:
             user = User(
-                telegram_id=message.from_user.id,
+                telegram_id=tg_user.id,
                 role="admin" if is_admin_id else "guest",
-                language="tr"
+                language="tr",
+                full_name=tg_user.full_name,
+                username=tg_user.username,
+                admin_type="permanent" if is_admin_id else "none"
             )
             session.add(user)
+            await session.commit()
+        else:
+            if is_admin_id:
+                user.role = "admin"
+                user.admin_type = "permanent"
+            if tg_user.username and user.username != tg_user.username:
+                user.username = tg_user.username
+            if tg_user.full_name and not user.full_name:
+                user.full_name = tg_user.full_name
             await session.commit()
 
             await message.answer(
@@ -3759,7 +3810,7 @@ async def cb_cat_staff(message: Message, state: FSMContext):
         buttons = [
             [InlineKeyboardButton(text=get_text("btn_classes", lang), callback_data="adm:classes"), InlineKeyboardButton(text=get_text("btn_teachers", lang), callback_data="adm:teachers")],
             [InlineKeyboardButton(text=get_text("btn_search_student", lang), callback_data="adm:search_student"), InlineKeyboardButton(text=get_text("btn_search_teacher", lang), callback_data="adm:search_teacher")],
-            [InlineKeyboardButton(text=get_text("btn_school_admins", lang), callback_data="adm:admins_list")]
+            [InlineKeyboardButton(text=get_text("btn_school_admins", lang), callback_data="adm:admins_list"), InlineKeyboardButton(text=get_text("btn_users_hub", lang), callback_data="adm:users_hub:0")]
         ]
         await safe_edit_or_answer(message, get_text("cat_staff_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
 
@@ -4547,6 +4598,404 @@ async def process_broadcast_text(message: Message, state: FSMContext):
         await message.answer(get_text("broadcast_success", lang, count=sent_cnt), parse_mode="Markdown")
         await render_clean_dashboard(message, user)
 
+
+
+# ======================================================================
+# KULLANICI REHBERİ VE YÖNETİMİ (ADM:USERS_HUB, CARDS, PERM/TEMP ADMIN, 1:1 DM)
+# ======================================================================
+
+@router.callback_query(F.data.startswith("adm:users_hub:"))
+async def cb_admin_users_hub(query: CallbackQuery):
+    page = int(query.data.split(":")[2])
+    per_page = 8
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        if not is_admin_user(user, query.from_user.id): return
+
+        total_users = (await session.execute(select(func.count(User.telegram_id)))).scalar() or 0
+        users_list = (await session.execute(
+            select(User).order_by(User.created_at.desc()).offset(page * per_page).limit(per_page)
+        )).scalars().all()
+
+        lines = [
+            f"👥 *Okul Botu Kullanıcı Rehberi* (Sayfa {page + 1}/{(total_users + per_page - 1)//per_page or 1}):\n",
+            f"Toplam Kayıtlı Kullanıcı: *{total_users}*\nDetaylarını görmek veya işlem yapmak için kullanıcıya dokunun:\n"
+        ]
+        buttons = []
+
+        role_icons = {
+            "admin": "👑",
+            "teacher": "👨‍🏫",
+            "parent": "👨‍👩‍👧‍👦",
+            "student": "🎓",
+            "guest": "👤"
+        }
+
+        for u in users_list:
+            icon = role_icons.get(u.role, "👤")
+            if u.is_blacklisted: icon = "🚫"
+            elif u.admin_type == "temporary": icon = "⏱️"
+
+            u_name = u.full_name or "İsimsiz"
+            u_tag = f" (@{u.username})" if u.username else ""
+            btn_txt = f"{icon} {u_name}{u_tag} [{u.role.upper()}]"
+            buttons.append([InlineKeyboardButton(text=btn_txt, callback_data=f"adm:user_card:{u.telegram_id}")])
+
+        # Pagination
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton(text="⬅️ Önceki", callback_data=f"adm:users_hub:{page - 1}"))
+        if (page + 1) * per_page < total_users:
+            nav_row.append(InlineKeyboardButton(text="➡️ Sonraki", callback_data=f"adm:users_hub:{page + 1}"))
+        if nav_row:
+            buttons.append(nav_row)
+
+        buttons.append([InlineKeyboardButton(text=get_text("btn_search_user", lang), callback_data="adm:search_user_init")])
+        buttons.append(get_nav_buttons(lang, back_callback="adm:cat_staff"))
+
+        await safe_edit_or_answer(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data == "adm:search_user_init")
+async def cb_admin_search_user_init(query: CallbackQuery, state: FSMContext):
+    await state.clear()
+    buttons = [[InlineKeyboardButton(text="⬅️ İptal", callback_data="adm:users_hub:0")]]
+    await query.message.edit_text(get_text("search_user_prompt", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await state.set_state(Form.waiting_search_user_query)
+    await query.answer()
+
+@router.message(Form.waiting_search_user_query)
+async def process_search_user_query(message: Message, state: FSMContext):
+    q_txt = message.text.strip().replace("@", "")
+    await state.clear()
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        if not is_admin_user(user, message.from_user.id): return
+
+        conds = [
+            User.full_name.ilike(f"%{q_txt}%"),
+            User.username.ilike(f"%{q_txt}%")
+        ]
+        if q_txt.isdigit():
+            conds.append(User.telegram_id == int(q_txt))
+
+        res = (await session.execute(select(User).where(or_(*conds)).limit(10))).scalars().all()
+
+        if not res:
+            buttons = [
+                [InlineKeyboardButton(text="🔍 Tekrar Ara", callback_data="adm:search_user_init")],
+                [InlineKeyboardButton(text=get_text("btn_users_list", lang), callback_data="adm:users_hub:0")]
+            ]
+            await message.answer(get_text("search_user_no_results", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+            return
+
+        buttons = []
+        for u in res:
+            tag = f" (@{u.username})" if u.username else ""
+            buttons.append([InlineKeyboardButton(text=f"👤 {u.full_name or 'İsimsiz'}{tag} [{u.role.upper()}]", callback_data=f"adm:user_card:{u.telegram_id}")])
+
+        buttons.append([InlineKeyboardButton(text=get_text("btn_users_list", lang), callback_data="adm:users_hub:0")])
+        await message.answer(get_text("search_user_results_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+
+@router.callback_query(F.data.startswith("adm:user_card:"))
+async def cb_admin_user_card(query: CallbackQuery):
+    tg_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        admin_u = await session.get(User, query.from_user.id)
+        lang = admin_u.language if admin_u else "tr"
+        if not is_admin_user(admin_u, query.from_user.id): return
+
+        target_u = await session.get(User, tg_id)
+        if not target_u:
+            await query.answer(get_text("user_not_found_toast", lang), show_alert=True)
+            return
+
+        # Extra info
+        role_detail = target_u.role.capitalize()
+        extra_info = []
+
+        if target_u.role == "teacher":
+            tch = (await session.execute(select(Teacher).where(Teacher.telegram_id == tg_id))).scalar_one_or_none()
+            if tch: extra_info.append(f"• Branş: *{escape_md(tch.subject)}* (Kod: `{tch.auth_code}`)")
+        elif target_u.role == "student":
+            st = (await session.execute(select(Student).where(Student.student_telegram_id == tg_id))).scalar_one_or_none()
+            if st: extra_info.append(f"• Sınıf: *{escape_md(st.class_name)}* | No: *{escape_md(st.student_number)}*")
+        elif target_u.role == "parent":
+            kids = (await session.execute(
+                select(Student).join(ParentStudent, ParentStudent.student_id == Student.id).where(ParentStudent.parent_telegram_id == tg_id)
+            )).scalars().all()
+            if kids:
+                k_names = ", ".join([f"{k.full_name} ({k.class_name})" for k in kids])
+                extra_info.append(f"• Bağlı Öğrenciler: *{escape_md(k_names)}*")
+
+        phone_str = target_u.phone
+        if not phone_str:
+            req_info = (await session.execute(select(AccessRequest).where(AccessRequest.telegram_id == tg_id))).scalars().first()
+            if req_info and req_info.phone:
+                phone_str = req_info.phone
+
+        phone_display = f"`{phone_str}`" if phone_str else "_Kayıtlı Değil_"
+        username_display = f"@{target_u.username}" if target_u.username else "_Tanımlanmamış_"
+
+        # Admin status
+        if tg_id in PERMANENT_ADMIN_IDS or target_u.admin_type == "permanent":
+            adm_status = "👑 *Kalıcı / Kurucu Yönetici*"
+        elif target_u.admin_type == "temporary" and target_u.admin_until:
+            exp_str = (target_u.admin_until + timedelta(hours=TIMEZONE_OFFSET)).strftime('%d.%m.%Y %H:%M')
+            adm_status = f"⏱️ *Geçici Yönetici* (Bitiş: `{exp_str}`)"
+        else:
+            adm_status = "Standart Kullanıcı (Yönetici Değil)"
+
+        # Account status
+        if target_u.is_blacklisted:
+            acc_status = "🚫 *Engelli (Banlı)*"
+        elif target_u.locked_until and target_u.locked_until > datetime.utcnow():
+            rem = max(1, int((target_u.locked_until - datetime.utcnow()).total_seconds() / 60))
+            acc_status = f"⛔ *Kilitli* (Kalan: {rem} dk)"
+        else:
+            acc_status = "🟢 *Aktif*"
+
+        lines = [
+            f"👤 *KULLANICI PROFİL VE İŞLEM KARTI*\n",
+            f"• Telegram ID: `{target_u.telegram_id}`",
+            f"• Ad Soyad: *{escape_md(target_u.full_name or 'İsimsiz')}*",
+            f"• Kullanıcı Adı: {username_display}",
+            f"• Telefon: {phone_display}",
+            f"• Sistem Rolü: *{role_detail}*",
+            f"• Yönetici Statüsü: {adm_status}",
+            f"• Hesap Durumu: {acc_status}",
+            f"• Tercih Edilen Dil: {target_u.language.upper()}"
+        ]
+        if extra_info:
+            lines.extend(extra_info)
+
+        buttons = []
+
+        # Yönetici Atama / Yetki Alma
+        if target_u.role != "admin" or target_u.admin_type == "none":
+            buttons.append([
+                InlineKeyboardButton(text=get_text("btn_make_perm_admin", lang), callback_data=f"adm:make_perm:{tg_id}"),
+                InlineKeyboardButton(text=get_text("btn_make_temp_admin", lang), callback_data=f"adm:make_temp:{tg_id}")
+            ])
+        else:
+            if tg_id not in PERMANENT_ADMIN_IDS:
+                buttons.append([InlineKeyboardButton(text=get_text("btn_revoke_admin_perm", lang), callback_data=f"adm:revoke_adm:{tg_id}")])
+
+        # 1:1 İletişim Butonları
+        buttons.append([
+            InlineKeyboardButton(text=get_text("btn_send_dm", lang), callback_data=f"adm:send_dm:{tg_id}"),
+            InlineKeyboardButton(text=get_text("btn_req_chat", lang), callback_data=f"adm:req_chat:{tg_id}")
+        ])
+
+        # Ban / Unban
+        if tg_id not in PERMANENT_ADMIN_IDS:
+            if target_u.is_blacklisted:
+                buttons.append([InlineKeyboardButton(text="🟢 Engeli Kaldır (Unban)", callback_data=f"adm:unban_u:{tg_id}")])
+            else:
+                buttons.append([InlineKeyboardButton(text="🚫 Kullanıcıyı Engelle (Ban)", callback_data=f"adm:ban_u:{tg_id}")])
+
+        # Yenile & Geri
+        buttons.append([
+            InlineKeyboardButton(text=get_text("btn_refresh_data", lang), callback_data=f"adm:user_card:{tg_id}"),
+            InlineKeyboardButton(text=get_text("btn_users_list", lang), callback_data="adm:users_hub:0")
+        ])
+
+        await safe_edit_or_answer(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:make_perm:"))
+async def cb_admin_make_perm_admin(query: CallbackQuery):
+    tg_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        admin_u = await session.get(User, query.from_user.id)
+        if not is_admin_user(admin_u, query.from_user.id): return
+
+        target_u = await session.get(User, tg_id)
+        if target_u:
+            target_u.previous_role = target_u.role if target_u.role != "admin" else "guest"
+            target_u.role = "admin"
+            target_u.admin_type = "permanent"
+            target_u.admin_until = None
+            await session.commit()
+
+            notify_msg = f"🎉 *Sayın {escape_md(target_u.full_name or 'Kullanıcı')},*\n\nOkul yönetimi tarafından sisteme *KALICI YÖNETİCİ (Admin)* olarak yetkilendirildiniz! Aşağıdaki alt menüden tüm yönetim paneline erişebilirsiniz."
+            await safe_send_message(query.message.bot, tg_id, notify_msg, reply_markup=get_role_reply_kb("admin", target_u.language), parse_mode="Markdown")
+
+            await query.answer(get_text("perm_admin_assigned_toast", lang), show_alert=True)
+            dummy_q = CallbackQuery(id="0", from_user=query.from_user, chat_instance="0", message=query.message, data=f"adm:user_card:{tg_id}")
+            await cb_admin_user_card(dummy_q)
+            return
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:make_temp:"))
+async def cb_admin_choose_temp_admin(query: CallbackQuery):
+    tg_id = int(query.data.split(":")[2])
+    buttons = [
+        [
+            InlineKeyboardButton(text=get_text("btn_dur_24h", "tr"), callback_data=f"adm:set_temp:{tg_id}:24h"),
+            InlineKeyboardButton(text=get_text("btn_dur_7d", "tr"), callback_data=f"adm:set_temp:{tg_id}:7d")
+        ],
+        [
+            InlineKeyboardButton(text=get_text("btn_dur_30d", "tr"), callback_data=f"adm:set_temp:{tg_id}:30d"),
+            InlineKeyboardButton(text="⬅️ İptal", callback_data=f"adm:user_card:{tg_id}")
+        ]
+    ]
+    await safe_edit_or_answer(query, get_text("temp_admin_choose_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:set_temp:"))
+async def cb_admin_set_temp_admin(query: CallbackQuery):
+    parts = query.data.split(":")
+    tg_id = int(parts[2])
+    dur = parts[3]
+
+    hours_map = {"24h": 24, "7d": 24 * 7, "30d": 24 * 30}
+    hrs = hours_map.get(dur, 24)
+    until = datetime.utcnow() + timedelta(hours=hrs)
+
+    async with AsyncSessionLocal() as session:
+        admin_u = await session.get(User, query.from_user.id)
+        if not is_admin_user(admin_u, query.from_user.id): return
+
+        target_u = await session.get(User, tg_id)
+        if target_u:
+            target_u.previous_role = target_u.role if target_u.role != "admin" else "guest"
+            target_u.role = "admin"
+            target_u.admin_type = "temporary"
+            target_u.admin_until = until
+            await session.commit()
+
+            exp_str = (until + timedelta(hours=TIMEZONE_OFFSET)).strftime('%d.%m.%Y %H:%M')
+            notify_msg = f"⏱️ *Sayın {escape_md(target_u.full_name or 'Kullanıcı')},*\n\nOkul yönetimi tarafından sisteme *GEÇİCİ YÖNETİCİ* olarak yetkilendirildiniz!\n\n📅 *Yetki Bitiş Tarihi:* `{exp_str}`\n\nBu tarihe kadar yönetim paneline tam erişim sağlayabilirsiniz."
+            await safe_send_message(query.message.bot, tg_id, notify_msg, reply_markup=get_role_reply_kb("admin", target_u.language), parse_mode="Markdown")
+
+            await query.answer(get_text("temp_admin_assigned_toast", lang, dur=dur), show_alert=True)
+            dummy_q = CallbackQuery(id="0", from_user=query.from_user, chat_instance="0", message=query.message, data=f"adm:user_card:{tg_id}")
+            await cb_admin_user_card(dummy_q)
+            return
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:revoke_adm:"))
+async def cb_admin_revoke_admin(query: CallbackQuery):
+    tg_id = int(query.data.split(":")[2])
+    if tg_id in PERMANENT_ADMIN_IDS:
+        await query.answer(get_text("permanent_admin_protected", admin_u.language if admin_u else "tr"), show_alert=True)
+        return
+
+    async with AsyncSessionLocal() as session:
+        admin_u = await session.get(User, query.from_user.id)
+        if not is_admin_user(admin_u, query.from_user.id): return
+
+        target_u = await session.get(User, tg_id)
+        if target_u:
+            target_u.role = target_u.previous_role or "guest"
+            target_u.admin_type = "none"
+            target_u.admin_until = None
+            await session.commit()
+
+            rev_msg = "ℹ️ *Okul yönetici yetkiniz idare tarafından sonlandırılmıştır.*"
+            await safe_send_message(query.message.bot, tg_id, rev_msg, reply_markup=get_role_reply_kb(target_u.role, target_u.language), parse_mode="Markdown")
+
+            await query.answer(get_text("admin_demoted_toast", admin_u.language if admin_u else "tr"), show_alert=True)
+            dummy_q = CallbackQuery(id="0", from_user=query.from_user, chat_instance="0", message=query.message, data=f"adm:user_card:{tg_id}")
+            await cb_admin_user_card(dummy_q)
+            return
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:ban_u:"))
+async def cb_admin_ban_user(query: CallbackQuery):
+    tg_id = int(query.data.split(":")[2])
+    if tg_id in PERMANENT_ADMIN_IDS:
+        await query.answer(get_text("permanent_admin_protected", "tr"), show_alert=True)
+        return
+
+    async with AsyncSessionLocal() as session:
+        target_u = await session.get(User, tg_id)
+        if target_u:
+            target_u.is_blacklisted = True
+            await session.commit()
+            await safe_send_message(query.message.bot, tg_id, get_text("auth_blacklisted", target_u.language if target_u else "tr"), parse_mode="Markdown")
+
+        await query.answer(get_text("user_banned_toast", lang), show_alert=True)
+        dummy_q = CallbackQuery(id="0", from_user=query.from_user, chat_instance="0", message=query.message, data=f"adm:user_card:{tg_id}")
+        await cb_admin_user_card(dummy_q)
+
+@router.callback_query(F.data.startswith("adm:unban_u:"))
+async def cb_admin_unban_user(query: CallbackQuery):
+    tg_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        target_u = await session.get(User, tg_id)
+        if target_u:
+            target_u.is_blacklisted = False
+            target_u.failed_attempts = 0
+            target_u.locked_until = None
+            await session.commit()
+            await safe_send_message(query.message.bot, tg_id, get_text("admin_unban_notification", target_u.language if target_u else "tr"), parse_mode="Markdown")
+
+        await query.answer(get_text("user_unbanned_toast", lang), show_alert=True)
+        dummy_q = CallbackQuery(id="0", from_user=query.from_user, chat_instance="0", message=query.message, data=f"adm:user_card:{tg_id}")
+        await cb_admin_user_card(dummy_q)
+
+@router.callback_query(F.data.startswith("adm:send_dm:"))
+async def cb_admin_send_dm_init(query: CallbackQuery, state: FSMContext):
+    tg_id = int(query.data.split(":")[2])
+    await state.update_data(target_dm_id=tg_id)
+    buttons = [[InlineKeyboardButton(text="⬅️ İptal", callback_data=f"adm:user_card:{tg_id}")]]
+    await safe_edit_or_answer(query, get_text("send_dm_prompt", lang, id=tg_id), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await state.set_state(Form.waiting_admin_dm_text)
+    await query.answer()
+
+@router.message(Form.waiting_admin_dm_text)
+async def process_admin_dm_text(message: Message, state: FSMContext):
+    dm_text = message.text.strip()
+    data = await state.get_data()
+    target_id = data.get("target_dm_id")
+    await state.clear()
+
+    async with AsyncSessionLocal() as session:
+        admin_u = await session.get(User, message.from_user.id)
+        admin_name = admin_u.full_name if (admin_u and admin_u.full_name) else "Okul İdaresi"
+
+        formatted_msg = (
+            f"📩 *OKUL İDARESİNDEN BİLDİRİM*\n\n"
+            f"{escape_md(dm_text)}\n\n"
+            f"👤 _Gönderen: {escape_md(admin_name)}_"
+        )
+        res = await safe_send_message(message.bot, target_id, formatted_msg, parse_mode="Markdown")
+        if res:
+            await message.answer(get_text("dm_sent_success", admin_u.language if admin_u else "tr", id=target_id), reply_markup=get_role_reply_kb("admin", admin_u.language if admin_u else "tr"), parse_mode="Markdown")
+        else:
+            await message.answer(get_text("dm_delivery_error", admin_u.language if admin_u else "tr"), reply_markup=get_role_reply_kb("admin", admin_u.language if admin_u else "tr"), parse_mode="Markdown")
+
+        await render_clean_dashboard(message, admin_u)
+
+@router.callback_query(F.data.startswith("adm:req_chat:"))
+async def cb_admin_req_contact(query: CallbackQuery):
+    tg_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        admin_u = await session.get(User, query.from_user.id)
+        admin_name = admin_u.full_name if (admin_u and admin_u.full_name) else "Okul Müdürü / İdareci"
+
+        chat_msg = (
+            f"📞 *OKUL İDARESİ İLETİŞİM ÇAĞRISI*\n\n"
+            f"Sayın velimiz / kullanıcımız, okul yönetimi sizinle 1:1 iletişime geçmek istemektedir.\n\n"
+            f"👤 *İdareci:* {escape_md(admin_name)}\n"
+        )
+        buttons = []
+        if admin_u and admin_u.username:
+            chat_msg += f"Kullanıcı Adı: @{admin_u.username}\n\nLütfen aşağıdaki butona basarak idarecimiz ile doğrudan mesajlaşmayı başlatınız:"
+            buttons.append([InlineKeyboardButton(text=get_text("btn_write_to_admin", target_u.language if target_u else "tr"), url=f"https://t.me/{admin_u.username}")])
+        else:
+            chat_msg += f"ID: `{query.from_user.id}`\n\nLütfen okul idaresi ile iletişime geçiniz."
+
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
+        res = await safe_send_message(query.message.bot, tg_id, chat_msg, reply_markup=kb, parse_mode="Markdown")
+        if res:
+            await query.answer(get_text("chat_req_sent_toast", lang), show_alert=True)
+        else:
+            await query.answer(get_text("chat_req_error_toast", lang), show_alert=True)
 
 # ======================================================================
 # YÖNETİCİ KADROSU MASASI (ADM:ADMINS_LIST, ADD_ADMIN, GEN_KEY)
@@ -5602,6 +6051,29 @@ async def handle_bot_restart_cmd(message: Message, state: FSMContext):
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
+        is_rec_admin = (user_id in ADMIN_IDS) or (user and user.admin_type == "permanent") or (user and user.role == "admin" and (user.admin_until is None or user.admin_until > datetime.utcnow()))
+
+        if is_rec_admin:
+            if user:
+                user.role = "admin"
+                user.admin_type = "permanent" if (user_id in ADMIN_IDS or user.admin_type == "permanent") else "temporary"
+                user.failed_attempts = 0
+                user.locked_until = None
+                await session.commit()
+                lang = user.language
+            else:
+                user = User(telegram_id=user_id, role="admin", language="tr", admin_type="permanent", full_name="Kalıcı İdareci")
+                session.add(user)
+                await session.commit()
+                lang = "tr"
+
+            try: await message.delete()
+            except Exception: pass
+
+            await message.answer(get_text("admin_restart_confirmed", lang), reply_markup=get_role_reply_kb("admin", lang), parse_mode="Markdown")
+            await render_clean_dashboard(message, user)
+            return
+
         if user:
             user.role = "guest"
             user.current_child_id = None
