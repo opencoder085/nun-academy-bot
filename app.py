@@ -148,44 +148,98 @@ def normalize_code(code_str: str) -> str:
         cleaned = f"{m.group(1)}-{m.group(2)}"
     return cleaned
 
+ACTIVE_CHAT_MESSAGES: dict[int, set[int]] = {}
+
+async def purge_previous_bot_messages(bot_obj: Bot, chat_id: int, keep_msg_id: int | None = None):
+    all_ids = set(ACTIVE_CHAT_MESSAGES.get(chat_id, set()))
+    last_id = LAST_MENU_MSG_ID.get(chat_id)
+    if last_id:
+        all_ids.add(last_id)
+
+    remaining = set()
+    for mid in list(all_ids):
+        if keep_msg_id is not None and mid == keep_msg_id:
+            remaining.add(mid)
+            continue
+        try:
+            await bot_obj.delete_message(chat_id=chat_id, message_id=mid)
+        except Exception:
+            pass
+
+    ACTIVE_CHAT_MESSAGES[chat_id] = remaining
+    if keep_msg_id is not None:
+        LAST_MENU_MSG_ID[chat_id] = keep_msg_id
+    elif chat_id in LAST_MENU_MSG_ID:
+        LAST_MENU_MSG_ID.pop(chat_id, None)
+
 async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_markup=None, parse_mode="Markdown"):
     if parse_mode == "HTML" and text:
         text = format_telegram_html(text)
-    target_chat_id = target.chat.id if isinstance(target, Message) else (target.message.chat.id if (isinstance(target, CallbackQuery) and target.message) else None)
+    
+    bot_obj = target.bot if isinstance(target, Message) else (target.message.bot if target.message else bot)
+    target_chat_id = target.chat.id if isinstance(target, Message) else (target.message.chat.id if target.message else target.from_user.id)
+
     if isinstance(target, CallbackQuery):
         msg = target.message
         if msg and msg.from_user and msg.from_user.is_bot and not msg.photo:
             try:
                 await msg.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
-                if target_chat_id: LAST_MENU_MSG_ID[target_chat_id] = msg.message_id
+                await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=msg.message_id)
                 return
             except Exception as e:
                 err_s = str(e).lower()
                 if "message is not modified" in err_s:
-                    if target_chat_id: LAST_MENU_MSG_ID[target_chat_id] = msg.message_id
+                    await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=msg.message_id)
                     return
                 try:
                     await msg.edit_text(text, reply_markup=reply_markup, parse_mode=None)
-                    if target_chat_id: LAST_MENU_MSG_ID[target_chat_id] = msg.message_id
+                    await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=msg.message_id)
                     return
                 except Exception as e2:
                     if "message is not modified" in str(e2).lower():
-                        if target_chat_id: LAST_MENU_MSG_ID[target_chat_id] = msg.message_id
+                        await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=msg.message_id)
                         return
-                    pass
+                    try:
+                        await msg.delete()
+                    except Exception:
+                        pass
+        
+        # In-place edit wasn't possible: purge all and send fresh single message
+        await purge_previous_bot_messages(bot_obj, target_chat_id)
         try:
-            s_m = await msg.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
-            if s_m and target_chat_id: LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
+            s_m = await bot_obj.send_message(chat_id=target_chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+            if s_m:
+                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
+                LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
+            return
         except Exception:
-            s_m = await msg.answer(text, reply_markup=reply_markup, parse_mode=None)
-            if s_m and target_chat_id: LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
+            s_m = await bot_obj.send_message(chat_id=target_chat_id, text=text, reply_markup=reply_markup, parse_mode=None)
+            if s_m:
+                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
+                LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
+            return
+
     elif isinstance(target, Message):
+        # Delete user's triggering message immediately
         try:
-            s_m = await target.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
-            if s_m and target_chat_id: LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
+            await target.delete()
         except Exception:
-            s_m = await target.answer(text, reply_markup=reply_markup, parse_mode=None)
-            if s_m and target_chat_id: LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
+            pass
+        
+        # Purge all previous bot menu cards
+        await purge_previous_bot_messages(bot_obj, target_chat_id)
+
+        # Send fresh single active card
+        try:
+            s_m = await bot_obj.send_message(chat_id=target_chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+            if s_m:
+                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
+                LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
+        except Exception:
+            s_m = await bot_obj.send_message(chat_id=target_chat_id, text=text, reply_markup=reply_markup, parse_mode=None)
+            if s_m:
+                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
+                LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
 
 async def safe_send_message(bot: Bot, chat_id: int, text: str, reply_markup=None, parse_mode="Markdown", disable_notification=False):
     if parse_mode == "HTML" and text:
@@ -3524,40 +3578,15 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
 
     target_chat_id = chat_id or (target.chat.id if isinstance(target, Message) else (target.message.chat.id if isinstance(target, CallbackQuery) else user.telegram_id))
 
-    # Clean previous menu card to avoid bubble clutter
-    last_mid = LAST_MENU_MSG_ID.get(target_chat_id)
-    if last_mid:
-        try:
-            bot_obj = target if isinstance(target, Bot) else (target.bot if isinstance(target, Message) else target.message.bot)
-            await bot_obj.delete_message(chat_id=target_chat_id, message_id=last_mid)
-        except Exception:
-            pass
-        LAST_MENU_MSG_ID.pop(target_chat_id, None)
-
     if isinstance(target, Bot):
+        await purge_previous_bot_messages(target, target_chat_id)
         sent_m = await safe_send_message(target, target_chat_id, text, reply_markup=parent_quick_kb, parse_mode="HTML")
         if sent_m:
             LAST_MENU_MSG_ID[target_chat_id] = sent_m.message_id
             ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(sent_m.message_id)
         return
 
-    if isinstance(target, CallbackQuery):
-        msg = target.message
-        if msg and msg.from_user and msg.from_user.is_bot and not msg.photo:
-            try:
-                await msg.edit_text(text, reply_markup=parent_quick_kb, parse_mode="HTML")
-                LAST_MENU_MSG_ID[target_chat_id] = msg.message_id
-                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(msg.message_id)
-                return
-            except Exception:
-                pass
-        sent_m = await msg.answer(text, reply_markup=parent_quick_kb, parse_mode="HTML")
-        LAST_MENU_MSG_ID[target_chat_id] = sent_m.message_id
-        ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(sent_m.message_id)
-    elif isinstance(target, Message):
-        sent_m = await target.answer(text, reply_markup=parent_quick_kb, parse_mode="HTML")
-        LAST_MENU_MSG_ID[target_chat_id] = sent_m.message_id
-        ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(sent_m.message_id)
+    await safe_edit_or_answer(target, text, reply_markup=parent_quick_kb, parse_mode="HTML")
 
 async def process_auth_code_string(code: str, user_id: int, message: Message, state: FSMContext):
     clean_code = normalize_code(code)
