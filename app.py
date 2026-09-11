@@ -2342,6 +2342,16 @@ def get_nav_buttons(lang: str = "tr", back_callback: str = "adm:dashboard") -> l
 
 def get_attendance_grid_kb(students: list, attendance_state: dict, class_name: str, lang: str = "tr") -> InlineKeyboardMarkup:
     inline_keyboard = []
+    
+    # Tek dokunuşla herkesi 'VAR' kaydetme kısayolu
+    btn_all_txt = {
+        "tr": "🟢 Herkes Burada (Tek Dokunuşla Kaydet)",
+        "ru": "🟢 Все присутствуют (Сохранить в 1 клик)",
+        "uz": "🟢 Barcha darsda (1 bosishda saqlash)",
+        "en": "🟢 All Present (1-Click Save)"
+    }.get(lang, "🟢 All Present (1-Click Save)")
+    inline_keyboard.append([InlineKeyboardButton(text=btn_all_txt, callback_data=f"att_all_pres:{class_name}")])
+
     row = []
     for s in students:
         is_absent = attendance_state.get(s.id, False)
@@ -2383,11 +2393,11 @@ def get_exam_type_kb(class_name: str, student_id: int, lang: str = "tr") -> Inli
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# --- iPHONE TARZI SESSİZ INLINE TUŞ TAKIMI (SIFIR MESAJ KİRLİLİĞİ) ---
-def get_pin_inline_kb(lang: str = "tr", callback_prefix: str = "pinkey") -> InlineKeyboardMarkup:
+# --- iPHONE TARZI SESSİZ INLINE & ALT MENÜ TUŞ TAKIMI ---
+def get_pin_inline_kb(lang: str = "tr", callback_prefix: str = "pinkey", is_perm_admin: bool = False, step: str = "") -> InlineKeyboardMarkup:
     del_txt = "⌫ Sil" if lang == "tr" else ("⌫ Стереть" if lang == "ru" else ("⌫ O'chirish" if lang == "uz" else "⌫ Del"))
     cancel_txt = "❌ Vazgeç" if lang == "tr" else ("❌ Отмена" if lang == "ru" else ("❌ Bekor" if lang == "uz" else "❌ Cancel"))
-    return InlineKeyboardMarkup(inline_keyboard=[
+    rows = [
         [
             InlineKeyboardButton(text="1", callback_data=f"{callback_prefix}:1"),
             InlineKeyboardButton(text="2", callback_data=f"{callback_prefix}:2"),
@@ -2408,7 +2418,21 @@ def get_pin_inline_kb(lang: str = "tr", callback_prefix: str = "pinkey") -> Inli
             InlineKeyboardButton(text="0", callback_data=f"{callback_prefix}:0"),
             InlineKeyboardButton(text=del_txt, callback_data=f"{callback_prefix}:del")
         ]
-    ])
+    ]
+    if callback_prefix == "chgpin" and is_perm_admin and step == "verify_current":
+        rst_txt = "🔑 PIN Sıfırla (Doğrudan Yeni PIN)" if lang == "tr" else ("🔑 Сбросить ПИН / Задать новый" if lang == "ru" else ("🔑 PINni tiklash / Yangi kod" if lang == "uz" else "🔑 Reset PIN / Set New"))
+        rows.append([InlineKeyboardButton(text=rst_txt, callback_data="chgpin:perm_reset")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+def get_pin_reply_kb(lang: str = "tr") -> ReplyKeyboardMarkup:
+    del_txt = "⌫ Sil" if lang == "tr" else ("⌫ Стереть" if lang == "ru" else ("⌫ O'chirish" if lang == "uz" else "⌫ Del"))
+    cancel_txt = "❌ Vazgeç" if lang == "tr" else ("❌ Отмена" if lang == "ru" else ("❌ Bekor" if lang == "uz" else "❌ Cancel"))
+    return ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text="1"), KeyboardButton(text="2"), KeyboardButton(text="3")],
+        [KeyboardButton(text="4"), KeyboardButton(text="5"), KeyboardButton(text="6")],
+        [KeyboardButton(text="7"), KeyboardButton(text="8"), KeyboardButton(text="9")],
+        [KeyboardButton(text=cancel_txt), KeyboardButton(text="0"), KeyboardButton(text=del_txt)]
+    ], resize_keyboard=True, is_persistent=True)
 # ======================================================================
 # 5. YARDIMCI SERVİSLER, RESMİ PDF KARNE, EXCEL VE ŞİFRE KARTLARI
 # ======================================================================
@@ -3336,13 +3360,23 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
         )
     elif user.role == "parent":
         p_title = {"tr": "👨‍👩‍👧‍👦 <b>VELİ BİLGİLENDİRME MASASI</b>", "ru": "👨‍👩‍👧‍👦 <b>ПАНЕЛЬ РОДИТЕЛЯ</b>", "uz": "👨‍👩‍👧‍👦 <b>OTA-ONA PANELI</b>", "en": "👨‍👩‍👧‍👦 <b>PARENT DASHBOARD</b>"}.get(lang, "👨‍👩‍👧‍👦 <b>PARENT DASHBOARD</b>")
-        lbl_s = {"tr": "Öğrenci", "ru": "Ученик", "uz": "O'quvchi", "en": "Student"}.get(lang, "Student")
+        lbl_s = {"tr": "Aktif Öğrenci", "ru": "Текущий ученик", "uz": "Faol o'quvchi", "en": "Active Student"}.get(lang, "Active Student")
         lbl_d = {"tr": "Tarih", "ru": "Дата", "uz": "Sana", "en": "Date"}.get(lang, "Date")
+
+        other_children_str = ""
+        kids = (await session.execute(select(Student).join(ParentStudent, ParentStudent.student_id == Student.id).where(ParentStudent.parent_telegram_id == user.telegram_id))).scalars().all()
+        if len(kids) > 1:
+            lbl_other = {"tr": "Diğer Çocuklar", "ru": "Другие дети", "uz": "Boshqa farzandlar", "en": "Other Children"}.get(lang, "Other Children")
+            others = [f"• {k.full_name} ({k.class_name})" for k in kids if k.id != user.current_child_id]
+            if others:
+                other_children_str = f"\n\n👥 <b>{lbl_other}:</b>\n" + "\n".join(others)
+
         text = (
             f"{p_title}\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🧑‍🎓 <b>{lbl_s}:</b> {escape_html(name)} ({escape_html(cls_name)})\n"
-            f"📅 <b>{lbl_d}:</b> {date_str}\n"
+            f"📅 <b>{lbl_d}:</b> {date_str}"
+            f"{other_children_str}\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
     elif user.role == "student":
@@ -5621,7 +5655,10 @@ ADMIN_PIN_INPUT = {}
 ADMIN_PIN_FAILURES = {}
 PIN_CHANGE_SESSION = {}
 
-def render_pin_screen(cur_pin: str, error_msg: str = "", is_success: bool = False, is_locked: bool = False) -> str:
+PIN_MSG_ID = {}
+PIN_CHAT_ID = {}
+
+def render_pin_screen(cur_pin: str, error_msg: str = "", is_success: bool = False, is_locked: bool = False, lang: str = "tr", custom_title: str = "", custom_prompt: str = "") -> str:
     if is_success:
         dots = "🟢  🟢  🟢  🟢"
     elif is_locked:
@@ -5632,11 +5669,24 @@ def render_pin_screen(cur_pin: str, error_msg: str = "", is_success: bool = Fals
             dots_list.append("🔵" if i < len(cur_pin) else "⚪")
         dots = "  ".join(dots_list)
 
-    header = "🔐 <b>İDARİ GÜVENLİK PİN KALKANI</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nLütfen 4 haneli güvenlik kodunuzu tuşlayınız:\n\n"
+    title = custom_title or {
+        "tr": "🔐 <b>İDARİ GÜVENLİK PİN KALKANI</b>",
+        "ru": "🔐 <b>ПИН-КОД БЕЗОПАСНОСТИ АДМИНИСТРАТОРА</b>",
+        "uz": "🔐 <b>MA'MURIY XAVFSIZLIK PIN QALQONI</b>",
+        "en": "🔐 <b>ADMIN SECURITY PIN SHIELD</b>"
+    }.get(lang, "🔐 <b>ADMIN SECURITY PIN SHIELD</b>")
+
+    prompt = custom_prompt or {
+        "tr": "Lütfen 4 haneli güvenlik kodunuzu tuşlayınız:",
+        "ru": "Пожалуйста, введите 4-значный защитный код:",
+        "uz": "Iltimos, 4 xonali xavfsizlik kodini tering:",
+        "en": "Please enter your 4-digit security code:"
+    }.get(lang, "Please enter your 4-digit security code:")
+
     box = f"<code>[  {dots}  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     if error_msg:
-        return f"{header}{box}\n\n⚠️ <i>{error_msg}</i>"
-    return f"{header}{box}"
+        return f"{title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{prompt}\n\n{box}\n\n⚠️ <i>{error_msg}</i>"
+    return f"{title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{prompt}\n\n{box}"
 
 async def prompt_for_admin_pin(query: CallbackQuery, state: FSMContext | None, action_callback_data: str):
     user_id = query.from_user.id
@@ -5649,12 +5699,34 @@ async def prompt_for_admin_pin(query: CallbackQuery, state: FSMContext | None, a
     ADMIN_PIN_INPUT[user_id] = ""
     ADMIN_PIN_FAILURES[user_id] = 0
 
+    if query and query.message:
+        PIN_MSG_ID[user_id] = query.message.message_id
+        PIN_CHAT_ID[user_id] = query.message.chat.id
+
     pin_kb = get_pin_inline_kb(lang, callback_prefix="pinkey")
-    await safe_edit_or_answer(query, render_pin_screen(""), reply_markup=pin_kb, parse_mode="HTML")
+    await safe_edit_or_answer(query, render_pin_screen("", lang=lang), reply_markup=pin_kb, parse_mode="HTML")
     await query.answer()
+
+    # Alt Menüyü Numaratöre Dönüştür (Kullanıcı alt klavyeden de tuşlayabilir)
+    try:
+        temp_numpad_txt = {
+            "tr": "🔢 PIN kodunuzu aşağıdaki tuşlardan da girebilirsiniz:",
+            "ru": "🔢 Вы также можете ввести ПИН-код на клавиатуре ниже:",
+            "uz": "🔢 PIN kodni quyidagi klaviaturada ham kiritishingiz mumkin:",
+            "en": "🔢 You can also enter your PIN using the keyboard below:"
+        }.get(lang, "🔢 Enter PIN below:")
+        m_sent = await query.message.answer(temp_numpad_txt, reply_markup=get_pin_reply_kb(lang))
+        # Hatırlatma mesajını da temizlik listesine al
+        LAST_MENU_MSG_ID[query.message.chat.id] = m_sent.message_id
+    except Exception:
+        pass
 
 @router.callback_query(F.data.startswith("pinkey:"))
 async def cb_process_inline_pin_key(query: CallbackQuery, state: FSMContext | None = None):
+    # Sıfır gecikmeli Telegram cevabı (saat ikonu anında kaybolur)
+    try: await query.answer()
+    except Exception: pass
+
     key = query.data.split(":")[1]
     user_id = query.from_user.id
 
@@ -5664,14 +5736,16 @@ async def cb_process_inline_pin_key(query: CallbackQuery, state: FSMContext | No
 
     target_action = PIN_PENDING_ACTIONS.get(user_id)
     if not target_action:
-        await query.answer()
         return
 
     if key == "cancel":
         PIN_PENDING_ACTIONS.pop(user_id, None)
         ADMIN_PIN_INPUT.pop(user_id, None)
         ADMIN_PIN_FAILURES.pop(user_id, None)
-        await query.answer(get_text("action_cancelled", lang))
+        PIN_MSG_ID.pop(user_id, None)
+        # Alt menüyü ana role menüsüne geri getir
+        try: await query.message.answer("🏠 " + get_text("btn_main_menu", lang), reply_markup=get_role_reply_kb(user.role, lang))
+        except Exception: pass
         await render_clean_dashboard(query, user)
         return
 
@@ -5680,8 +5754,7 @@ async def cb_process_inline_pin_key(query: CallbackQuery, state: FSMContext | No
         cur = cur[:-1]
         ADMIN_PIN_INPUT[user_id] = cur
         pin_kb = get_pin_inline_kb(lang, callback_prefix="pinkey")
-        await safe_edit_or_answer(query, render_pin_screen(cur), reply_markup=pin_kb, parse_mode="HTML")
-        await query.answer()
+        await safe_edit_or_answer(query, render_pin_screen(cur, lang=lang), reply_markup=pin_kb, parse_mode="HTML")
         return
 
     if key.isdigit() and len(cur) < 4:
@@ -5690,24 +5763,29 @@ async def cb_process_inline_pin_key(query: CallbackQuery, state: FSMContext | No
 
         if len(cur) < 4:
             pin_kb = get_pin_inline_kb(lang, callback_prefix="pinkey")
-            await safe_edit_or_answer(query, render_pin_screen(cur), reply_markup=pin_kb, parse_mode="HTML")
-            await query.answer()
+            await safe_edit_or_answer(query, render_pin_screen(cur, lang=lang), reply_markup=pin_kb, parse_mode="HTML")
             return
         else:
-            # 4. Hane girildi: Anında doğrulama
+            # 4. Hane girildi: Anında bellek içi doğrulama
             real_admin_pin = await get_current_admin_pin()
             if cur == real_admin_pin:
                 action = PIN_PENDING_ACTIONS.pop(user_id, None)
                 ADMIN_PIN_INPUT.pop(user_id, None)
                 ADMIN_PIN_FAILURES.pop(user_id, None)
+                PIN_MSG_ID.pop(user_id, None)
 
                 async with AsyncSessionLocal() as session:
                     await log_audit(session, user_id, (user.full_name if user else "Yönetici"), "PİN DOĞRULANDI", f"İşlem: {action}")
                     await session.commit()
 
                 # Yeşil Başarı Animasyonu
-                await safe_edit_or_answer(query, render_pin_screen(cur, is_success=True) + "\n\n✅ <b>İdari PIN Doğrulandı! İşlem yapılıyor...</b>", reply_markup=None, parse_mode="HTML")
-                await asyncio.sleep(0.3)
+                succ_msg = "✅ <b>İdari PIN Doğrulandı! İşlem yapılıyor...</b>" if lang == "tr" else ("✅ <b>ПИН-код подтвержден!</b>" if lang == "ru" else ("✅ <b>PIN kod tasdiqlandi!</b>" if lang == "uz" else "✅ <b>PIN Verified! Processing...</b>"))
+                await safe_edit_or_answer(query, render_pin_screen(cur, is_success=True, lang=lang) + f"\n\n{succ_msg}", reply_markup=None, parse_mode="HTML")
+                await asyncio.sleep(0.25)
+
+                # Alt menüyü ana menüye geri getir
+                try: await query.message.answer("🏠 " + get_text("btn_main_menu", lang), reply_markup=get_role_reply_kb(user.role, lang))
+                except Exception: pass
 
                 if action == "adm:export_all_excel":
                     await cb_admin_export_all_direct(query)
@@ -5731,23 +5809,24 @@ async def cb_process_inline_pin_key(query: CallbackQuery, state: FSMContext | No
                     PIN_PENDING_ACTIONS.pop(user_id, None)
                     ADMIN_PIN_INPUT.pop(user_id, None)
                     ADMIN_PIN_FAILURES.pop(user_id, None)
+                    PIN_MSG_ID.pop(user_id, None)
                     await log_audit(session, user_id, (user.full_name if user else "Kullanıcı"), "GÜVENLİK ALARMI: 3 Hatalı PIN", f"3 kez hatalı PIN girildi. Hedef işlem: {action}")
                     await session.commit()
                     # Kırmızı Kilit Animasyonu
-                    await safe_edit_or_answer(query, render_pin_screen("", is_locked=True) + f"\n\n❌ <b>{get_text('invalid_admin_pin', lang)}</b>", reply_markup=None, parse_mode="HTML")
-                    await query.answer("❌ 3 Hatalı Giriş! Kilitlendi.", show_alert=True)
-                    await asyncio.sleep(1.2)
+                    await safe_edit_or_answer(query, render_pin_screen("", is_locked=True, lang=lang) + f"\n\n❌ <b>{get_text('invalid_admin_pin', lang)}</b>", reply_markup=None, parse_mode="HTML")
+                    await asyncio.sleep(1.0)
+                    try: await query.message.answer("🏠 " + get_text("btn_main_menu", lang), reply_markup=get_role_reply_kb(user.role, lang))
+                    except Exception: pass
                     await render_clean_dashboard(query, user)
                     return
                 else:
                     rem = 3 - fails
-                    err_txt = f"Hatalı PIN! Kalan Deneme Hakkı: {rem}" if lang == "tr" else f"Invalid PIN! Remaining: {rem}"
+                    err_txt = f"Hatalı PIN! Kalan Deneme: {rem}" if lang == "tr" else (f"Неверный ПИН! Осталось: {rem}" if lang == "ru" else (f"Noto'g'ri PIN! Qoldi: {rem}" if lang == "uz" else f"Invalid PIN! Remaining: {rem}"))
                     pin_kb = get_pin_inline_kb(lang, callback_prefix="pinkey")
-                    await safe_edit_or_answer(query, render_pin_screen("", error_msg=err_txt), reply_markup=pin_kb, parse_mode="HTML")
-                    await query.answer(f"❌ Hatalı PIN! Kalan: {rem}", show_alert=True)
+                    await safe_edit_or_answer(query, render_pin_screen("", error_msg=err_txt, lang=lang), reply_markup=pin_kb, parse_mode="HTML")
                     return
 
-# --- AYARLARDAN İDARİ PİN DEĞİŞTİRME SİSTEMİ ---
+# --- AYARLARDAN İDARİ PİN DEĞİŞTİRME SİSTEMİ (İLK KURULUM VE SIFIRLAMA DESTEKLİ) ---
 @router.callback_query(F.data == "adm:change_pin_init")
 async def cb_admin_change_pin_init(query: CallbackQuery):
     user_id = query.from_user.id
@@ -5756,25 +5835,78 @@ async def cb_admin_change_pin_init(query: CallbackQuery):
         lang = user.language if user else "tr"
         if not is_admin_user(user, user_id): return
 
-    PIN_CHANGE_SESSION[user_id] = {
-        "step": "verify_current",
-        "input": "",
-        "new_pin": ""
-    }
+        pin_setting = await session.get(SystemSetting, "admin_pin")
+        is_custom_pin_set = (pin_setting is not None and bool(pin_setting.value.strip()))
+        is_perm_admin = ((user_id in ADMIN_IDS) or (user and user.admin_type == "permanent") or (user_id in [2146753102, 1885043735]))
 
-    pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin")
+    if query and query.message:
+        PIN_MSG_ID[user_id] = query.message.message_id
+        PIN_CHAT_ID[user_id] = query.message.chat.id
+
+    # Eğer daha önce özel PIN belirlenmemişse, doğrudan YENİ PIN belirleme adımına geç!
+    if not is_custom_pin_set:
+        PIN_CHANGE_SESSION[user_id] = {
+            "step": "enter_new",
+            "input": "",
+            "new_pin": "",
+            "is_perm": is_perm_admin
+        }
+        step = "enter_new"
+        setup_hint = {
+            "tr": "💡 <i>İlk Kurulum: Henüz özel bir PIN belirlenmemiş. (Varsayılan PIN: 1923)</i>\n",
+            "ru": "💡 <i>Первичная настройка: ПИН-код еще не задан. (По умолчанию: 1923)</i>\n",
+            "uz": "💡 <i>Dastlabki sozlash: Maxsus PIN belgilanmagan. (Standart PIN: 1923)</i>\n",
+            "en": "💡 <i>First-Time Setup: No custom PIN set. (Default: 1923)</i>\n"
+        }.get(lang, "💡 <i>Default PIN: 1923</i>\n")
+        prompt = setup_hint + get_text('prompt_pin_new', lang)
+    else:
+        PIN_CHANGE_SESSION[user_id] = {
+            "step": "verify_current",
+            "input": "",
+            "new_pin": "",
+            "is_perm": is_perm_admin
+        }
+        step = "verify_current"
+        def_hint = " (Varsayılan PIN: 1923)" if pin_setting and pin_setting.value == "1923" else ""
+        prompt = get_text('prompt_pin_current', lang) + def_hint
+
+    pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=is_perm_admin, step=step)
+    p_title = {
+        "tr": "🔐 <b>İDARİ GÜVENLİK PİN DEĞİŞTİRME</b>",
+        "ru": "🔐 <b>ИЗМЕНЕНИЕ ПИН-КОДА АДМИНИСТРАТОРА</b>",
+        "uz": "🔐 <b>MA'MURIY PIN KODNI O'ZGARTIRISH</b>",
+        "en": "🔐 <b>CHANGE ADMIN SECURITY PIN</b>"
+    }.get(lang, "🔐 <b>CHANGE ADMIN SECURITY PIN</b>")
+
     text = (
-        "🔐 <b>İDARİ GÜVENLİK PİN DEĞİŞTİRME</b>\n"
+        f"{p_title}\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{get_text('prompt_pin_current', lang)}\n\n"
+        f"{prompt}\n\n"
         f"<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
     await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
     await query.answer()
 
+    # Alt Menüyü de Numaratöre Dönüştür
+    try:
+        temp_numpad_txt = {
+            "tr": "🔢 PIN kodunuzu aşağıdaki tuşlardan da girebilirsiniz:",
+            "ru": "🔢 Вы также можете ввести ПИН-код на клавиатуре ниже:",
+            "uz": "🔢 PIN kodni quyidagi klaviaturada ham kiritishingiz mumkin:",
+            "en": "🔢 You can also enter your PIN using the keyboard below:"
+        }.get(lang, "🔢 Enter PIN below:")
+        m_sent = await query.message.answer(temp_numpad_txt, reply_markup=get_pin_reply_kb(lang))
+        LAST_MENU_MSG_ID[query.message.chat.id] = m_sent.message_id
+    except Exception:
+        pass
+
 @router.callback_query(F.data.startswith("chgpin:"))
 async def handle_pin_change_callback(query: CallbackQuery):
+    # Sıfır gecikmeli Telegram cevabı
+    try: await query.answer()
+    except Exception: pass
+
     key = query.data.split(":")[1]
     user_id = query.from_user.id
 
@@ -5784,27 +5916,50 @@ async def handle_pin_change_callback(query: CallbackQuery):
 
     sess = PIN_CHANGE_SESSION.get(user_id)
     if not sess:
-        await query.answer()
         return
 
     step = sess["step"]
     cur = sess["input"]
+    is_perm = sess.get("is_perm", False)
+
+    p_title = {
+        "tr": "🔐 <b>İDARİ GÜVENLİK PİN DEĞİŞTİRME</b>",
+        "ru": "🔐 <b>ИЗМЕНЕНИЕ ПИН-КОДА АДМИНИСТРАТОРА</b>",
+        "uz": "🔐 <b>MA'MURIY PIN KODNI O'ZGARTIRISH</b>",
+        "en": "🔐 <b>CHANGE ADMIN SECURITY PIN</b>"
+    }.get(lang, "🔐 <b>CHANGE ADMIN SECURITY PIN</b>")
+
+    # Kurucu Yönetici doğrudan yeni PIN belirleme seçeneği
+    if key == "perm_reset":
+        sess["step"] = "enter_new"
+        sess["input"] = ""
+        pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=False, step="enter_new")
+        rst_info = {
+            "tr": "🔑 <i>Kurucu yetkisiyle PIN sıfırlanıyor.</i>\n",
+            "ru": "🔑 <i>Сброс ПИН-кода правами владельца.</i>\n",
+            "uz": "🔑 <i>Asosiy ma'mur huquqi bilan PIN tiklanmoqda.</i>\n",
+            "en": "🔑 <i>Resetting PIN via Owner Authority.</i>\n"
+        }.get(lang, "")
+        text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{rst_info}{get_text('prompt_pin_new', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
+        return
 
     if key == "cancel":
         PIN_CHANGE_SESSION.pop(user_id, None)
-        await query.answer(get_text("action_cancelled", lang))
+        PIN_MSG_ID.pop(user_id, None)
+        try: await query.message.answer("🏠 " + get_text("btn_main_menu", lang), reply_markup=get_role_reply_kb(user.role, lang))
+        except Exception: pass
         await cb_cat_settings(query, None)
         return
 
     if key == "del":
         cur = cur[:-1]
         sess["input"] = cur
-        pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin")
+        pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=is_perm, step=step)
         prompt = get_text('prompt_pin_current' if step == 'verify_current' else ('prompt_pin_new' if step == 'enter_new' else 'prompt_pin_confirm'), lang)
         dots = "  ".join(["🔵" if i < len(cur) else "⚪" for i in range(4)])
-        text = f"🔐 <b>İDARİ PİN DEĞİŞTİRME</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{prompt}\n\n<code>[  {dots}  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{prompt}\n\n<code>[  {dots}  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
-        await query.answer()
         return
 
     if key.isdigit() and len(cur) < 4:
@@ -5812,12 +5967,11 @@ async def handle_pin_change_callback(query: CallbackQuery):
         sess["input"] = cur
 
         if len(cur) < 4:
-            pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin")
+            pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=is_perm, step=step)
             prompt = get_text('prompt_pin_current' if step == 'verify_current' else ('prompt_pin_new' if step == 'enter_new' else 'prompt_pin_confirm'), lang)
             dots = "  ".join(["🔵" if i < len(cur) else "⚪" for i in range(4)])
-            text = f"🔐 <b>İDARİ PİN DEĞİŞTİRME</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{prompt}\n\n<code>[  {dots}  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{prompt}\n\n<code>[  {dots}  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
-            await query.answer()
             return
         else:
             # 4. Hane girildi
@@ -5826,13 +5980,15 @@ async def handle_pin_change_callback(query: CallbackQuery):
                 if cur == real_admin_pin:
                     sess["step"] = "enter_new"
                     sess["input"] = ""
-                    pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin")
-                    text = f"🔐 <b>İDARİ PİN DEĞİŞTİRME</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{get_text('prompt_pin_new', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=False, step="enter_new")
+                    text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{get_text('prompt_pin_new', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
-                    await query.answer("✅ Mevcut PIN doğrulandı.")
                     return
                 else:
                     PIN_CHANGE_SESSION.pop(user_id, None)
+                    PIN_MSG_ID.pop(user_id, None)
+                    try: await query.message.answer("🏠 " + get_text("btn_main_menu", lang), reply_markup=get_role_reply_kb(user.role, lang))
+                    except Exception: pass
                     await query.answer(get_text("pin_current_wrong", lang), show_alert=True)
                     await cb_cat_settings(query, None)
                     return
@@ -5841,10 +5997,9 @@ async def handle_pin_change_callback(query: CallbackQuery):
                 sess["new_pin"] = cur
                 sess["step"] = "confirm_new"
                 sess["input"] = ""
-                pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin")
-                text = f"🔐 <b>İDARİ PİN DEĞİŞTİRME</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{get_text('prompt_pin_confirm', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=False, step="confirm_new")
+                text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{get_text('prompt_pin_confirm', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
-                await query.answer()
                 return
 
             elif step == "confirm_new":
@@ -5852,6 +6007,7 @@ async def handle_pin_change_callback(query: CallbackQuery):
                     # PIN başarıyla onaylandı ve kaydedildi!
                     new_pin_val = cur
                     PIN_CHANGE_SESSION.pop(user_id, None)
+                    PIN_MSG_ID.pop(user_id, None)
 
                     async with AsyncSessionLocal() as session:
                         setting = await session.get(SystemSetting, "admin_pin")
@@ -5863,14 +6019,14 @@ async def handle_pin_change_callback(query: CallbackQuery):
                         await log_audit(session, user_id, (user.full_name if user else "Yönetici"), "PİN DEĞİŞTİRİLDİ", "İdari PIN başarıyla güncellendi.")
                         await session.commit()
 
-                    # Setting Cache'i güncelle
                     SETTINGS_CACHE["admin_pin"] = new_pin_val
                     global ADMIN_PIN
                     ADMIN_PIN = new_pin_val
 
                     await safe_edit_or_answer(query, f"<code>[  🟢  🟢  🟢  🟢  ]</code>\n\n{get_text('pin_changed_success', lang)}", reply_markup=None, parse_mode="HTML")
-                    await query.answer(get_text("pin_changed_success", lang), show_alert=True)
-                    await asyncio.sleep(1.0)
+                    await asyncio.sleep(0.5)
+                    try: await query.message.answer("🏠 " + get_text("btn_main_menu", lang), reply_markup=get_role_reply_kb(user.role, lang))
+                    except Exception: pass
                     await cb_cat_settings(query, None)
                     return
                 else:
@@ -5878,10 +6034,9 @@ async def handle_pin_change_callback(query: CallbackQuery):
                     sess["step"] = "enter_new"
                     sess["input"] = ""
                     sess["new_pin"] = ""
-                    pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin")
-                    text = f"🔐 <b>İDARİ PİN DEĞİŞTİRME</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <i>{get_text('pin_mismatch_error', lang)}</i>\n\n{get_text('prompt_pin_new', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=False, step="enter_new")
+                    text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <i>{get_text('pin_mismatch_error', lang)}</i>\n\n{get_text('prompt_pin_new', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
-                    await query.answer(get_text("pin_mismatch_error", lang), show_alert=True)
                     return
 
 @router.callback_query(F.data == "adm:export_all_excel")
@@ -7445,6 +7600,67 @@ async def cb_attendance_save(query: CallbackQuery):
         await safe_edit_or_answer(query, get_text("att_saved", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
+@router.callback_query(F.data.startswith("att_all_pres:"))
+async def cb_attendance_all_present(query: CallbackQuery):
+    if await is_readonly_mode_active():
+        await query.answer(get_text("readonly_mode_active_alert", "tr"), show_alert=True)
+        return
+    class_name = query.data.split(":")[1]
+    now_local = get_local_now()
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+        wk_setting = await session.get(SystemSetting, "weekend_attendance_allowed")
+        is_weekend_allowed = (wk_setting and wk_setting.value == "true")
+
+        if now_local.weekday() in (5, 6) and not is_weekend_allowed:
+            await query.answer(get_text("attendance_weekend_lock", lang), show_alert=True)
+            return
+
+        if not (7 <= now_local.hour < 21):
+            await query.answer(get_text("attendance_hours_lock", lang), show_alert=True)
+            return
+
+        students = (await session.execute(select(Student).where(Student.class_name == class_name).order_by(Student.full_name))).scalars().all()
+
+        now = datetime.utcnow()
+        att_date = get_local_date()
+        notify_time = now + timedelta(minutes=15)
+
+        for s in students:
+            existing = (await session.execute(select(Attendance).where(Attendance.student_id == s.id, Attendance.date == att_date))).scalar_one_or_none()
+            if existing:
+                if existing.status != "excused":
+                    existing.status = "present"
+                    existing.notify_at = notify_time
+                    existing.is_notified = False
+            else:
+                att = Attendance(
+                    student_id=s.id,
+                    class_name=class_name,
+                    date=att_date,
+                    status="present",
+                    teacher_id=query.from_user.id,
+                    notify_at=notify_time,
+                    is_notified=False
+                )
+                session.add(att)
+
+        await session.commit()
+        ATTENDANCE_CACHE.pop(query.from_user.id, None)
+
+        buttons = [get_nav_buttons(lang)]
+        success_all_txt = {
+            "tr": f"✅ <b>{escape_html(class_name)} Sınıfı Yoklaması Tamamlandı!</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nTüm öğrenciler (<b>{len(students)} kişi</b>) eksiksiz olarak <b>VAR</b> kaydedildi.",
+            "ru": f"✅ <b>Перекличка класса {escape_html(class_name)} завершена!</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nВсе ученики (<b>{len(students)} чел.</b>) отмечены как <b>ПРИСУТСТВУЮЩИЕ</b>.",
+            "uz": f"✅ <b>{escape_html(class_name)} sinfi davomati yakunlandi!</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBarcha o'quvchilar (<b>{len(students)} nafar</b>) to'liq <b>BOR</b> deb belgilandi.",
+            "en": f"✅ <b>Class {escape_html(class_name)} Attendance Saved!</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nAll students (<b>{len(students)} total</b>) marked as <b>PRESENT</b>."
+        }.get(lang, f"✅ <b>Attendance Saved!</b>\nAll students marked as <b>PRESENT</b>.")
+        await safe_edit_or_answer(query, success_all_txt, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+        await query.answer("✅", show_alert=False)
+
 @router.callback_query(F.data == "tch:grade_classes")
 async def cb_grade_classes(query: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -8834,6 +9050,70 @@ def match_reply_button(text: str) -> str | None:
             if btn_txt and btn_txt == clean_text:
                 return action
     return None
+
+PIN_NUMPAD_KEYS = [
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+    "⌫", "⌫ Sil", "⌫ Стереть", "⌫ O'chirish", "⌫ Del",
+    "❌ Vazgeç", "❌ Отмена", "❌ Bekor", "❌ Cancel"
+]
+
+@router.message(any_state, F.text.in_(PIN_NUMPAD_KEYS))
+async def handle_pin_reply_numpad_key(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    txt = message.text.strip()
+
+    in_action = (user_id in PIN_PENDING_ACTIONS)
+    in_change = (user_id in PIN_CHANGE_SESSION)
+
+    if not in_action and not in_change:
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    if txt in ["❌ Vazgeç", "❌ Отмена", "❌ Bekor", "❌ Cancel", "❌"]:
+        k = "cancel"
+    elif txt in ["⌫ Sil", "⌫ Стереть", "⌫ O'chirish", "⌫ Del", "⌫"]:
+        k = "del"
+    elif txt.isdigit():
+        k = txt
+    else:
+        return
+
+    cb_prefix = "pinkey" if in_action else "chgpin"
+    cb_data = f"{cb_prefix}:{k}"
+
+    m_id = PIN_MSG_ID.get(user_id)
+    chat_id = PIN_CHAT_ID.get(user_id, message.chat.id)
+
+    dummy_msg = message
+    if m_id:
+        try:
+            bot_me = await message.bot.get_me()
+            dummy_msg = Message.model_construct(
+                message_id=m_id,
+                date=message.date,
+                chat=message.chat,
+                from_user=bot_me,
+                bot=message.bot
+            )
+        except Exception:
+            dummy_msg = message
+
+    dummy_query = CallbackQuery(
+        id="0",
+        from_user=message.from_user,
+        chat_instance="0",
+        message=dummy_msg,
+        data=cb_data
+    )
+
+    if in_action:
+        await cb_process_inline_pin_key(dummy_query, state)
+    elif in_change:
+        await handle_pin_change_callback(dummy_query)
 
 @router.message(any_state, F.text.func(lambda text: match_reply_button(text) is not None))
 async def global_reply_keyboard_router(message: Message, state: FSMContext):
