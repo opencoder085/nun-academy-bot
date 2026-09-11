@@ -7475,7 +7475,7 @@ async def cb_cat_settings(event: Message | CallbackQuery, state: FSMContext | No
 
         bc = {"tr": "🏠 Ana Menü ➔ ⚙️ Sistem & Ayarlar", "ru": "🏠 Главное меню ➔ ⚙️ Настройки", "uz": "🏠 Asosiy menyu ➔ ⚙️ Tizim va sozlamalar", "en": "🏠 Main Menu ➔ ⚙️ System & Settings"}.get(lang, "⚙️ Settings")
         cat_hdr = {"tr": "⚙️ <b>SİSTEM VE GÜVENLİK AYARLARI</b>", "ru": "⚙️ <b>СИСТЕМНЫЕ НАСТРОЙКИ И БЕЗОПАСНОСТЬ</b>", "uz": "⚙️ <b>TIZIM VA XAVFSIZLIK SOZLAMALARI</b>", "en": "⚙️ <b>SYSTEM SETTINGS & SECURITY</b>"}.get(lang, "⚙️ <b>SETTINGS</b>")
-        cat_desc = {"tr": "📌 İdari PIN kodunu değiştirmek, bakım modunu veya salt-okunur karantinasını yönetmek için bir ayar seçiniz:", "ru": "📌 Настройки ПИН-кода, режима обслуживания, часового пояса и безопасности:", "uz": "📌 PIN kodni o'zgartirish, texnik rejim, vaqt mintaqasi va xavfsizlik sozlamalari:", "en": "📌 Admin PIN, maintenance mode, timezone, and security controls:"}.get(lang, "Select setting:")
+        cat_desc = {"tr": "📌 Okul sistemi, bakım modu, saat dilimi ve sistem araçlarını bu merkezden yönetebilirsiniz:", "ru": "📌 Настройки ПИН-кода, режима обслуживания, часового пояса и безопасности:", "uz": "📌 PIN kodni o'zgartirish, texnik rejim, vaqt mintaqasi va xavfsizlik sozlamalari:", "en": "📌 Admin PIN, maintenance mode, timezone, and security controls:"}.get(lang, "Select setting:")
         title = f"<b>{bc}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{cat_hdr}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{cat_desc}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
         ro_setting = await session.get(SystemSetting, "readonly_mode")
@@ -7484,7 +7484,7 @@ async def cb_cat_settings(event: Message | CallbackQuery, state: FSMContext | No
         ro_btn_txt = get_text("btn_toggle_readonly", lang, status=ro_lbl)
 
         buttons = [
-            [InlineKeyboardButton(text=get_text("btn_change_admin_pin", lang), callback_data="adm:change_pin_init")],
+            
             [InlineKeyboardButton(text=maint_txt, callback_data="adm:toggle_maint"), InlineKeyboardButton(text=ro_btn_txt, callback_data="adm:toggle_readonly")],
             [InlineKeyboardButton(text=wk_btn_txt, callback_data="adm:toggle_weekend_att"), InlineKeyboardButton(text=get_text("btn_blacklist", lang), callback_data="adm:blacklist")],
             [InlineKeyboardButton(text=get_text("btn_clean_logs", lang), callback_data="adm:clean_old_logs"), InlineKeyboardButton(text=get_text("btn_export_all_data", lang), callback_data="adm:export_all_excel")],
@@ -8427,7 +8427,7 @@ async def cb_admin_class_promotion_init(query: CallbackQuery, state: FSMContext 
 
 @router.callback_query(F.data == "adm:class_promotion_pin_prompt")
 async def cb_admin_class_promotion_pin_prompt(query: CallbackQuery, state: FSMContext | None = None):
-    await prompt_for_admin_pin(query, state, "adm:class_promotion_confirm")
+    await cb_admin_class_promotion_execute(query)
 
 @router.callback_query(F.data == 'adm:class_promotion_confirm')
 async def cb_admin_class_promotion_confirm(query: CallbackQuery):
@@ -9734,7 +9734,7 @@ async def process_exam_date(message: Message, state: FSMContext):
 # --- 🚨 ACİL DURUM / KIRMIZI ALARM ---
 @router.callback_query(F.data == "adm:emergency_init")
 async def cb_admin_emergency_pin_guard(query: CallbackQuery, state: FSMContext):
-    await prompt_for_admin_pin(query, state, "adm:emergency_init")
+    await cb_admin_emergency_init(query, state)
 
 async def cb_admin_emergency_init(query: CallbackQuery, state: FSMContext | None = None):
     async with AsyncSessionLocal() as session:
@@ -10315,46 +10315,21 @@ async def prompt_for_admin_pin(query: CallbackQuery, state: FSMContext | None, a
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         lang = user.language if user else "tr"
-        if user and user.locked_until and isinstance(user.locked_until, datetime) and user.locked_until > datetime.utcnow():
-            rem_min = max(1, int((user.locked_until - datetime.utcnow()).total_seconds() // 60))
-            lock_msg = get_text("lock_countdown_msg", lang, mins=rem_min)
-            await query.answer(f"⛔ {lock_msg}", show_alert=True)
+        if not is_admin_user(user, user_id):
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
             return
 
-    PIN_PENDING_ACTIONS[user_id] = action_callback_data
-    ADMIN_PIN_INPUT[user_id] = ""
-    ADMIN_PIN_FAILURES[user_id] = 0
-
-    chat_id = query.message.chat.id if (query and query.message) else user_id
-
-    text = render_pin_screen("", lang=lang)
-    inline_kb = get_pin_inline_kb(lang, callback_prefix="pinkey")
-
-    if query.message:
-        try:
-            await query.message.edit_text(text, reply_markup=inline_kb, parse_mode="HTML")
-            PIN_MSG_ID[user_id] = query.message.message_id
-            PIN_CHAT_ID[user_id] = chat_id
-            LAST_MENU_MSG_ID[chat_id] = query.message.message_id
-            ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(query.message.message_id)
-            asyncio.create_task(admin_pin_auto_timeout(query.message.bot, user_id, chat_id, query.message.message_id, 120))
-            await query.answer()
-            return
-        except Exception:
-            pass
-
-    m_sent = await query.message.bot.send_message(
-        chat_id=chat_id,
-        text=text,
-        reply_markup=inline_kb,
-        parse_mode="HTML"
-    )
-    PIN_MSG_ID[user_id] = m_sent.message_id
-    PIN_CHAT_ID[user_id] = chat_id
-    LAST_MENU_MSG_ID[chat_id] = m_sent.message_id
-    ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(m_sent.message_id)
-    asyncio.create_task(admin_pin_auto_timeout(query.message.bot, user_id, chat_id, m_sent.message_id, 120))
-    await query.answer()
+    # Direct execution of all admin actions without PIN prompt
+    if action_callback_data == "adm:export_all_excel":
+        await cb_admin_export_all_direct(query)
+    elif action_callback_data == "adm:restore_backup_init":
+        await cb_admin_restore_backup_direct(query, state)
+    elif action_callback_data == "adm:emergency_init":
+        await cb_admin_emergency_init(query, state)
+    elif action_callback_data == "adm:class_promotion_confirm":
+        await cb_admin_class_promotion_execute(query)
+    else:
+        await query.answer("İşlem onaylandı.", show_alert=False)
 
 @router.callback_query(F.data.startswith("pinkey:"))
 async def cb_process_inline_pin_key(query: CallbackQuery, state: FSMContext | None = None):
@@ -10805,7 +10780,7 @@ async def handle_pin_reply_key_press(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == 'adm:export_all_excel')
 async def cb_admin_export_all(query: CallbackQuery, state: FSMContext | None = None):
-    await prompt_for_admin_pin(query, state, "adm:export_all_excel")
+    await cb_admin_export_all_direct(query)
 
 async def cb_admin_export_all_direct(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
@@ -10843,7 +10818,7 @@ async def cb_excel_teacher_info(query: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "adm:restore_backup_init")
 async def cb_admin_restore_backup_init(query: CallbackQuery, state: FSMContext | None = None):
-    await prompt_for_admin_pin(query, state, "adm:restore_backup_init")
+    await cb_admin_restore_backup_direct(query, state)
 
 async def cb_admin_restore_backup_direct(query: CallbackQuery, state: FSMContext | None = None):
     if state: await state.clear()
@@ -11220,8 +11195,6 @@ def match_reply_button(text: str) -> str | None:
         return "act_main_menu"
     return None
 
-@router.message(any_state, F.text.func(lambda text: match_reply_button(text) is not None))
-
 async def cb_show_my_credentials(event: Message | CallbackQuery, state: FSMContext | None = None):
     if state: await state.clear()
     user_id = event.from_user.id
@@ -11235,6 +11208,19 @@ async def cb_show_my_credentials(event: Message | CallbackQuery, state: FSMConte
             session.add(user)
             await session.commit()
         lang = user.language or "tr"
+
+        if user.role == "guest":
+            guest_txt = {
+                "tr": "⚠️ <b>Henüz Giriş Yapmadınız</b>\n──────────────\nŞifrelerinizi ve yetkilerinizi görebilmek için lütfen okul idaresinden aldığınız giriş kodunu giriniz veya <b>📩 Başvuru Yap</b> butonuna basarak kayıt talebinde bulununuz.",
+                "ru": "⚠️ <b>Вы еще не вошли в систему</b>\n──────────────\nЧтобы увидеть ваши данные доступа, пожалуйста, введите код доступа или нажмите кнопку <b>📩 Запросить пароль</b> для подачи заявки.",
+                "uz": "⚠️ <b>Siz hali tizimga kirmagansiz</b>\n──────────────\nKirish ma'lumotlaringizni ko'rish uchun maktab ma'muriyatidan berilgan kodni kiriting yoki <b>📩 Ariza berish</b> tugmasini bosing.",
+                "en": "⚠️ <b>You are not logged in</b>\n──────────────\nPlease enter your access code or tap <b>📩 Request Access</b> to submit a registration request."
+            }.get(lang, "Please log in.")
+            await safe_edit_or_answer(event, guest_txt, parse_mode="HTML")
+            if isinstance(event, CallbackQuery):
+                try: await event.answer()
+                except Exception: pass
+            return
 
         title = {
             "tr": "🔑 <b>GİRİŞ VE KOD BİLGİLERİM</b>",
@@ -11402,47 +11388,46 @@ async def cb_show_my_credentials(event: Message | CallbackQuery, state: FSMConte
             }.get(lang, f"Role: Parent\nStudents: {children_str}")
 
         else: # admin
+            admin_title = get_text("permanent_admin_title", lang) if (user_id in ADMIN_IDS or user.admin_type == "permanent") else get_text("temporary_admin_title", lang)
             details_txt = {
                 "tr": (
-                    f"📋 <b>Rolünüz:</b> ⚡ Okul Yöneticisi ({user.admin_type or 'Yönetici'})\n"
+                    f"📋 <b>Rolünüz:</b> ⚡ {admin_title}\n"
                     f"👤 <b>Adınız:</b> <b>{escape_html(user.full_name or 'Yönetici')}</b>\n"
                     f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    "🔐 <b>İdari PIN:</b> <i>Kayıtlı ve aktif.</i>\n"
                     "──────────────\n"
-                    "ℹ️ <i>Yönetici şifre ve PIN ayarlarınızı Ayarlar masasından yönetebilirsiniz.</i>"
+                    "ℹ️ <i>Tüm okul yönetim paneline ve yetkilerine doğrudan erişiminiz bulunmaktadır.</i>"
                 ),
                 "ru": (
-                    f"📋 <b>Роль:</b> ⚡ Администратор школы ({user.admin_type or 'Админ'})\n"
+                    f"📋 <b>Роль:</b> ⚡ {admin_title}\n"
                     f"👤 <b>ФИО:</b> <b>{escape_html(user.full_name or 'Администратор')}</b>\n"
                     f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    "🔐 <b>ПИН-код:</b> <i>Активен.</i>\n"
                     "──────────────\n"
-                    "ℹ️ <i>Управляйте ПИН-кодом в Настройках.</i>"
+                    "ℹ️ <i>У вас есть полный доступ ко всем функциям управления школой.</i>"
                 ),
                 "uz": (
-                    f"📋 <b>Lavozim:</b> ⚡ Maktab Ma'muri\n"
+                    f"📋 <b>Lavozim:</b> ⚡ {admin_title}\n"
                     f"👤 <b>F.I.O:</b> <b>{escape_html(user.full_name or 'Ma`mur')}</b>\n"
                     f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    "🔐 <b>PIN-kod:</b> <i>Faol.</i>\n"
                     "──────────────\n"
-                    "ℹ️ <i>PIN-kod sozlamalarini Sozlamalar menyusidan boshqaring.</i>"
+                    "ℹ️ <i>Barcha maktab boshqaruv vositalariga to'liq ruxsatingiz mavjud.</i>"
                 ),
                 "en": (
-                    f"📋 <b>Role:</b> ⚡ School Administrator\n"
+                    f"📋 <b>Role:</b> ⚡ {admin_title}\n"
                     f"👤 <b>Name:</b> <b>{escape_html(user.full_name or 'Admin')}</b>\n"
                     f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    "🔐 <b>Security PIN:</b> <i>Active.</i>\n"
                     "──────────────\n"
-                    "ℹ️ <i>Manage security PIN settings from the Settings menu.</i>"
+                    "ℹ️ <i>You have full administrative access to all school management tools.</i>"
                 )
             }.get(lang, "Admin access active.")
 
         full_card = f"{title}\n──────────────\n{details_txt}"
         await safe_edit_or_answer(event, full_card, parse_mode="HTML")
     if isinstance(event, CallbackQuery):
-        await event.answer()
+        try: await event.answer()
+        except Exception: pass
 
 
+@router.message(any_state, F.text.func(lambda text: match_reply_button(text) is not None))
 async def global_reply_keyboard_router(message: Message, state: FSMContext):
     action = match_reply_button(message.text)
     user_id = message.from_user.id
