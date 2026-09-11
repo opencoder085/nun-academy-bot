@@ -3379,6 +3379,16 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
             f"{other_children_str}\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
+
+    parent_quick_kb = None
+    if user.role == "parent":
+        async with AsyncSessionLocal() as s_k:
+            all_k = (await s_k.execute(select(Student).join(ParentStudent, ParentStudent.student_id == Student.id).where(ParentStudent.parent_telegram_id == user.telegram_id))).scalars().all()
+            if len(all_k) > 1:
+                sw_txt = {"tr": "🔄 Öğrenciyi Değiştir", "ru": "🔄 Сменить ученика", "uz": "🔄 O'quvchini almashtirish", "en": "🔄 Switch Student"}.get(lang, "🔄 Switch Student")
+                parent_quick_kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=sw_txt, callback_data="parent:switch_student")]
+                ])
     elif user.role == "student":
         s_title = {"tr": "🎓 <b>ÖĞRENCİ PORTALI</b>", "ru": "🎓 <b>ПАНЕЛЬ УЧЕНИКА</b>", "uz": "🎓 <b>O'QUVCHI PORTALI</b>", "en": "🎓 <b>STUDENT PORTAL</b>"}.get(lang, "🎓 <b>STUDENT PORTAL</b>")
         lbl_s = {"tr": "Öğrenci", "ru": "Ученик", "uz": "O'quvchi", "en": "Student"}.get(lang, "Student")
@@ -3408,7 +3418,7 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
         LAST_MENU_MSG_ID.pop(target_chat_id, None)
 
     if isinstance(target, Bot):
-        sent_m = await safe_send_message(target, target_chat_id, text, parse_mode="HTML")
+        sent_m = await safe_send_message(target, target_chat_id, text, reply_markup=parent_quick_kb, parse_mode="HTML")
         if sent_m: LAST_MENU_MSG_ID[target_chat_id] = sent_m.message_id
         return
 
@@ -3416,15 +3426,15 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
         msg = target.message
         if msg and msg.from_user and msg.from_user.is_bot and not msg.photo:
             try:
-                await msg.edit_text(text, reply_markup=None, parse_mode="HTML")
+                await msg.edit_text(text, reply_markup=parent_quick_kb, parse_mode="HTML")
                 LAST_MENU_MSG_ID[target_chat_id] = msg.message_id
                 return
             except Exception:
                 pass
-        sent_m = await msg.answer(text, reply_markup=None, parse_mode="HTML")
+        sent_m = await msg.answer(text, reply_markup=parent_quick_kb, parse_mode="HTML")
         LAST_MENU_MSG_ID[target_chat_id] = sent_m.message_id
     elif isinstance(target, Message):
-        sent_m = await target.answer(text, reply_markup=None, parse_mode="HTML")
+        sent_m = await target.answer(text, reply_markup=parent_quick_kb, parse_mode="HTML")
         LAST_MENU_MSG_ID[target_chat_id] = sent_m.message_id
 
 async def process_auth_code_string(code: str, user_id: int, message: Message, state: FSMContext):
@@ -7566,6 +7576,8 @@ async def cb_admin_set_tz(query: CallbackQuery):
 async def cb_ack_broadcast(query: CallbackQuery):
     notice_id = int(query.data.split(":")[1])
     async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
         existing = (await session.execute(select(BroadcastAck).where(BroadcastAck.notice_id == notice_id, BroadcastAck.user_telegram_id == query.from_user.id))).scalar_one_or_none()
         if not existing:
             session.add(BroadcastAck(notice_id=notice_id, user_telegram_id=query.from_user.id))
@@ -8700,6 +8712,9 @@ async def cb_admin_add_exam_init(query: CallbackQuery, state: FSMContext):
 async def process_exam_subject(message: Message, state: FSMContext):
     subj = message.text.strip()
     EXAM_CACHE[message.from_user.id]["subject"] = subj
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        lang = user.language if user else "tr"
     p_ex_dt = {
         "tr": "📅 Lütfen sınav tarihini ve saatini yazınız (Örn: `2026-06-15 09:30`):",
         "ru": "📅 Введите дату и время экзамена (Напр: `2026-06-15 09:30`):",
