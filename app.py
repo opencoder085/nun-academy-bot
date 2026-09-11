@@ -3187,6 +3187,9 @@ class Form(StatesGroup):
     waiting_exam_date = State()
     waiting_emergency_text = State()
     waiting_tch_classes = State()
+    hw_content = State()
+    waiting_teacher_excel = State()
+    waiting_restore_excel = State()
 
 router = Router()
 ATTENDANCE_CACHE = {}
