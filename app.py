@@ -70,6 +70,7 @@ USER_REQUEST_LOG = {}
 USER_COOLDOWN = {}
 USER_FAIL_LOG = {}
 
+BOT_START_TIME = datetime.utcnow()
 ADMIN_IDS = list(PERMANENT_ADMIN_IDS)
 for x in os.getenv("ADMIN_IDS", "").split(","):
     clean_x = x.strip().replace("@", "")
@@ -2626,6 +2627,19 @@ async def is_readonly_mode_active() -> bool:
 async def get_current_admin_pin() -> str:
     return await get_cached_setting("admin_pin", ADMIN_PIN)
 
+
+def ensure_role_authorized(user: User | None, allowed_roles: list[str]) -> bool:
+    """Kullanıcının belirtilen rollere sahip olup olmadığını doğrulayan merkezi güvenlik filtresi."""
+    if not user:
+        return False
+    if user.is_blacklisted:
+        return False
+    if user.role in allowed_roles:
+        return True
+    if "admin" in allowed_roles and (user.admin_type in ["permanent", "temporary"] or user.telegram_id in ADMIN_IDS):
+        return True
+    return False
+
 def is_admin_user(user: User | None, user_id: int) -> bool:
     if user_id in ADMIN_IDS:
         return True
@@ -2676,14 +2690,14 @@ async def export_all_school_data_excel() -> io.BytesIO:
         ws5.append([b.created_at.strftime('%d.%m.%Y'), b.student_id, b.behavior_type, b.badge, b.title, b.note or ""])
 
     out_buf = io.BytesIO()
-    wb.save(out_buf)
+    await asyncio.to_thread(wb.save, out_buf)
     out_buf.seek(0)
     wb.close()
     return out_buf
 
 async def process_student_excel(file_bytes: bytes) -> tuple[int, io.BytesIO]:
     in_buffer = io.BytesIO(file_bytes)
-    wb_in = openpyxl.load_workbook(in_buffer, read_only=True, data_only=True)
+    wb_in = await asyncio.to_thread(openpyxl.load_workbook, in_buffer, read_only=True, data_only=True)
     sheet = wb_in.active
 
     created_students = []
@@ -2746,7 +2760,7 @@ async def process_student_excel(file_bytes: bytes) -> tuple[int, io.BytesIO]:
 
 async def process_teacher_excel(file_bytes: bytes) -> tuple[int, io.BytesIO]:
     in_buffer = io.BytesIO(file_bytes)
-    wb_in = openpyxl.load_workbook(in_buffer, read_only=True, data_only=True)
+    wb_in = await asyncio.to_thread(openpyxl.load_workbook, in_buffer, read_only=True, data_only=True)
     sheet = wb_in.active
 
     created_teachers = []
@@ -2911,7 +2925,7 @@ async def generate_teachers_pdf_cards(lang: str = "tr") -> io.BytesIO:
         ]))
         story.append(table)
 
-    doc.build(story)
+    await asyncio.to_thread(doc.build, story)
     pdf_buffer.seek(0)
     return pdf_buffer
 
@@ -2973,7 +2987,7 @@ async def generate_classroom_pdf_cards(class_name: str, lang: str = "tr") -> io.
         ]))
         story.append(table)
 
-    doc.build(story)
+    await asyncio.to_thread(doc.build, story)
     pdf_buffer.seek(0)
     return pdf_buffer
 
@@ -3067,7 +3081,7 @@ async def generate_student_report_card_pdf(student_id: int, lang: str = "tr") ->
         ('RIGHTPADDING', (0,0), (-1,-1), 5),
     ]))
     story.append(t_grades)
-    doc.build(story)
+    await asyncio.to_thread(doc.build, story)
     pdf_buffer.seek(0)
     return pdf_buffer
 
@@ -9405,6 +9419,11 @@ async def prompt_for_admin_pin(query: CallbackQuery, state: FSMContext | None, a
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         lang = user.language if user else "tr"
+        if user and user.locked_until and user.locked_until > datetime.utcnow():
+            rem_min = max(1, int((user.locked_until - datetime.utcnow()).total_seconds() // 60))
+            lock_msg = get_text("lock_countdown_msg", lang, mins=rem_min)
+            await query.answer(f"⛔ {lock_msg}", show_alert=True)
+            return
 
     PIN_PENDING_ACTIONS[user_id] = action_callback_data
     ADMIN_PIN_INPUT[user_id] = ""
@@ -9501,6 +9520,10 @@ async def process_action_pin_step(bot: Bot, chat_id: int, msg_id: int, user_id: 
                 PIN_CHAT_ID.pop(user_id, None)
 
                 async with AsyncSessionLocal() as session:
+                    u_db = await session.get(User, user_id)
+                    if u_db:
+                        u_db.failed_attempts = 0
+                        u_db.locked_until = None
                     await log_audit(session, user_id, (user.full_name if user else "Yönetici"), "PİN DOĞRULANDI", f"İşlem: {action}")
                     await session.commit()
 
@@ -9546,6 +9569,13 @@ async def process_action_pin_step(bot: Bot, chat_id: int, msg_id: int, user_id: 
                     ADMIN_PIN_FAILURES.pop(user_id, None)
                     PIN_MSG_ID.pop(user_id, None)
                     PIN_CHAT_ID.pop(user_id, None)
+
+                    async with AsyncSessionLocal() as session_lock:
+                        u_db = await session_lock.get(User, user_id)
+                        if u_db:
+                            u_db.locked_until = datetime.utcnow() + timedelta(hours=1)
+                            u_db.failed_attempts = fails
+                        await session_lock.commit()
 
                     try:
                         await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=render_pin_screen("", is_locked=True, lang=lang) + f"\n\n❌ <b>{get_text('invalid_admin_pin', lang)}</b>", parse_mode="HTML")
@@ -10447,7 +10477,37 @@ dp.include_router(router)
 
 @dp.error()
 async def global_error_shield(event, exception):
-    print(f"--> [GLOBAL HATA KALKANI] Yakalanan Hata: {exception}")
+    err_msg = str(exception)
+    print(f"--> [GLOBAL HATA KALKANI] Yakalanan Hata: {err_msg}")
+
+    ignorable = [
+        "message is not modified",
+        "query is too old",
+        "message to delete not found",
+        "bot was blocked by the user",
+        "user is deactivated"
+    ]
+    if any(ig in err_msg.lower() for ig in ignorable):
+        return True
+
+    import time
+    now_t = time.time()
+    last_alert_t = getattr(global_error_shield, "_last_alert_t", 0.0)
+    if now_t - last_alert_t > 60:
+        global_error_shield._last_alert_t = now_t
+        alert_text = (
+            "🚨 <b>KRİTİK SİSTEM UYARISI / GLOBAL SHIELD</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"• <b>Zaman:</b> <code>{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}</code>\n"
+            f"• <b>Detay:</b> <code>{html.escape(err_msg[:300])}</code>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "<i>Sistem otomatik kurtarma uyguladı ve çalışmaya devam ediyor.</i>"
+        )
+        for admin_id in set(PERMANENT_ADMIN_IDS):
+            try:
+                await bot.send_message(chat_id=admin_id, text=alert_text, parse_mode="HTML")
+            except Exception:
+                pass
     return True
 
 async def background_morning_briefing_loop():
@@ -10549,6 +10609,10 @@ async def lifespan(app: FastAPI):
     t5.cancel()
     try: await bot.session.close()
     except Exception: pass
+    try:
+        await engine.dispose()
+        print("--> [KAPANIŞ] Veritabanı bağlantı havuzu (engine.dispose) güvenle sonlandırıldı.")
+    except Exception: pass
 
 app = FastAPI(title="OkulYonetimBot", lifespan=lifespan)
 
@@ -10558,7 +10622,27 @@ async def root():
 
 @app.get("/health", status_code=status.HTTP_200_OK)
 async def health_check():
-    return {"status": "ok", "service": "OkulYonetimBot", "uptime": True}
+    db_ok = False
+    try:
+        async with engine.connect() as conn:
+            await conn.exec_driver_sql("SELECT 1;")
+            db_ok = True
+    except Exception:
+        db_ok = False
+
+    uptime_sec = int((datetime.utcnow() - BOT_START_TIME).total_seconds())
+    st_code = status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE
+    return JSONResponse(
+        status_code=st_code,
+        content={
+            "status": "healthy" if db_ok else "unhealthy",
+            "database": "connected" if db_ok else "disconnected",
+            "uptime_seconds": uptime_sec,
+            "service": "OkulYonetimBot",
+            "timezone_offset": TIMEZONE_OFFSET,
+            "version": "PROD_V30_ENTERPRISE"
+        }
+    )
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
