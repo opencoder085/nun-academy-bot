@@ -519,6 +519,9 @@ async def init_db():
                 await conn.exec_driver_sql("PRAGMA synchronous=NORMAL;")
                 await conn.exec_driver_sql("PRAGMA busy_timeout=30000;")
                 await conn.exec_driver_sql("PRAGMA cache_size=-64000;")
+                await conn.exec_driver_sql("PRAGMA temp_store=MEMORY;")
+                await conn.exec_driver_sql("PRAGMA mmap_size=268435456;")
+                await conn.exec_driver_sql("PRAGMA threads=4;")
                 await conn.exec_driver_sql("PRAGMA integrity_check;")
             except Exception:
                 pass
@@ -3422,14 +3425,14 @@ async def cmd_start(message: Message, state: FSMContext):
             return
 
         reply_kb = get_role_reply_kb(user.role, user.language)
-        gen_welcome = {
-            "tr": f"👋 Hoş Geldiniz, {escape_md(user.full_name or '')}",
-            "ru": f"👋 Добро пожаловать, {escape_md(user.full_name or '')}",
-            "uz": f"👋 Xush kelibsiz, {escape_md(user.full_name or '')}",
-            "en": f"👋 Welcome, {escape_md(user.full_name or '')}"
-        }.get(user.language, f"👋 Welcome, {escape_md(user.full_name or '')}")
-        await message.answer(gen_welcome, reply_markup=reply_kb, parse_mode=None)
-        await render_clean_dashboard(message, user)
+        try: await message.delete()
+        except Exception: pass
+        await purge_previous_bot_messages(message.bot, message.chat.id)
+        dash_text = await get_dashboard_card_text(user)
+        sent_dash = await message.bot.send_message(chat_id=message.chat.id, text=dash_text, reply_markup=reply_kb, parse_mode="HTML")
+        if sent_dash:
+            LAST_MENU_MSG_ID[message.chat.id] = sent_dash.message_id
+            ACTIVE_CHAT_MESSAGES.setdefault(message.chat.id, set()).add(sent_dash.message_id)
 
 async def prompt_guest_screen(target: Message | CallbackQuery, user: User, state: FSMContext):
     lang = user.language
@@ -3456,18 +3459,26 @@ async def cb_set_lang(query: CallbackQuery, state: FSMContext):
             user.language = lang_code
         await session.commit()
 
+    # 1. Native Telegram Toast (Zero chat messages!)
+    toast_msg = get_text("lang_changed", user.language)
+    await query.answer(toast_msg, show_alert=False)
+
+    # 2. Update ReplyKeyboard by purging old card and sending fresh single card
     reply_kb = get_role_reply_kb(user.role, user.language)
+    bot_obj = query.message.bot if query.message else bot
+    target_chat_id = query.message.chat.id if query.message else query.from_user.id
+
+    await purge_previous_bot_messages(bot_obj, target_chat_id)
     if user.role == "guest":
-        try: await query.message.delete()
-        except Exception: pass
-        await query.message.answer(get_text("lang_changed", user.language), reply_markup=reply_kb)
         await prompt_guest_screen(query, user, state)
     else:
-        await query.message.answer(get_text("lang_changed", user.language), reply_markup=reply_kb)
-        await render_clean_dashboard(query, user)
-    await query.answer()
+        dash_text = await get_dashboard_card_text(user)
+        sent_dash = await bot_obj.send_message(chat_id=target_chat_id, text=dash_text, reply_markup=reply_kb, parse_mode="HTML")
+        if sent_dash:
+            LAST_MENU_MSG_ID[target_chat_id] = sent_dash.message_id
+            ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(sent_dash.message_id)
 
-async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: User, chat_id: int | None = None):
+async def get_dashboard_card_text(user: User) -> str:
     lang = user.language
     async with AsyncSessionLocal() as session:
         c_cnt, s_cnt, t_cnt, med_cnt, req_cnt = 0, 0, 0, 0, 0
@@ -3494,6 +3505,8 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
             name = escape_md(tch.full_name) if tch else (escape_md(user.full_name or "Öğretmen"))
 
     date_str = get_local_date().strftime('%d.%m.%Y')
+    w_greet = f"👋 <i>{escape_html(user.full_name or 'Kullanıcı')}</i>\n" if user.full_name else ""
+
     if user.role == "admin":
         t_adm_title = {"tr": "⚡ <b>OKUL YÖNETİM KOKPİTİ (ADMİN)</b>", "ru": "⚡ <b>ПАНЕЛЬ УПРАВЛЕНИЯ ШКОЛОЙ (АДМИН)</b>", "uz": "⚡ <b>MAKTAB BOSHQARUV MARKAZI (ADMIN)</b>", "en": "⚡ <b>SCHOOL ADMINISTRATION COCKPIT (ADMIN)</b>"}.get(lang, "⚡ <b>SCHOOL ADMINISTRATION COCKPIT (ADMIN)</b>")
         t_adm_sec1 = {"tr": "📊 <b>GENEL OKUL DURUMU</b>", "ru": "📊 <b>ОБЩИЙ СТАТУС ШКОЛЫ</b>", "uz": "📊 <b>UMUMIY MAKTAB HOLATI</b>", "en": "📊 <b>GENERAL SCHOOL STATUS</b>"}.get(lang, "📊 <b>GENERAL SCHOOL STATUS</b>")
@@ -3506,8 +3519,9 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
         lbl_med = {"tr": "Mazeret Raporları", "ru": "Медицинские справки", "uz": "Tibbiy ma'lumotnomalar", "en": "Medical Notes"}.get(lang, "Medical Notes")
         lbl_date = {"tr": "Tarih", "ru": "Дата", "uz": "Sana", "en": "Date"}.get(lang, "Date")
 
-        text = (
+        return (
             f"{t_adm_title}\n"
+            f"{w_greet}"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"📅 <b>{lbl_date}:</b> {date_str}\n\n"
             f"{t_adm_sec1}\n"
@@ -3522,8 +3536,9 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
         t_title = {"tr": "👨‍🏫 <b>ÖĞRETMEN YÖNETİM MASASI</b>", "ru": "👨‍🏫 <b>ПАНЕЛЬ УЧИТЕЛЯ</b>", "uz": "👨‍🏫 <b>O'QITUVCHI BOSHQARUV PANELI</b>", "en": "👨‍🏫 <b>TEACHER DASHBOARD</b>"}.get(lang, "👨‍🏫 <b>TEACHER DASHBOARD</b>")
         lbl_t = {"tr": "Öğretmen", "ru": "Учитель", "uz": "O'qituvchi", "en": "Teacher"}.get(lang, "Teacher")
         lbl_d = {"tr": "Tarih", "ru": "Дата", "uz": "Sana", "en": "Date"}.get(lang, "Date")
-        text = (
+        return (
             f"{t_title}\n"
+            f"{w_greet}"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"👤 <b>{lbl_t}:</b> {escape_html(name)} ({escape_html(subj)})\n"
             f"📅 <b>{lbl_d}:</b> {date_str}\n"
@@ -3542,8 +3557,9 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
             if others:
                 other_children_str = f"\n\n👥 <b>{lbl_other}:</b>\n" + "\n".join(others)
 
-        text = (
+        return (
             f"{p_title}\n"
+            f"{w_greet}"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🧑‍🎓 <b>{lbl_s}:</b> {escape_html(name)} ({escape_html(cls_name)})\n"
             f"📅 <b>{lbl_d}:</b> {date_str}"
@@ -3555,8 +3571,9 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
         lbl_s = {"tr": "Öğrenci", "ru": "Ученик", "uz": "O'quvchi", "en": "Student"}.get(lang, "Student")
         lbl_d = {"tr": "Tarih", "ru": "Дата", "uz": "Sana", "en": "Date"}.get(lang, "Date")
         lbl_no = {"tr": "No", "ru": "№", "uz": "№", "en": "Roll"}.get(lang, "No")
-        text = (
+        return (
             f"{s_title}\n"
+            f"{w_greet}"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🧑‍🎓 <b>{lbl_s}:</b> {escape_html(name)} ({escape_html(cls_name)} - {lbl_no}: {escape_html(num_val)})\n"
             f"📅 <b>{lbl_d}:</b> {date_str}\n"
@@ -3564,7 +3581,11 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
         )
     else:
         raw = get_text("welcome_guest", lang)
-        text = re.sub(r'\*([^\*]+)\*', r'<b>\1</b>', raw.replace("`", "<code>").replace("`", "</code>"))
+        return re.sub(r'\*([^\*]+)\*', r'<b>\1</b>', raw.replace("`", "<code>").replace("`", "</code>"))
+
+async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: User, chat_id: int | None = None, reply_kb=None):
+    lang = user.language
+    text = await get_dashboard_card_text(user)
 
     parent_quick_kb = None
     if user.role == "parent":
@@ -3726,7 +3747,8 @@ async def cb_act_enter_code(query: CallbackQuery, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-    await query.message.answer(get_text("prompt_enter_code_direct", lang), parse_mode="Markdown")
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data="adm:dashboard")]])
+    await safe_edit_or_answer(query, get_text("prompt_enter_code_direct", lang), reply_markup=cancel_kb, parse_mode="Markdown")
     await state.set_state(Form.waiting_auth_code)
     await query.answer()
 
@@ -4545,6 +4567,8 @@ async def cb_parent_select_teacher(query: CallbackQuery, state: FSMContext):
 
 @router.message(Form.app_note)
 async def process_appointment_note(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     note_text = message.text.strip()
     data = APP_CACHE.pop(message.from_user.id, {})
     tch_id = data.get("teacher_id")
@@ -4880,6 +4904,8 @@ async def cb_admin_sched_edit_class(query: CallbackQuery, state: FSMContext):
 
 @router.message(Form.sched_update_text)
 async def process_sched_update_text(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     new_text = message.text.strip()
     data = await state.get_data()
     class_name = data.get("edit_sched_class", "9-A")
@@ -4913,6 +4939,8 @@ async def cb_admin_menu_edit(query: CallbackQuery, state: FSMContext):
 
 @router.message(Form.menu_update_text)
 async def process_menu_update_text(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     m_text = message.text.strip()
     await state.clear()
     today = get_local_date()
@@ -4943,12 +4971,14 @@ async def cb_start_add_student(query: CallbackQuery, state: FSMContext):
         lang = user.language if user else "tr"
 
     cancel_kb = get_cancel_reply_kb(lang)
-    await query.message.answer(get_text("prompt_student_name", lang), reply_markup=cancel_kb, parse_mode="Markdown")
+    await safe_edit_or_answer(query, get_text("prompt_student_name", lang), reply_markup=cancel_kb, parse_mode="Markdown")
     await state.set_state(Form.add_student_name)
     await query.answer()
 
 @router.message(Form.add_student_name)
 async def process_student_name(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
@@ -4964,6 +4994,8 @@ async def process_student_name(message: Message, state: FSMContext):
 
 @router.message(Form.add_student_class)
 async def process_student_class(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
@@ -4974,6 +5006,8 @@ async def process_student_class(message: Message, state: FSMContext):
 
 @router.message(Form.add_student_no)
 async def process_student_no(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
@@ -5016,12 +5050,14 @@ async def cb_start_add_teacher(query: CallbackQuery, state: FSMContext):
         lang = user.language if user else "tr"
 
     cancel_kb = get_cancel_reply_kb(lang)
-    await query.message.answer(get_text("prompt_teacher_name", lang), reply_markup=cancel_kb, parse_mode="Markdown")
+    await safe_edit_or_answer(query, get_text("prompt_teacher_name", lang), reply_markup=cancel_kb, parse_mode="Markdown")
     await state.set_state(Form.add_teacher_name)
     await query.answer()
 
 @router.message(Form.add_teacher_name)
 async def process_teacher_name(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
@@ -5037,6 +5073,8 @@ async def process_teacher_name(message: Message, state: FSMContext):
 
 @router.message(Form.add_teacher_subject)
 async def process_teacher_subject(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
@@ -5065,7 +5103,9 @@ async def cb_search_student_init(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    await query.message.answer(get_text("prompt_search_student", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="Markdown")
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data="adm:cat_staff")]])
+    prompt_card = f"🔍 <b>{get_text('prompt_search_student', lang)}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n<i>Lütfen aramak istediğiniz öğrencinin adını veya okul numarasını yazınız:</i>"
+    await safe_edit_or_answer(query, prompt_card, reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.waiting_search_query)
     await query.answer()
 
@@ -5074,6 +5114,8 @@ async def process_search_query(message: Message, state: FSMContext):
     raw_q = message.text.strip()
     clean_q = clean_unicode_text(raw_q)
     await state.clear()
+    try: await message.delete()
+    except Exception: pass
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
@@ -5112,7 +5154,9 @@ async def cb_search_teacher_init(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    await query.message.answer(get_text("teacher_search_prompt", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="Markdown")
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data="adm:teachers")]])
+    prompt_card = f"🔍 <b>{get_text('teacher_search_prompt', lang)}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n<i>Lütfen aramak istediğiniz öğretmenin adını veya branşını yazınız:</i>"
+    await safe_edit_or_answer(query, prompt_card, reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.waiting_search_teacher_query)
     await query.answer()
 
@@ -5120,6 +5164,8 @@ async def cb_search_teacher_init(query: CallbackQuery, state: FSMContext):
 async def process_search_teacher_query(message: Message, state: FSMContext):
     clean_q = clean_unicode_text(message.text)
     await state.clear()
+    try: await message.delete()
+    except Exception: pass
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
@@ -5767,6 +5813,8 @@ async def cb_admin_edit_field_init(query: CallbackQuery, state: FSMContext):
 
 @router.message(Form.edit_student_val)
 async def process_student_edit_val(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     data = await state.get_data()
     st_id = data.get("edit_st_id")
     field = data.get("edit_field")
@@ -6831,7 +6879,7 @@ async def cb_excel_teacher_info(query: CallbackQuery, state: FSMContext):
         lang = user.language if user else "tr"
 
     cancel_kb = get_cancel_reply_kb(lang)
-    await query.message.answer(get_text("prompt_upload_teacher_excel", lang), reply_markup=cancel_kb, parse_mode="Markdown")
+    await safe_edit_or_answer(query, get_text("prompt_upload_teacher_excel", lang), reply_markup=cancel_kb, parse_mode="Markdown")
     await state.set_state(Form.waiting_teacher_excel)
     await query.answer()
 
@@ -6847,7 +6895,7 @@ async def cb_admin_restore_backup_direct(query: CallbackQuery, state: FSMContext
         lang = user.language if user else "tr"
 
     cancel_kb = get_cancel_reply_kb(lang)
-    await query.message.answer(get_text("prompt_restore_backup", lang), reply_markup=cancel_kb, parse_mode="Markdown")
+    await safe_edit_or_answer(query, get_text("prompt_restore_backup", lang), reply_markup=cancel_kb, parse_mode="Markdown")
     if state: await state.set_state(Form.waiting_restore_excel)
 
 @router.callback_query(F.data == "adm:excel_hub")
@@ -7440,6 +7488,8 @@ async def cb_admin_search_user_init(query: CallbackQuery, state: FSMContext):
 
 @router.message(Form.waiting_search_user_query)
 async def process_search_user_query(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     q_txt = message.text.strip().replace("@", "")
     await state.clear()
 
@@ -7790,6 +7840,8 @@ async def cb_admin_send_dm_init(query: CallbackQuery, state: FSMContext):
 
 @router.message(Form.waiting_admin_dm_text)
 async def process_admin_dm_text(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     dm_text = message.text.strip()
     data = await state.get_data()
     target_id = data.get("target_dm_id")
@@ -7945,12 +7997,14 @@ async def cb_admin_add_id_init(query: CallbackQuery, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-    await query.message.answer(get_text("admin_add_tg_id_prompt", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="Markdown")
+    await safe_edit_or_answer(query, get_text("admin_add_tg_id_prompt", lang), reply_markup=cancel_kb, parse_mode="Markdown")
     await state.set_state(Form.waiting_admin_tg_id)
     await query.answer()
 
 @router.message(Form.waiting_admin_tg_id)
 async def process_admin_tg_id(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
@@ -7965,6 +8019,8 @@ async def process_admin_tg_id(message: Message, state: FSMContext):
 
 @router.message(Form.waiting_admin_name)
 async def process_admin_name(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     name_val = message.text.strip()
     data = await state.get_data()
     new_admin_id = data.get("new_admin_id")
@@ -8609,6 +8665,8 @@ async def cb_grade_enter_score(query: CallbackQuery, state: FSMContext):
 
 @router.message(Form.grade_score)
 async def process_grade_score(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
@@ -8768,12 +8826,14 @@ async def cb_teacher_edit_grade_init(query: CallbackQuery, state: FSMContext):
         lang = user.language if user else "tr"
 
     cancel_kb = get_cancel_reply_kb(lang)
-    await query.message.answer(get_text("prompt_new_score", lang), reply_markup=cancel_kb)
+    await safe_edit_or_answer(query, get_text("prompt_new_score", lang), reply_markup=cancel_kb)
     await state.set_state(Form.edit_grade_val)
     await query.answer()
 
 @router.message(Form.edit_grade_val)
 async def process_grade_edit_val(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
@@ -8908,12 +8968,14 @@ async def cb_behavior_badge_chosen(query: CallbackQuery, state: FSMContext):
 
     prompt = get_text("prompt_behavior_note", lang, name=escape_md(st.full_name), badge=icon, title=escape_md(title))
     cancel_kb = get_cancel_reply_kb(lang)
-    await query.message.answer(prompt, reply_markup=cancel_kb, parse_mode="Markdown")
+    await safe_edit_or_answer(query, prompt, reply_markup=cancel_kb, parse_mode="Markdown")
     await state.set_state(Form.waiting_behavior_note)
     await query.answer()
 
 @router.message(Form.waiting_behavior_note)
 async def process_behavior_note(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     note_val = message.text.strip()
     if note_val in ["-", "İptal", "Bekor qilish", "Отмена"]:
         note_val = None
@@ -9172,7 +9234,7 @@ async def cb_submit_homework_init(query: CallbackQuery, state: FSMContext):
 
     SUBMISSION_CACHE[query.from_user.id] = {"homework_id": hw_id}
     cancel_kb = get_cancel_reply_kb(lang)
-    await query.message.answer(get_text("prompt_hw_submission", lang, subject=escape_md(hw.subject)), reply_markup=cancel_kb, parse_mode="Markdown")
+    await safe_edit_or_answer(query, get_text("prompt_hw_submission", lang, subject=escape_md(hw.subject)), reply_markup=cancel_kb, parse_mode="Markdown")
     await state.set_state(Form.waiting_hw_submission)
     await query.answer()
 
@@ -9335,12 +9397,14 @@ async def cb_teacher_sub_rev_init(query: CallbackQuery, state: FSMContext):
         "uz": "📝 O'quvchiga yuboriladigan tuzatish izohini yozing:",
         "en": "📝 Please enter revision notes for the student:"
     }.get(lang, "Enter revision notes:")
-    await query.message.answer(p_rev, reply_markup=cancel_kb)
+    await safe_edit_or_answer(query, p_rev, reply_markup=cancel_kb)
     await state.set_state(Form.waiting_hw_feedback)
     await query.answer()
 
 @router.message(Form.waiting_hw_feedback)
 async def process_hw_feedback(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     fb_text = message.text.strip()
     data = SUBMISSION_CACHE.pop(message.from_user.id, {})
     sub_id = data.get("sub_id")
@@ -9424,12 +9488,14 @@ async def cb_admin_add_exam_init(query: CallbackQuery, state: FSMContext):
         "uz": f"📅 *{class_name} sinfi imtihon kiritish*\n\nFan nomini kiriting (Masalan: `Matematika`):",
         "en": f"📅 *Add Exam for Class {class_name}*\n\nEnter Subject Name (e.g. `Mathematics`):"
     }.get(lang, f"Add Exam for {class_name}:")
-    await query.message.answer(p_ex_sb, reply_markup=cancel_kb, parse_mode="Markdown")
+    await safe_edit_or_answer(query, p_ex_sb, reply_markup=cancel_kb, parse_mode="Markdown")
     await state.set_state(Form.waiting_exam_subject)
     await query.answer()
 
 @router.message(Form.waiting_exam_subject)
 async def process_exam_subject(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     subj = message.text.strip()
     EXAM_CACHE[message.from_user.id]["subject"] = subj
     async with AsyncSessionLocal() as session:
@@ -9446,6 +9512,8 @@ async def process_exam_subject(message: Message, state: FSMContext):
 
 @router.message(Form.waiting_exam_date)
 async def process_exam_date(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     dt_str = message.text.strip()
     data = EXAM_CACHE.pop(message.from_user.id, {})
     class_name = data.get("class_name", "9-A")
@@ -9489,12 +9557,14 @@ async def cb_admin_emergency_init(query: CallbackQuery, state: FSMContext):
         if not is_admin_user(user, query.from_user.id): return
 
     cancel_kb = get_cancel_reply_kb(lang)
-    await query.message.answer(get_text("emergency_alert_prompt", lang), reply_markup=cancel_kb, parse_mode="Markdown")
+    await safe_edit_or_answer(query, get_text("emergency_alert_prompt", lang), reply_markup=cancel_kb, parse_mode="Markdown")
     await state.set_state(Form.waiting_emergency_text)
     await query.answer()
 
 @router.message(Form.waiting_emergency_text)
 async def process_emergency_text(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     em_text = message.text.strip()
     await state.clear()
 
@@ -9625,12 +9695,14 @@ async def cb_parent_add_child_init(query: CallbackQuery, state: FSMContext):
         lang = user.language if user else "tr"
 
     cancel_kb = get_cancel_reply_kb(lang)
-    await query.message.answer(get_text("prompt_add_child_code", lang), reply_markup=cancel_kb, parse_mode="Markdown")
+    await safe_edit_or_answer(query, get_text("prompt_add_child_code", lang), reply_markup=cancel_kb, parse_mode="Markdown")
     await state.set_state(Form.parent_add_child_code)
     await query.answer()
 
 @router.message(Form.parent_add_child_code)
 async def process_parent_add_child_code(message: Message, state: FSMContext):
+    try: await message.delete()
+    except Exception: pass
     code_raw = message.text.strip()
     clean_code = normalize_code(code_raw)
     await state.clear()
@@ -9868,7 +9940,7 @@ async def cb_act_logout(query: CallbackQuery, state: FSMContext):
             await session.commit()
     try: await query.message.delete()
     except Exception: pass
-    await query.message.answer("🌍 Iltimos, tilni tanlang / Пожалуйста, выберите язык / Lütfen bir dil seçiniz / Select language:", reply_markup=get_language_inline_kb())
+    await safe_edit_or_answer(query, "🌍 Iltimos, tilni tanlang / Пожалуйста, выберите язык / Lütfen bir dil seçiniz / Select language:", reply_markup=get_language_inline_kb())
 
 @router.message(any_state, Command("restart", "reset", "cikis", "logout"))
 @router.message(any_state, F.text.in_(["🔄 Yeniden Başlat", "🔄 Перезапуск", "🔄 Qayta ishga tushirish", "🔄 Restart Bot", "🚪 Çıkış Yap", "🚪 Выйти", "🚪 Chiqish", "🚪 Log Out", "/restart", "/reset", "/cikis", "/logout"]))
