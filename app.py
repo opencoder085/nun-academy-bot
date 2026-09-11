@@ -117,6 +117,19 @@ def escape_html(text: str | None) -> str:
         return ""
     return html.escape(str(text), quote=False)
 
+def format_telegram_html(text: str) -> str:
+    if not text:
+        return ""
+    # 1. Convert markdown code `code` to <code>code</code>
+    t = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", text)
+    # 2. Convert markdown bold *text* to <b>text</b>
+    t = re.sub(r"\*([^\*\n]+)\*", r"<b>\1</b>", t)
+    # 3. Convert markdown italic _text_ to <i>text</i>
+    t = re.sub(r"(?<![a-zA-Z0-9])_([^\n_]+)_(?![a-zA-Z0-9])", r"<i>\1</i>", t)
+    # 4. Remove any stray single asterisks
+    t = t.replace("*", "")
+    return t
+
 def clean_unicode_text(text: str | None) -> str:
     if not text: return ""
     return text.strip().casefold()
@@ -136,6 +149,8 @@ def normalize_code(code_str: str) -> str:
     return cleaned
 
 async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_markup=None, parse_mode="Markdown"):
+    if parse_mode == "HTML" and text:
+        text = format_telegram_html(text)
     target_chat_id = target.chat.id if isinstance(target, Message) else (target.message.chat.id if (isinstance(target, CallbackQuery) and target.message) else None)
     if isinstance(target, CallbackQuery):
         msg = target.message
@@ -173,6 +188,8 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
             if s_m and target_chat_id: LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
 
 async def safe_send_message(bot: Bot, chat_id: int, text: str, reply_markup=None, parse_mode="Markdown", disable_notification=False):
+    if parse_mode == "HTML" and text:
+        text = format_telegram_html(text)
     for attempt in range(2):
         try:
             return await bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode, disable_notification=disable_notification)
@@ -3479,16 +3496,6 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
             f"{other_children_str}\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
-
-    parent_quick_kb = None
-    if user.role == "parent":
-        async with AsyncSessionLocal() as s_k:
-            all_k = (await s_k.execute(select(Student).join(ParentStudent, ParentStudent.student_id == Student.id).where(ParentStudent.parent_telegram_id == user.telegram_id))).scalars().all()
-            if len(all_k) > 1:
-                sw_txt = {"tr": "🔄 Öğrenciyi Değiştir", "ru": "🔄 Сменить ученика", "uz": "🔄 O'quvchini almashtirish", "en": "🔄 Switch Student"}.get(lang, "🔄 Switch Student")
-                parent_quick_kb = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text=sw_txt, callback_data="parent:switch_student")]
-                ])
     elif user.role == "student":
         s_title = {"tr": "🎓 <b>ÖĞRENCİ PORTALI</b>", "ru": "🎓 <b>ПАНЕЛЬ УЧЕНИКА</b>", "uz": "🎓 <b>O'QUVCHI PORTALI</b>", "en": "🎓 <b>STUDENT PORTAL</b>"}.get(lang, "🎓 <b>STUDENT PORTAL</b>")
         lbl_s = {"tr": "Öğrenci", "ru": "Ученик", "uz": "O'quvchi", "en": "Student"}.get(lang, "Student")
@@ -3504,6 +3511,16 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
     else:
         raw = get_text("welcome_guest", lang)
         text = re.sub(r'\*([^\*]+)\*', r'<b>\1</b>', raw.replace("`", "<code>").replace("`", "</code>"))
+
+    parent_quick_kb = None
+    if user.role == "parent":
+        async with AsyncSessionLocal() as s_k:
+            all_k = (await s_k.execute(select(Student).join(ParentStudent, ParentStudent.student_id == Student.id).where(ParentStudent.parent_telegram_id == user.telegram_id))).scalars().all()
+            if len(all_k) > 1:
+                sw_txt = {"tr": "🔄 Öğrenciyi Değiştir", "ru": "🔄 Сменить ученика", "uz": "🔄 O'quvchini almashtirish", "en": "🔄 Switch Student"}.get(lang, "🔄 Switch Student")
+                parent_quick_kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=sw_txt, callback_data="parent:switch_student")]
+                ])
 
     target_chat_id = chat_id or (target.chat.id if isinstance(target, Message) else (target.message.chat.id if isinstance(target, CallbackQuery) else user.telegram_id))
 
@@ -6963,7 +6980,9 @@ async def cb_cat_staff(event: Message | CallbackQuery, state: FSMContext | None 
         lang = user.language if user else "tr"
 
         bc = {"tr": "🏠 Ana Menü ➔ 👥 Kadro & Öğrenci", "ru": "🏠 Главное меню ➔ 👥 Ученики и учителя", "uz": "🏠 Asosiy menyu ➔ 👥 Kadro va o'quvchilar", "en": "🏠 Main Menu ➔ 👥 Staff & Students"}.get(lang, "👥 Staff & Students")
-        title = f"<b>{bc}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + get_text("cat_staff_title", lang)
+        cat_hdr = {"tr": "👥 <b>KADRO VE ÖĞRENCİ YÖNETİMİ</b>", "ru": "👥 <b>УПРАВЛЕНИЕ КАДРАМИ И УЧЕНИКАМИ</b>", "uz": "👥 <b>XODIMLAR VA O'QUVCHILAR BOSHQARUVI</b>", "en": "👥 <b>STAFF & STUDENT MANAGEMENT</b>"}.get(lang, "👥 <b>STAFF & STUDENTS</b>")
+        cat_desc = {"tr": "📌 Öğrenci ve öğretmen kayıtlarını yönetmek, sınıf atamaları yapmak veya arama gerçekleştirmek için bir işlem seçiniz:", "ru": "📌 Выберите раздел для управления учениками, учителями или классами:", "uz": "📌 O'quvchilar, o'qituvchilar yoki sinflarni boshqarish uchun bo'limni tanlang:", "en": "📌 Select an option to manage students, teachers, classes, or promotions:"}.get(lang, "Select an option:")
+        title = f"<b>{bc}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{cat_hdr}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{cat_desc}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
         buttons = [
             [InlineKeyboardButton(text=get_text("btn_classes", lang), callback_data="adm:classes"), InlineKeyboardButton(text=get_text("btn_teachers", lang), callback_data="adm:teachers")],
@@ -6991,7 +7010,9 @@ async def cb_cat_reports(event: Message | CallbackQuery, state: FSMContext | Non
         lang = user.language if user else "tr"
 
         bc = {"tr": "🏠 Ana Menü ➔ 📊 Raporlar & Denetim", "ru": "🏠 Главное меню ➔ 📊 Отчеты и контроль", "uz": "🏠 Asosiy menyu ➔ 📊 Hisobotlar va nazorat", "en": "🏠 Main Menu ➔ 📊 Reports & Audits"}.get(lang, "📊 Reports & Audits")
-        title = f"<b>{bc}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + get_text("cat_reports_title", lang)
+        cat_hdr = {"tr": "📊 <b>RAPORLAR VE AKADEMİK DENETİM</b>", "ru": "📊 <b>ОТЧЕТЫ И АКАДЕМИЧЕСКИЙ КОНТРОЛЬ</b>", "uz": "📊 <b>HISOBOTLAR VA AKADEMIK NAZORAT</b>", "en": "📊 <b>REPORTS & ACADEMIC AUDIT</b>"}.get(lang, "📊 <b>REPORTS & AUDIT</b>")
+        cat_desc = {"tr": "📌 Okulun katılım kokpitini, devamsızlık risk radarını veya akademik sıralamasını incelemek için bir rapor seçiniz:", "ru": "📌 Выберите отчет для анализа посещаемости, академического рейтинга или экстренных подтверждений:", "uz": "📌 Davomat monitoringi, akademik reyting yoki hisobotlarni ko'rish uchun tanlang:", "en": "📌 Select a report to review attendance cockpit, academic rankings, or audits:"}.get(lang, "Select a report:")
+        title = f"<b>{bc}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{cat_hdr}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{cat_desc}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
         buttons = [
             [InlineKeyboardButton(text=get_text("btn_cockpit_unified", lang), callback_data="adm:cockpit")],
@@ -7021,7 +7042,9 @@ async def cb_cat_requests(event: Message | CallbackQuery, state: FSMContext | No
         med_cnt = (await session.execute(select(func.count(MedicalReport.id)).where(MedicalReport.status == "pending"))).scalar() or 0
 
         bc = {"tr": "🏠 Ana Menü ➔ 🛎️ Onay Masası", "ru": "🏠 Главное меню ➔ 🛎️ Центр одобрений", "uz": "🏠 Asosiy menyu ➔ 🛎️ Tasdiqlash markazi", "en": "🏠 Main Menu ➔ 🛎️ Approval Center"}.get(lang, "🛎️ Approval Center")
-        title = f"<b>{bc}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + get_text("cat_requests_title", lang)
+        cat_hdr = {"tr": "🛎️ <b>BAŞVURU VE RAPOR ONAY MASASI</b>", "ru": "🛎️ <b>ЦЕНТР ОДОБРЕНИЯ ЗАЯВОК И СПРАВОК</b>", "uz": "🛎️ <b>ARIZALAR VA MA'LUMOTNOMALARNI TASDIQLASH</b>", "en": "🛎️ <b>APPROVAL CENTER & MEDICALS</b>"}.get(lang, "🛎️ <b>APPROVAL CENTER</b>")
+        cat_desc = {"tr": f"📌 Okula yapılan giriş şifresi başvurularını ve veli sağlık raporlarını inceleyip onaylayabilirsiniz.\n\n• 📩 <b>Bekleyen Şifre Başvurusu:</b> {req_cnt} Adet\n• 🏥 <b>Bekleyen Sağlık Raporu:</b> {med_cnt} Adet", "ru": f"📌 Рассмотрите заявки на получение кодов и медицинские справки учеников:\n\n• 📩 <b>Ожидающие заявки:</b> {req_cnt} шт.\n• 🏥 <b>Ожидающие справки:</b> {med_cnt} шт.", "uz": f"📌 Kirish kodi arizalari va tibbiy ma'lumotnomalarni ko'rib chiqing:\n\n• 📩 <b>Kutilayotgan arizalar:</b> {req_cnt} ta\n• 🏥 <b>Kutilayotgan ma'lumotnomalar:</b> {med_cnt} ta", "en": f"📌 Review and approve pending access requests and medical notes:\n\n• 📩 <b>Pending Requests:</b> {req_cnt}\n• 🏥 <b>Pending Medicals:</b> {med_cnt}"}.get(lang, "Pending items:")
+        title = f"<b>{bc}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{cat_hdr}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{cat_desc}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
         buttons = [
             [InlineKeyboardButton(text=get_text("btn_requests", lang, count=req_cnt), callback_data="adm:requests_list")],
@@ -7048,7 +7071,9 @@ async def cb_cat_tools(event: Message | CallbackQuery, state: FSMContext | None 
         lang = user.language if user else "tr"
 
         bc = {"tr": "🏠 Ana Menü ➔ 🛠️ İdari Araçlar", "ru": "🏠 Главное меню ➔ 🛠️ Инструменты", "uz": "🏠 Asosiy menyu ➔ 🛠️ Boshqaruv vositalari", "en": "🏠 Main Menu ➔ 🛠️ Admin Tools"}.get(lang, "🛠️ Admin Tools")
-        title = f"<b>{bc}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + get_text("cat_tools_title", lang)
+        cat_hdr = {"tr": "🛠️ <b>İDARİ YÖNETİM ARAÇLARI</b>", "ru": "🛠️ <b>ИНСТРУМЕНТЫ УПРАВЛЕНИЯ</b>", "uz": "🛠️ <b>BOSHQARUV VOSITALARI</b>", "en": "🛠️ <b>ADMINISTRATIVE TOOLS</b>"}.get(lang, "🛠️ <b>ADMIN TOOLS</b>")
+        cat_desc = {"tr": "📌 Toplu duyuru gönderme, acil alarm tetikleme, ders programı ve yemekhane menüsü düzenleme araçlarını aşağıdan seçiniz:", "ru": "📌 Инструменты рассылки, экстренного оповещения, расписания уроков и меню столовой:", "uz": "📌 Ommaviy e'lonlar, favqulodda xabar, dars jadvali va oshxona menyusini boshqarish:", "en": "📌 Broadcasts, emergency alert, schedules, and cafeteria menu tools:"}.get(lang, "Select tool:")
+        title = f"<b>{bc}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{cat_hdr}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{cat_desc}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
         buttons = [
             [InlineKeyboardButton(text=get_text("btn_broadcast", lang), callback_data="adm:broadcast_hub"), InlineKeyboardButton(text=get_text("btn_emergency_alert", lang), callback_data="adm:emergency_init")],
@@ -7091,7 +7116,9 @@ async def cb_cat_settings(event: Message | CallbackQuery, state: FSMContext | No
         wk_btn_txt = get_text("btn_weekend_attendance", lang, status=wk_lbl)
 
         bc = {"tr": "🏠 Ana Menü ➔ ⚙️ Sistem & Ayarlar", "ru": "🏠 Главное меню ➔ ⚙️ Настройки", "uz": "🏠 Asosiy menyu ➔ ⚙️ Tizim va sozlamalar", "en": "🏠 Main Menu ➔ ⚙️ System & Settings"}.get(lang, "⚙️ Settings")
-        title = f"<b>{bc}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + get_text("cat_settings_title", lang)
+        cat_hdr = {"tr": "⚙️ <b>SİSTEM VE GÜVENLİK AYARLARI</b>", "ru": "⚙️ <b>СИСТЕМНЫЕ НАСТРОЙКИ И БЕЗОПАСНОСТЬ</b>", "uz": "⚙️ <b>TIZIM VA XAVFSIZLIK SOZLAMALARI</b>", "en": "⚙️ <b>SYSTEM SETTINGS & SECURITY</b>"}.get(lang, "⚙️ <b>SETTINGS</b>")
+        cat_desc = {"tr": "📌 İdari PIN kodunu değiştirmek, bakım modunu veya salt-okunur karantinasını yönetmek için bir ayar seçiniz:", "ru": "📌 Настройки ПИН-кода, режима обслуживания, часового пояса и безопасности:", "uz": "📌 PIN kodni o'zgartirish, texnik rejim, vaqt mintaqasi va xavfsizlik sozlamalari:", "en": "📌 Admin PIN, maintenance mode, timezone, and security controls:"}.get(lang, "Select setting:")
+        title = f"<b>{bc}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{cat_hdr}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{cat_desc}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
         ro_setting = await session.get(SystemSetting, "readonly_mode")
         is_ro = ro_setting.value == "true" if ro_setting else False
@@ -7683,12 +7710,29 @@ async def cb_admin_admins_list(query: CallbackQuery):
         db_admins = (await session.execute(select(User).where(User.role == "admin"))).scalars().all()
         admin_map = {u.telegram_id: u for u in db_admins}
 
-        founder_label = {
-            "tr": "Kalıcı Kurucu", "ru": "Постоянный админ", "uz": "Doimiy / Asosiy", "en": "Permanent Founder"
-        }.get(lang, "Permanent Founder")
-
         bc_al = {"tr": "🏠 Ana Menü ➔ 👥 Kadro ➔ 👑 Yöneticiler", "ru": "🏠 Главное меню ➔ 👥 Ученики ➔ 👑 Администраторы", "uz": "🏠 Asosiy menyu ➔ 👥 Kadro ➔ 👑 Ma'murlar", "en": "🏠 Main Menu ➔ 👥 Staff ➔ 👑 Administrators"}.get(lang, "👑 Administrators")
-        lines = [f"<b>{bc_al}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + get_text("admin_admins_hub_title", lang) + "\n"]
+        hub_title = {"tr": "👨‍💼 <b>OKUL YÖNETİM KADROSU</b>", "ru": "👨‍💼 <b>РУКОВОДСТВО ШКОЛЫ</b>", "uz": "👨‍💼 <b>MAKTAB RAHBARIYATI</b>", "en": "👨‍💼 <b>SCHOOL LEADERSHIP & ADMINS</b>"}.get(lang, "👨‍💼 <b>SCHOOL LEADERSHIP</b>")
+
+        founder_count = len(PERMANENT_ADMIN_IDS)
+        other_admins = [u for u in db_admins if u.telegram_id not in PERMANENT_ADMIN_IDS]
+        other_count = len(other_admins)
+
+        desc_text = {
+            "tr": f"📌 Sistemde yetkilendirilmiş okul idarecileri aşağıda listelenmiştir. Yetkilerini düzenlemek, süre tanımlamak veya profillerini görüntülemek için ilgili yöneticiye dokununuz.\n\n👑 <b>Kalıcı Kurucu Yöneticiler:</b> {founder_count} Kişi\n👨‍💼 <b>Ek Görevli Yöneticiler:</b> {other_count} Kişi",
+            "ru": f"📌 Ниже представлены администраторы школы. Нажмите на нужного администратора для просмотра профиля или изменения полномочий:\n\n👑 <b>Постоянные основатели:</b> {founder_count} чел.\n👨‍💼 <b>Назначенные администраторы:</b> {other_count} чел.",
+            "uz": f"📌 Maktab ma'murlari quyida keltirilgan. Vakolatlarni tahrirlash yoki profilni ko'rish uchun tegishli ma'murni tanlang:\n\n👑 <b>Doimiy asosiy ma'murlar:</b> {founder_count} kishi\n👨‍💼 <b>Qo'shimcha ma'murlar:</b> {other_count} kishi",
+            "en": f"📌 School administrators are listed below. Tap an administrator to manage permissions, assign temporary duration, or view details:\n\n👑 <b>Permanent Founders:</b> {founder_count}\n👨‍💼 <b>Staff Admins:</b> {other_count}"
+        }.get(lang, "School administrators are listed below:")
+
+        card_text = (
+            f"<b>{bc_al}</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{hub_title}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{desc_text}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+
         buttons = []
 
         # 1. Kalıcı Kurucular
@@ -7696,7 +7740,6 @@ async def cb_admin_admins_list(query: CallbackQuery):
             u_obj = admin_map.get(p_id)
             if not u_obj:
                 u_obj = await session.get(User, p_id)
-            
             if not u_obj or not u_obj.full_name or u_obj.full_name in ("Kalıcı İdareci", "Kurucu İdareci", "Asosiy ma'mur", "Главный админ", "Yönetici", "İsimsiz"):
                 try:
                     chat_info = await query.bot.get_chat(p_id)
@@ -7709,58 +7752,36 @@ async def cb_admin_admins_list(query: CallbackQuery):
                         else:
                             u_obj.full_name = tg_name
                         await session.commit()
-                except Exception:
-                    pass
+                except Exception: pass
 
             name_str = u_obj.full_name if (u_obj and u_obj.full_name) else get_text("permanent_admin_title", lang)
-            lines.append(f"• 👑 <b>{escape_md(name_str)}</b> (<code>{p_id}</code>) - <i>{founder_label}</i>")
-            buttons.append([InlineKeyboardButton(text=f"👑 {name_str} ({p_id})", callback_data=f"adm:user_card:{p_id}")])
+            btn_txt = f"👑 {name_str} ({p_id})"
+            buttons.append([InlineKeyboardButton(text=btn_txt, callback_data=f"adm:user_card:{p_id}")])
 
-        # 2. Eklenen Yöneticiler
+        # 2. Diğer Yöneticiler
         all_other_admin_ids = set(ADMIN_IDS) - set(PERMANENT_ADMIN_IDS)
         for extra_id in all_other_admin_ids:
             if extra_id not in admin_map:
                 u_extra = await session.get(User, extra_id)
-                if not u_extra or not u_extra.full_name or u_extra.full_name in ("Kalıcı İdareci", "Kurucu İdareci", "Asosiy ma'mur", "Главный админ", "Yönetici", "İsimsiz"):
-                    try:
-                        chat_info = await query.bot.get_chat(extra_id)
-                        tg_name = chat_info.full_name or chat_info.title or chat_info.first_name
-                        if tg_name:
-                            if not u_extra:
-                                u_extra = User(telegram_id=extra_id, role="admin", full_name=tg_name, admin_type="permanent", language=lang)
-                                session.add(u_extra)
-                            else:
-                                u_extra.full_name = tg_name
-                            await session.commit()
-                    except Exception:
-                        pass
-                if u_extra:
-                    admin_map[extra_id] = u_extra
+                if u_extra: admin_map[extra_id] = u_extra
 
         for tg_id, u_obj in admin_map.items():
             if tg_id not in PERMANENT_ADMIN_IDS:
                 name_str = u_obj.full_name if (u_obj and u_obj.full_name) else f"ID: {tg_id}"
-                if u_obj.admin_type == "temporary" and u_obj.admin_until:
-                    exp_txt = (u_obj.admin_until + timedelta(hours=TIMEZONE_OFFSET)).strftime('%d.%m %H:%M')
-                    temp_label = {
-                        "tr": f"⏱️ Geçici ({exp_txt})", "ru": f"⏱️ Временный ({exp_txt})", "uz": f"⏱️ Vaqtinchalik ({exp_txt})", "en": f"⏱️ Temp ({exp_txt})"
-                    }.get(lang, f"⏱️ Temp ({exp_txt})")
-                    lines.append(f"• 👨‍💼 <b>{escape_md(name_str)}</b> (<code>{tg_id}</code>) - <i>{temp_label}</i>")
-                else:
-                    perm_label = {
-                        "tr": "👑 Kalıcı", "ru": "👑 Постоянный", "uz": "👑 Doimiy", "en": "👑 Permanent"
-                    }.get(lang, "👑 Permanent")
-                    lines.append(f"• 👨‍💼 <b>{escape_md(name_str)}</b> (<code>{tg_id}</code>) - <i>{perm_label}</i>")
-                buttons.append([InlineKeyboardButton(text=f"👨‍💼 {name_str} ({tg_id})", callback_data=f"adm:user_card:{tg_id}")])
+                badge = "⏱️" if (u_obj.admin_type == "temporary" and u_obj.admin_until) else "👨‍💼"
+                btn_txt = f"{badge} {name_str} ({tg_id})"
+                buttons.append([InlineKeyboardButton(text=btn_txt, callback_data=f"adm:user_card:{tg_id}")])
 
         buttons.append([InlineKeyboardButton(text=get_text("btn_add_admin_id", lang), callback_data="adm:add_admin_id")])
         buttons.append([InlineKeyboardButton(text=get_text("btn_gen_admin_code", lang), callback_data="adm:gen_admin_code")])
-        buttons.append(get_nav_buttons(lang, back_callback="adm:cat_staff"))
+        buttons.append([
+            InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="adm:cat_staff"),
+            InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")
+        ])
 
-        await safe_edit_or_answer(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+        await safe_edit_or_answer(query, card_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
-@router.callback_query(F.data == "adm:gen_admin_code")
 async def cb_admin_gen_code(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
