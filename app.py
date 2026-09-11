@@ -142,6 +142,16 @@ def format_telegram_html(text: str) -> str:
     if not text:
         return ""
     t = text
+    # 1. Kökten Çözüm: Literal backslash-n karakterlerini gerçek satır atlamasına çevir
+    t = t.replace(r"\n", "\n").replace(r"\N", "\n")
+    # 2. ASCII ağaç karakterlerini (┌, ├, └, │) temizle
+    t = t.replace("┌", "• ").replace("├", "• ").replace("└", "• ").replace("│", "")
+    # 3. Aşırı uzun ve mobilde taşan çizgileri (━━━━━━━━━━━━━━━━━━━━━━━━━━━━) zarif ayraca çevir
+    t = re.sub(r'━{4,}', '──────────────', t)
+    t = re.sub(r'-{4,}', '──────────────', t)
+    t = re.sub(r'_{4,}', '──────────────', t)
+    # 4. Stray quotes and asterisks
+    t = t.replace("''", "").replace("```", "")
     # Code blocks: ```code``` -> <code>code</code>
     t = re.sub(r"```([^`\n]+)```", r"<code>\1</code>", t)
     # Inline code: `code` -> <code>code</code>
@@ -157,8 +167,9 @@ def format_telegram_html(text: str) -> str:
     # Remove quotes wrapping buttons / emojis
     for q in ('"', "'"):
         t = t.replace(f"{q}📱", "📱").replace(f"📱{q}", "📱").replace(f"{q}🔘", "🔘").replace(f"🔘{q}", "🔘").replace(f"{q}🔑", "🔑").replace(f"🔑{q}", "🔑").replace(f"{q}❌", "❌").replace(f"❌{q}", "❌").replace(f"{q}✅", "✅").replace(f"✅{q}", "✅")
-    return t
-
+    # 5. Art arda gelen 3+ satır boşluklarını 2'ye indir
+    t = re.sub(r'\n{3,}', '\n\n', t)
+    return t.strip()
 def clean_unicode_text(text: str | None) -> str:
     if not text: return ""
     return text.strip().casefold()
@@ -2641,11 +2652,12 @@ def get_language_inline_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_nav_buttons(lang: str = "tr", back_callback: str = "adm:dashboard") -> list:
+    if back_callback == "adm:dashboard":
+        return [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
     return [
         InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=back_callback),
         InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")
     ]
-
 def get_attendance_grid_kb(students: list, attendance_state: dict, class_name: str, lang: str = "tr") -> InlineKeyboardMarkup:
     inline_keyboard = []
     
@@ -5205,7 +5217,7 @@ async def cb_admin_sched_edit_menu(query: CallbackQuery):
         if not classes:
             buttons = [
                 [InlineKeyboardButton(text="➕ " + ("Sınıf Ekle" if lang=="tr" else ("Добавить класс" if lang=="ru" else ("Sinf qo'shish" if lang=="uz" else "Add Class"))), callback_data="adm:add_class")],
-                get_nav_buttons(lang, back_callback="adm:cat_tools")
+                get_nav_buttons(lang, back_callback="adm:cat_tools_reports")
             ]
             await safe_edit_or_answer(query, get_text("no_classes_found", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
             await query.answer()
@@ -6602,7 +6614,7 @@ async def cb_admin_unack_notifs(query: CallbackQuery):
         unacks = (await session.execute(select(CriticalNotification).where(CriticalNotification.created_at >= since, CriticalNotification.acknowledged_at == None).order_by(desc(CriticalNotification.created_at)).limit(20))).scalars().all()
 
         if not unacks:
-            buttons = [get_nav_buttons(lang, back_callback="adm:cat_reports")]
+            buttons = [get_nav_buttons(lang, back_callback="adm:cat_tools_reports")]
             await safe_edit_or_answer(query, get_text("all_notifs_acknowledged", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
             await query.answer()
             return
@@ -6622,7 +6634,7 @@ async def cb_admin_unack_notifs(query: CallbackQuery):
             dt_str = un.created_at.strftime("%d.%m %H:%M")
             lines.append(f"• 👤 *{escape_md(p_name)}* (`{un.user_telegram_id}`) - _{dt_str}_")
 
-        buttons = [get_nav_buttons(lang, back_callback="adm:cat_reports")]
+        buttons = [get_nav_buttons(lang, back_callback="adm:cat_tools_reports")]
         await safe_edit_or_answer(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
@@ -6673,7 +6685,7 @@ async def cb_cockpit(query: CallbackQuery):
         buttons = []
         if missing:
             buttons.append([InlineKeyboardButton(text=get_text("btn_remind_att", lang), callback_data="adm:remind_all_att")])
-        buttons.append(get_nav_buttons(lang, back_callback="adm:cat_reports"))
+        buttons.append(get_nav_buttons(lang, back_callback="adm:cat_tools_reports"))
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
@@ -6710,7 +6722,7 @@ async def cb_admin_risk_radar(query: CallbackQuery):
         header_rr = f"<b>{bc_rr}</b>\n\n⚠️ <b>Riskli Öğrenci Radarı (Devamsızlık & Düşük Not):</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         content = "\n\n".join(risky_items[:20]) if risky_items else no_risk_txt
         text = f"{header_rr}{content}"
-        buttons = [get_nav_buttons(lang, back_callback="adm:cat_reports")]
+        buttons = [get_nav_buttons(lang, back_callback="adm:cat_tools_reports")]
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
@@ -6766,7 +6778,7 @@ async def cb_admin_academic_report(query: CallbackQuery):
         bc_ar = {"tr": "🏠 Ana Menü ➔ 📊 Raporlar ➔ 📈 Sıralama", "ru": "🏠 Главное меню ➔ 📊 Отчеты ➔ 📈 Рейтинг", "uz": "🏠 Asosiy menyu ➔ 📊 Hisobotlar ➔ 📈 Reyting", "en": "🏠 Main Menu ➔ 📊 Reports ➔ 📈 Ranking"}.get(lang, "📈 Ranking")
         header_ar = f"<b>{bc_ar}</b>\n\n📈 <b>Okul Akademik Başarı Sıralaması (Sınıflar):</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         text = f"{header_ar}{content}"
-        buttons = [get_nav_buttons(lang, back_callback="adm:cat_reports")]
+        buttons = [get_nav_buttons(lang, back_callback="adm:cat_tools_reports")]
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
@@ -6796,7 +6808,7 @@ async def cb_admin_att_check(query: CallbackQuery):
             )
             buttons.append([InlineKeyboardButton(text=get_text("btn_remind_att", lang), callback_data="adm:remind_all_att")])
 
-        buttons.append(get_nav_buttons(lang, back_callback="adm:cat_reports"))
+        buttons.append(get_nav_buttons(lang, back_callback="adm:cat_tools_reports"))
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
@@ -6833,7 +6845,7 @@ async def cb_pdf_menu(query: CallbackQuery):
         lang = user.language if user else "tr"
         classes = (await session.execute(select(Student.class_name).distinct().order_by(Student.class_name))).scalars().all()
         if not classes:
-            buttons = [get_nav_buttons(lang, back_callback="adm:cat_tools")]
+            buttons = [get_nav_buttons(lang, back_callback="adm:cat_tools_reports")]
             await safe_edit_or_answer(query, get_text("no_classes_found", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
             await query.answer()
             return
@@ -6846,7 +6858,7 @@ async def cb_pdf_menu(query: CallbackQuery):
                 buttons.append(row)
                 row = []
         if row: buttons.append(row)
-        buttons.append(get_nav_buttons(lang, back_callback="adm:cat_tools"))
+        buttons.append(get_nav_buttons(lang, back_callback="adm:cat_tools_reports"))
         await safe_edit_or_answer(query, get_text("select_pdf_class", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
@@ -7834,7 +7846,7 @@ async def cb_admin_broadcast_hub(query: CallbackQuery):
             ],
             [InlineKeyboardButton(text=get_text("bc_target_lang", lang), callback_data="adm:bc_target:lang")]
         ]
-        buttons.append(get_nav_buttons(lang, back_callback="adm:cat_tools"))
+        buttons.append(get_nav_buttons(lang, back_callback="adm:cat_tools_reports"))
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
@@ -9795,15 +9807,15 @@ async def cleanup_chat_history(bot: Bot, chat_id: int, keep_msg_id: int | None =
             pass
     ACTIVE_CHAT_MESSAGES[chat_id] = {keep_msg_id} if keep_msg_id else set()
 
-def render_pin_screen(cur_pin: str, error_msg: str = "", is_success: bool = False, is_locked: bool = False, lang: str = "tr", custom_title: str = "", custom_prompt: str = "") -> str:
+def render_pin_screen(cur_pin: str, error_msg: str = "", is_success: bool = False, is_locked: bool = False, is_error: bool = False, lang: str = "tr", custom_title: str = "", custom_prompt: str = "") -> str:
     if is_success:
         dots = "🟢  🟢  🟢  🟢"
-    elif is_locked:
+    elif is_locked or is_error:
         dots = "🔴  🔴  🔴  🔴"
     else:
         dots_list = []
         for i in range(4):
-            dots_list.append("🔵" if i < len(cur_pin) else "⚪")
+            dots_list.append("🟢" if i < len(cur_pin) else "⚪")
         dots = "  ".join(dots_list)
 
     title = custom_title or {
@@ -9909,17 +9921,26 @@ async def prompt_for_admin_pin(query: CallbackQuery, state: FSMContext | None, a
 
     chat_id = query.message.chat.id if (query and query.message) else user_id
 
-    await cleanup_chat_history(query.message.bot, chat_id)
-    try:
-        await query.message.delete()
-    except Exception:
-        pass
-
     text = render_pin_screen("", lang=lang)
+    inline_kb = get_pin_inline_kb(lang, callback_prefix="pinkey")
+
+    if query.message:
+        try:
+            await query.message.edit_text(text, reply_markup=inline_kb, parse_mode="HTML")
+            PIN_MSG_ID[user_id] = query.message.message_id
+            PIN_CHAT_ID[user_id] = chat_id
+            LAST_MENU_MSG_ID[chat_id] = query.message.message_id
+            ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(query.message.message_id)
+            asyncio.create_task(admin_pin_auto_timeout(query.message.bot, user_id, chat_id, query.message.message_id, 120))
+            await query.answer()
+            return
+        except Exception:
+            pass
+
     m_sent = await query.message.bot.send_message(
         chat_id=chat_id,
         text=text,
-        reply_markup=get_pin_reply_kb(lang),
+        reply_markup=inline_kb,
         parse_mode="HTML"
     )
     PIN_MSG_ID[user_id] = m_sent.message_id
@@ -9950,6 +9971,8 @@ async def process_action_pin_step(bot: Bot, chat_id: int, msg_id: int, user_id: 
     if not target_action:
         return
 
+    inline_kb = get_pin_inline_kb(lang, callback_prefix="pinkey")
+
     if key == "cancel":
         PIN_PENDING_ACTIONS.pop(user_id, None)
         ADMIN_PIN_INPUT.pop(user_id, None)
@@ -9972,7 +9995,7 @@ async def process_action_pin_step(bot: Bot, chat_id: int, msg_id: int, user_id: 
         cur = cur[:-1]
         ADMIN_PIN_INPUT[user_id] = cur
         try:
-            await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=render_pin_screen(cur, lang=lang), reply_markup=None, parse_mode="HTML")
+            await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=render_pin_screen(cur, lang=lang), reply_markup=inline_kb, parse_mode="HTML")
         except Exception:
             pass
         return
@@ -9983,7 +10006,7 @@ async def process_action_pin_step(bot: Bot, chat_id: int, msg_id: int, user_id: 
 
         if len(cur) < 4:
             try:
-                await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=render_pin_screen(cur, lang=lang), reply_markup=None, parse_mode="HTML")
+                await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=render_pin_screen(cur, lang=lang), reply_markup=inline_kb, parse_mode="HTML")
             except Exception:
                 pass
             return
@@ -10239,9 +10262,10 @@ async def process_pin_change_step(bot: Bot, chat_id: int, msg_id: int, user_id: 
                 if cur == real_admin_pin:
                     sess["step"] = "enter_new"
                     sess["input"] = ""
-                    text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{get_text('prompt_pin_new', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    kb_new = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=sess.get("is_perm", False), step="enter_new")
+                    text = f"{p_title}\n──────────────\n{get_text('prompt_pin_new', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>"
                     try:
-                        await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, reply_markup=None, parse_mode="HTML")
+                        await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, reply_markup=kb_new, parse_mode="HTML")
                     except Exception:
                         pass
                     return
@@ -10263,9 +10287,10 @@ async def process_pin_change_step(bot: Bot, chat_id: int, msg_id: int, user_id: 
                 sess["new_pin"] = cur
                 sess["step"] = "confirm_new"
                 sess["input"] = ""
-                text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{get_text('prompt_pin_confirm', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                kb_confirm = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=sess.get("is_perm", False), step="confirm_new")
+                text = f"{p_title}\n──────────────\n{get_text('prompt_pin_confirm', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>"
                 try:
-                    await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, reply_markup=None, parse_mode="HTML")
+                    await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, reply_markup=kb_confirm, parse_mode="HTML")
                 except Exception:
                     pass
                 return
@@ -10440,7 +10465,7 @@ async def cb_admin_excel_hub(query: CallbackQuery):
                 InlineKeyboardButton(text=get_text("btn_export_all_data", lang), callback_data="adm:export_all_excel"),
                 InlineKeyboardButton(text=get_text("btn_restore_backup", lang), callback_data="adm:restore_backup_init")
             ],
-            get_nav_buttons(lang, back_callback="adm:cat_tools")
+            get_nav_buttons(lang, back_callback="adm:cat_tools_reports")
         ]
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
@@ -11685,7 +11710,7 @@ async def cb_admin_proposals_hub(query: CallbackQuery):
             buttons.append([InlineKeyboardButton(text=f"{st_icon} #{p.id} {p.title[:25]}", callback_data=f"prop:results:{p.id}")])
 
         buttons.append([InlineKeyboardButton(text="➕ Yönetici Olarak Yeni Teklif / Oylama Başlat", callback_data="adm:new_admin_prop")])
-        buttons.append(get_nav_buttons(lang, back_callback="adm:cat_tools"))
+        buttons.append(get_nav_buttons(lang, back_callback="adm:cat_tools_reports"))
 
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
