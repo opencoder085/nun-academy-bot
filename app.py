@@ -266,6 +266,14 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
         except Exception:
             pass
         
+        last_mid = LAST_MENU_MSG_ID.get(target_chat_id)
+        if last_mid:
+            try:
+                await bot_obj.edit_message_text(chat_id=target_chat_id, message_id=last_mid, text=text, reply_markup=reply_markup, parse_mode="HTML")
+                return
+            except Exception:
+                pass
+
         await purge_previous_bot_messages(bot_obj, target_chat_id)
 
         try:
@@ -3694,14 +3702,14 @@ async def cmd_start(message: Message, state: FSMContext):
             return
 
         reply_kb = get_role_reply_kb(user.role, user.language)
-        try: await message.delete()
-        except Exception: pass
-        await purge_previous_bot_messages(message.bot, message.chat.id)
         dash_text = await get_dashboard_card_text(user)
         sent_dash = await message.bot.send_message(chat_id=message.chat.id, text=dash_text, reply_markup=reply_kb, parse_mode="HTML")
         if sent_dash:
             LAST_MENU_MSG_ID[message.chat.id] = sent_dash.message_id
             ACTIVE_CHAT_MESSAGES.setdefault(message.chat.id, set()).add(sent_dash.message_id)
+            await purge_previous_bot_messages(message.bot, message.chat.id, keep_msg_id=sent_dash.message_id)
+        try: await message.delete()
+        except Exception: pass
 
 async def prompt_guest_screen(target: Message | CallbackQuery, user: User, state: FSMContext):
     lang = user.language
@@ -3862,15 +3870,6 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
     bot_obj = target if isinstance(target, Bot) else (target.bot if isinstance(target, Message) else (target.message.bot if target.message else bot))
     target_chat_id = chat_id or (target.chat.id if isinstance(target, Message) else (target.message.chat.id if isinstance(target, CallbackQuery) and target.message else user.telegram_id))
 
-    if isinstance(target, Message):
-        try: await target.delete()
-        except Exception: pass
-    elif isinstance(target, CallbackQuery) and target.message:
-        try: await target.message.delete()
-        except Exception: pass
-
-    await purge_previous_bot_messages(bot_obj, target_chat_id)
-
     sent_m = await bot_obj.send_message(
         chat_id=target_chat_id,
         text=text,
@@ -3878,8 +3877,17 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
         parse_mode="HTML"
     )
     if sent_m:
-        LAST_MENU_MSG_ID[target_chat_id] = sent_m.message_id
-        ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(sent_m.message_id)
+        new_mid = sent_m.message_id
+        LAST_MENU_MSG_ID[target_chat_id] = new_mid
+        ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(new_mid)
+        await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
+
+    if isinstance(target, Message):
+        try: await target.delete()
+        except Exception: pass
+    elif isinstance(target, CallbackQuery) and target.message:
+        try: await target.message.delete()
+        except Exception: pass
 
 async def process_auth_code_string(code: str, user_id: int, message: Message, state: FSMContext):
     clean_code = normalize_code(code)
@@ -4430,10 +4438,10 @@ async def cb_admin_approve_request(query: CallbackQuery, state: FSMContext):
                 cls_buttons.append([InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data=f"adm:view_req:{req.id}")])
 
                 prompt_c = {
-                    "tr": f"🎓 <b>Öğrenci Kayıt Onayı (#{req.id})</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 <b>Öğrenci:</b> {escape_html(req.full_name)}\n📱 <b>Telefon:</b> {escape_html(req.phone or '-')}\n\nLütfen öğrencinin atanacağı <b>Sınıfı</b> seçiniz veya yazınız (Örn: <code>9-A</code>):",
-                    "ru": f"🎓 <b>Одобрение регистрации ученика (#{req.id})</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 <b>Ученик:</b> {escape_html(req.full_name)}\n📱 <b>Телефон:</b> {escape_html(req.phone or '-')}\n\nВыберите <b>Класс</b> или напишите сообщением (Напр: <code>9-A</code>):",
-                    "uz": f"🎓 <b>O'quvchini ro'yxatga olishni tasdiqlash (#{req.id})</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 <b>O'quvchi:</b> {escape_html(req.full_name)}\n📱 <b>Telefon:</b> {escape_html(req.phone or '-')}\n\nIltimos, o'quvchi biriktiriladigan <b>Sinfni</b> tanlang yoki yozing (Masalan: <code>9-A</code>):",
-                    "en": f"🎓 <b>Student Registration Approval (#{req.id})</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 <b>Student:</b> {escape_html(req.full_name)}\n📱 <b>Phone:</b> {escape_html(req.phone or '-')}\n\nPlease select the student's <b>Class</b> or type it (e.g. <code>9-A</code>):"
+                    "tr": f"🎓 <b>Öğrenci Kayıt Onayı (#{req.id})</b>\n──────────────\n👤 <b>Öğrenci:</b> {escape_html(req.full_name)}\n📱 <b>Telefon:</b> {escape_html(req.phone or '-')}\n\nLütfen öğrencinin atanacağı <b>Sınıfı</b> seçiniz veya yazınız (Örn: <code>9-A</code>):",
+                    "ru": f"🎓 <b>Одобрение регистрации ученика (#{req.id})</b>\n──────────────\n👤 <b>Ученик:</b> {escape_html(req.full_name)}\n📱 <b>Телефон:</b> {escape_html(req.phone or '-')}\n\nВыберите <b>Класс</b> или напишите сообщением (Напр: <code>9-A</code>):",
+                    "uz": f"🎓 <b>O'quvchini ro'yxatga olishni tasdiqlash (#{req.id})</b>\n──────────────\n👤 <b>O'quvchi:</b> {escape_html(req.full_name)}\n📱 <b>Telefon:</b> {escape_html(req.phone or '-')}\n\nIltimos, o'quvchi biriktiriladigan <b>Sinfni</b> tanlang yoki yozing (Masalan: <code>9-A</code>):",
+                    "en": f"🎓 <b>Student Registration Approval (#{req.id})</b>\n──────────────\n👤 <b>Student:</b> {escape_html(req.full_name)}\n📱 <b>Phone:</b> {escape_html(req.phone or '-')}\n\nPlease select the student's <b>Class</b> or type it (e.g. <code>9-A</code>):"
                 }.get(lang, "Select Class:")
 
                 await safe_edit_or_answer(query, prompt_c, reply_markup=InlineKeyboardMarkup(inline_keyboard=cls_buttons), parse_mode="HTML")
@@ -4459,14 +4467,145 @@ async def cb_admin_approve_request(query: CallbackQuery, state: FSMContext):
         target_user.failed_attempts = 0
         target_user.locked_until = None
 
+        adm_card = ""
+        extra_btn = None
+
         if req.role == "teacher":
             tch = (await session.execute(select(Teacher).where(Teacher.full_name == req.full_name))).scalar_one_or_none()
             if not tch:
-                tch = Teacher(full_name=req.full_name, subject=req.details, auth_code=generate_secure_code("HCA"), telegram_id=req.telegram_id, is_code_burned=True, assigned_classes="ALL")
+                tch = Teacher(full_name=req.full_name, subject=(req.details or "Genel"), auth_code=generate_secure_code("HCA"), telegram_id=req.telegram_id, is_code_burned=True, assigned_classes="ALL")
                 session.add(tch)
             else:
                 tch.telegram_id = req.telegram_id
                 tch.is_code_burned = True
+                if req.details: tch.subject = req.details
+            await session.flush()
+
+            adm_card = {
+                "tr": (
+                    f"✅ <b>ÖĞRETMEN BAŞVURUSU ONAYLANDI (#{req.id})</b>\n"
+                    "──────────────\n"
+                    f"📋 <b>Yetki:</b> 👨‍🏫 Öğretmen\n"
+                    f"👤 <b>Adı Soyadı:</b> <b>{escape_html(req.full_name)}</b>\n"
+                    f"📚 <b>Branş / Ders:</b> <code>{escape_html(tch.subject or 'Genel')}</code>\n"
+                    f"🏫 <b>Atanan Sınıflar:</b> <code>{escape_html(tch.assigned_classes or 'Tüm Sınıflar')}</code>\n"
+                    f"📱 <b>Telefon:</b> <code>{escape_html(req.phone or '-')}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{req.telegram_id}</code>\n"
+                    f"🔑 <b>Öğretmen Giriş Kodu:</b> <code>{tch.auth_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Kullanıcı 'Öğretmen' olarak onaylandı. Aşağıdaki butona tıklayarak giriş şifresini ve kodunu doğrudan kullanıcıya gönderebilirsiniz.</i>"
+                ),
+                "ru": (
+                    f"✅ <b>ЗАЯВКА УЧИТЕЛЯ ОДОБРЕНА (#{req.id})</b>\n"
+                    "──────────────\n"
+                    f"📋 <b>Роль:</b> 👨‍🏫 Учитель\n"
+                    f"👤 <b>ФИО:</b> <b>{escape_html(req.full_name)}</b>\n"
+                    f"📚 <b>Предмет:</b> <code>{escape_html(tch.subject or 'Общий')}</code>\n"
+                    f"🏫 <b>Классы:</b> <code>{escape_html(tch.assigned_classes or 'Все классы')}</code>\n"
+                    f"📱 <b>Телефон:</b> <code>{escape_html(req.phone or '-')}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{req.telegram_id}</code>\n"
+                    f"🔑 <b>Код доступа:</b> <code>{tch.auth_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Пользователь одобрен как Учитель. Нажмите кнопку ниже для отправки пароля пользователю.</i>"
+                ),
+                "uz": (
+                    f"✅ <b>O'QITUVCHI ARIZASI TASDIQLANDI (#{req.id})</b>\n"
+                    "──────────────\n"
+                    f"📋 <b>Lavozim:</b> 👨‍🏫 O'qituvchi\n"
+                    f"👤 <b>F.I.O:</b> <b>{escape_html(req.full_name)}</b>\n"
+                    f"📚 <b>Fani:</b> <code>{escape_html(tch.subject or 'Umumiy')}</code>\n"
+                    f"🏫 <b>Biriktirilgan sinflar:</b> <code>{escape_html(tch.assigned_classes or 'Barcha sinflar')}</code>\n"
+                    f"📱 <b>Telefon:</b> <code>{escape_html(req.phone or '-')}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{req.telegram_id}</code>\n"
+                    f"🔑 <b>Kirish kodi:</b> <code>{tch.auth_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Foydalanuvchi O'qituvchi sifatida tasdiqlandi. Quyidagi tugma orqali parolni foydalanuvchiga yuborishingiz mumkin.</i>"
+                ),
+                "en": (
+                    f"✅ <b>TEACHER REQUEST APPROVED (#{req.id})</b>\n"
+                    "──────────────\n"
+                    f"📋 <b>Role:</b> 👨‍🏫 Teacher\n"
+                    f"👤 <b>Name:</b> <b>{escape_html(req.full_name)}</b>\n"
+                    f"📚 <b>Subject:</b> <code>{escape_html(tch.subject or 'General')}</code>\n"
+                    f"🏫 <b>Assigned Classes:</b> <code>{escape_html(tch.assigned_classes or 'All Classes')}</code>\n"
+                    f"📱 <b>Phone:</b> <code>{escape_html(req.phone or '-')}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{req.telegram_id}</code>\n"
+                    f"🔑 <b>Access Code:</b> <code>{tch.auth_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>User approved as Teacher. Click the button below to send credentials to the user.</i>"
+                )
+            }.get(lang, "Teacher request approved.")
+
+        elif req.role == "student":
+            st = await session.get(Student, req.student_match_id) if req.student_match_id else None
+            st_cls = st.class_name if st else "-"
+            st_no = st.student_number if st else "-"
+            st_code = st.student_code if st else "-"
+            pr_code = st.parent_code if st else "-"
+
+            adm_card = {
+                "tr": (
+                    f"✅ <b>ÖĞRENCİ BAŞVURUSU ONAYLANDI (#{req.id})</b>\n"
+                    "──────────────\n"
+                    f"📋 <b>Yetki:</b> 🎓 Öğrenci\n"
+                    f"👤 <b>Adı Soyadı:</b> <b>{escape_html(req.full_name)}</b>\n"
+                    f"🏫 <b>Sınıfı:</b> <code>{escape_html(st_cls)}</code>\n"
+                    f"🔢 <b>Okul Numarası:</b> <code>{escape_html(st_no)}</code>\n"
+                    f"📱 <b>Telefon:</b> <code>{escape_html(req.phone or '-')}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{req.telegram_id}</code>\n"
+                    f"🔑 <b>Öğrenci Kodu:</b> <code>{st_code}</code>\n"
+                    f"👨‍👩‍👧 <b>Veli Kodu:</b> <code>{pr_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Öğrenci kaydı eşleştirildi ve onaylandı.</i>"
+                ),
+                "ru": (
+                    f"✅ <b>ЗАЯВКА УЧЕНИКА ОДОБРЕНА (#{req.id})</b>\n"
+                    "──────────────\n"
+                    f"📋 <b>Роль:</b> 🎓 Ученик\n"
+                    f"👤 <b>ФИО:</b> <b>{escape_html(req.full_name)}</b>\n"
+                    f"🏫 <b>Класс:</b> <code>{escape_html(st_cls)}</code>\n"
+                    f"🔢 <b>Номер:</b> <code>{escape_html(st_no)}</code>\n"
+                    f"📱 <b>Телефон:</b> <code>{escape_html(req.phone or '-')}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{req.telegram_id}</code>\n"
+                    f"🔑 <b>Код ученика:</b> <code>{st_code}</code>\n"
+                    f"🔑 <b>Код родителя:</b> <code>{pr_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Запись ученика привязана и подтверждена.</i>"
+                ),
+                "uz": (
+                    f"✅ <b>O'QUVCHI ARIZASI TASDIQLANDI (#{req.id})</b>\n"
+                    "──────────────\n"
+                    f"📋 <b>Lavozim:</b> 🎓 O'quvchi\n"
+                    f"👤 <b>F.I.O:</b> <b>{escape_html(req.full_name)}</b>\n"
+                    f"🏫 <b>Sinfi:</b> <code>{escape_html(st_cls)}</code>\n"
+                    f"🔢 <b>Maktab raqami:</b> <code>{escape_html(st_no)}</code>\n"
+                    f"📱 <b>Telefon:</b> <code>{escape_html(req.phone or '-')}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{req.telegram_id}</code>\n"
+                    f"🔑 <b>O'quvchi kodi:</b> <code>{st_code}</code>\n"
+                    f"🔑 <b>Ota-ona kodi:</b> <code>{pr_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>O'quvchi qaydi biriktirildi va tasdiqlandi.</i>"
+                ),
+                "en": (
+                    f"✅ <b>STUDENT REQUEST APPROVED (#{req.id})</b>\n"
+                    "──────────────\n"
+                    f"📋 <b>Role:</b> 🎓 Student\n"
+                    f"👤 <b>Name:</b> <b>{escape_html(req.full_name)}</b>\n"
+                    f"🏫 <b>Class:</b> <code>{escape_html(st_cls)}</code>\n"
+                    f"🔢 <b>Roll:</b> <code>{escape_html(st_no)}</code>\n"
+                    f"📱 <b>Phone:</b> <code>{escape_html(req.phone or '-')}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{req.telegram_id}</code>\n"
+                    f"🔑 <b>Student Code:</b> <code>{st_code}</code>\n"
+                    f"🔑 <b>Parent Code:</b> <code>{pr_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Student record matched and approved.</i>"
+                )
+            }.get(lang, "Student request approved.")
+
+            if st and st.class_name:
+                btn_view_cls = {"tr": f"🏫 {st.class_name} Sınıfını Gör", "ru": f"🏫 Класс {st.class_name}", "uz": f"🏫 {st.class_name} sinfi", "en": f"🏫 Class {st.class_name}"}.get(lang, f"🏫 {st.class_name}")
+                extra_btn = InlineKeyboardButton(text=btn_view_cls, callback_data=f"adm:show_class:{st.class_name}")
+
         elif req.role == "parent":
             st_id = req.student_match_id
             if not st_id:
@@ -4475,11 +4614,69 @@ async def cb_admin_approve_request(query: CallbackQuery, state: FSMContext):
                     if s.full_name.lower() in req.details.lower():
                         st_id = s.id
                         break
+            st = await session.get(Student, st_id) if st_id else None
+            st_name = st.full_name if st else "-"
+            st_cls = st.class_name if st else "-"
+            st_no = st.student_number if st else "-"
+            pr_code = st.parent_code if st else "-"
+
             if st_id:
                 target_user.current_child_id = st_id
                 rel = (await session.execute(select(ParentStudent).where(ParentStudent.parent_telegram_id == req.telegram_id, ParentStudent.student_id == st_id))).scalar_one_or_none()
                 if not rel:
                     session.add(ParentStudent(parent_telegram_id=req.telegram_id, student_id=st_id))
+            await session.flush()
+
+            adm_card = {
+                "tr": (
+                    f"✅ <b>VELİ BAŞVURUSU ONAYLANDI (#{req.id})</b>\n"
+                    "──────────────\n"
+                    f"📋 <b>Yetki:</b> 👨‍👩‍👧 Veli\n"
+                    f"👤 <b>Adı Soyadı:</b> <b>{escape_html(req.full_name)}</b>\n"
+                    f"🧑‍🎓 <b>Bağlanan Öğrenci:</b> <b>{escape_html(st_name)}</b> (<code>{escape_html(st_cls)}</code> - No: <code>{escape_html(st_no)}</code>)\n"
+                    f"📱 <b>Telefon:</b> <code>{escape_html(req.phone or '-')}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{req.telegram_id}</code>\n"
+                    f"🔑 <b>Veli Giriş Kodu:</b> <code>{pr_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Veli hesabı öğrenciyle eşleştirildi. Şifreyi kullanıcıya iletmek için aşağıdaki butonu kullanabilirsiniz.</i>"
+                ),
+                "ru": (
+                    f"✅ <b>ЗАЯВКА РОДИТЕЛЯ ОДОБРЕНА (#{req.id})</b>\n"
+                    "──────────────\n"
+                    f"📋 <b>Роль:</b> 👨‍👩‍👧 Родитель\n"
+                    f"👤 <b>ФИО:</b> <b>{escape_html(req.full_name)}</b>\n"
+                    f"🧑‍🎓 <b>Ученик:</b> <b>{escape_html(st_name)}</b> (<code>{escape_html(st_cls)}</code> - № <code>{escape_html(st_no)}</code>)\n"
+                    f"📱 <b>Телефон:</b> <code>{escape_html(req.phone or '-')}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{req.telegram_id}</code>\n"
+                    f"🔑 <b>Код родителя:</b> <code>{pr_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Родитель успешно привязан к ученику. Нажмите кнопку ниже для отправки доступа.</i>"
+                ),
+                "uz": (
+                    f"✅ <b>OTA-ONA ARIZASI TASDIQLANDI (#{req.id})</b>\n"
+                    "──────────────\n"
+                    f"📋 <b>Lavozim:</b> 👨‍👩‍👧 Ota-ona\n"
+                    f"👤 <b>F.I.O:</b> <b>{escape_html(req.full_name)}</b>\n"
+                    f"🧑‍🎓 <b>Biriktirilgan o'quvchi:</b> <b>{escape_html(st_name)}</b> (<code>{escape_html(st_cls)}</code> - № <code>{escape_html(st_no)}</code>)\n"
+                    f"📱 <b>Telefon:</b> <code>{escape_html(req.phone or '-')}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{req.telegram_id}</code>\n"
+                    f"🔑 <b>Ota-ona kodi:</b> <code>{pr_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Ota-ona profili o'quvchiga muvaffaqiyatli biriktirildi.</i>"
+                ),
+                "en": (
+                    f"✅ <b>PARENT REQUEST APPROVED (#{req.id})</b>\n"
+                    "──────────────\n"
+                    f"📋 <b>Role:</b> 👨‍👩‍👧 Parent\n"
+                    f"👤 <b>Name:</b> <b>{escape_html(req.full_name)}</b>\n"
+                    f"🧑‍🎓 <b>Linked Student:</b> <b>{escape_html(st_name)}</b> (<code>{escape_html(st_cls)}</code> - No: <code>{escape_html(st_no)}</code>)\n"
+                    f"📱 <b>Phone:</b> <code>{escape_html(req.phone or '-')}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{req.telegram_id}</code>\n"
+                    f"🔑 <b>Parent Code:</b> <code>{pr_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Parent profile successfully linked to student.</i>"
+                )
+            }.get(lang, "Parent request approved.")
 
         await session.commit()
 
@@ -4493,8 +4690,217 @@ async def cb_admin_approve_request(query: CallbackQuery, state: FSMContext):
         )
 
         await safe_send_message(query.message.bot, req.telegram_id, get_text("req_approved_user", target_user.language, role=req.role), reply_markup=get_role_reply_kb(req.role, target_user.language), parse_mode="HTML")
-        await safe_edit_or_answer(query, get_text("req_approved_admin_msg", lang, id=req.id, name=escape_html(req.full_name), role=req.role), parse_mode="HTML")
+
+        btn_send = {"tr": "📲 Kullanıcıya Şifreyi Gönder", "ru": "📲 Отправить пароль пользователю", "uz": "📲 Foydalanuvchiga parolni yuborish", "en": "📲 Send Credentials to User"}.get(lang, "Send Credentials")
+        buttons = [[InlineKeyboardButton(text=btn_send, callback_data=f"adm:send_creds:{req.id}")]]
+        if extra_btn:
+            buttons.append([extra_btn])
+        buttons.append([
+            InlineKeyboardButton(text=get_text("btn_requests", lang).split("(")[0].strip(), callback_data="adm:requests_list"),
+            InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")
+        ])
+
+        await safe_edit_or_answer(query, adm_card, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer(get_text("acknowledged_toast", lang))
+
+
+@router.callback_query(F.data.startswith("adm:send_creds:"))
+async def cb_admin_send_credentials(query: CallbackQuery):
+    req_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        admin_user = await session.get(User, query.from_user.id)
+        lang = admin_user.language if admin_user else "tr"
+        if not is_admin_user(admin_user, query.from_user.id):
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+            return
+
+        req = await session.get(AccessRequest, req_id)
+        if not req:
+            await query.answer("⚠️ Başvuru bulunamadı." if lang == "tr" else "Not found", show_alert=True)
+            return
+
+        target_user = await session.get(User, req.telegram_id)
+        u_lang = target_user.language if target_user else "tr"
+
+        if req.role == "teacher":
+            tch = (await session.execute(select(Teacher).where(Teacher.telegram_id == req.telegram_id))).scalar_one_or_none()
+            if not tch:
+                tch = (await session.execute(select(Teacher).where(Teacher.full_name == req.full_name))).scalar_one_or_none()
+            code = tch.auth_code if tch else "-"
+            subj = tch.subject if tch else (req.details or "Genel")
+            
+            cred_msg = {
+                "tr": (
+                    f"🎉 <b>Sayın {escape_html(req.full_name)},</b>\n\n"
+                    "Okul idaresi başvurunuzu onayladı ve sisteme erişim yetkiniz tanımlandı.\n\n"
+                    "📋 <b>Giriş Bilgileriniz:</b>\n"
+                    f"• <b>Rolünüz:</b> 👨‍🏫 Öğretmen\n"
+                    f"• <b>Branşınız:</b> {escape_html(subj)}\n"
+                    f"• <b>Özel Giriş Şifreniz / Kodunuz:</b> <code>{code}</code>\n\n"
+                    "<i>Aşağıdaki menüden dilediğiniz işlemi başlatabilirsiniz. İyi dersler dileriz!</i>"
+                ),
+                "ru": (
+                    f"🎉 <b>Уважаемый(ая) {escape_html(req.full_name)},</b>\n\n"
+                    "Администрация школы одобрила вашу заявку и предоставила доступ к системе.\n\n"
+                    "📋 <b>Данные для входа:</b>\n"
+                    f"• <b>Должность:</b> 👨‍🏫 Учитель\n"
+                    f"• <b>Предмет:</b> {escape_html(subj)}\n"
+                    f"• <b>Ваш код доступа (пароль):</b> <code>{code}</code>\n\n"
+                    "<i>Используйте меню ниже для работы с ботом. Желаем успешных занятий!</i>"
+                ),
+                "uz": (
+                    f"🎉 <b>Hurmatli {escape_html(req.full_name)},</b>\n\n"
+                    "Maktab ma'muriyati arizangizni tasdiqladi va tizimga kirish ruxsatini berdi.\n\n"
+                    "📋 <b>Kirish ma'lumotlaringiz:</b>\n"
+                    f"• <b>Lavozimingiz:</b> 👨‍🏫 O'qituvchi\n"
+                    f"• <b>Faningiz:</b> {escape_html(subj)}\n"
+                    f"• <b>Maxsus kirish kodingiz (parol):</b> <code>{code}</code>\n\n"
+                    "<i>Quyidagi menyu orqali faoliyatni boshlashingiz mumkin. Omadli darslar!</i>"
+                ),
+                "en": (
+                    f"🎉 <b>Dear {escape_html(req.full_name)},</b>\n\n"
+                    "The school administration has approved your request and granted system access.\n\n"
+                    "📋 <b>Your Credentials:</b>\n"
+                    f"• <b>Role:</b> 👨‍🏫 Teacher\n"
+                    f"• <b>Subject:</b> {escape_html(subj)}\n"
+                    f"• <b>Access Code / Password:</b> <code>{code}</code>\n\n"
+                    "<i>You can use the menu below to navigate the bot. Have a great teaching session!</i>"
+                )
+            }.get(u_lang, "Access approved.")
+
+        elif req.role == "student":
+            st = await session.get(Student, req.student_match_id) if req.student_match_id else None
+            if not st:
+                st = (await session.execute(select(Student).where(Student.student_telegram_id == req.telegram_id))).scalar_one_or_none()
+            st_code = st.student_code if st else "-"
+            pr_code = st.parent_code if st else "-"
+            cls_name = st.class_name if st else "-"
+            st_no = st.student_number if st else "-"
+
+            cred_msg = {
+                "tr": (
+                    f"🎉 <b>Sayın {escape_html(req.full_name)},</b>\n\n"
+                    "Okul idaresi öğrenci kaydınızı ve başvurunuzu onayladı!\n\n"
+                    "📋 <b>Öğrenci Bilgileriniz:</b>\n"
+                    f"• <b>Sınıfınız:</b> <code>{cls_name}</code>\n"
+                    f"• <b>Okul Numaranız:</b> <code>{st_no}</code>\n"
+                    f"• <b>Öğrenci Giriş Kodunuz:</b> <code>{st_code}</code>\n"
+                    f"• <b>Veli Bağlantı Kodunuz:</b> <code>{pr_code}</code>\n\n"
+                    "<i>Aşağıdaki menüyü kullanarak notlarınızı, ödevlerinizi ve ders durumunuzu takip edebilirsiniz. Başarılar dileriz!</i>"
+                ),
+                "ru": (
+                    f"🎉 <b>Уважаемый(ая) {escape_html(req.full_name)},</b>\n\n"
+                    "Администрация школы одобрила вашу регистрацию в качестве ученика!\n\n"
+                    "📋 <b>Данные ученика:</b>\n"
+                    f"• <b>Класс:</b> <code>{cls_name}</code>\n"
+                    f"• <b>Номер в школе:</b> <code>{st_no}</code>\n"
+                    f"• <b>Код ученика:</b> <code>{st_code}</code>\n"
+                    f"• <b>Код для родителя:</b> <code>{pr_code}</code>\n\n"
+                    "<i>Используйте меню ниже для просмотра оценок и заданий. Желаем успехов!</i>"
+                ),
+                "uz": (
+                    f"🎉 <b>Hurmatli {escape_html(req.full_name)},</b>\n\n"
+                    "Maktab ma'muriyati o'quvchi arizangizni tasdiqladi!\n\n"
+                    "📋 <b>O'quvchi ma'lumotlari:</b>\n"
+                    f"• <b>Sinfingiz:</b> <code>{cls_name}</code>\n"
+                    f"• <b>Maktab raqamingiz:</b> <code>{st_no}</code>\n"
+                    f"• <b>O'quvchi kodingiz:</b> <code>{st_code}</code>\n"
+                    f"• <b>Ota-ona ulanish kodi:</b> <code>{pr_code}</code>\n\n"
+                    "<i>Baholar va vazifalarni kuzatish uchun quyidagi menyudan foydalaning. O'qishlaringizda zafarlar!</i>"
+                ),
+                "en": (
+                    f"🎉 <b>Dear {escape_html(req.full_name)},</b>\n\n"
+                    "The school administration has approved your student registration!\n\n"
+                    "📋 <b>Student Information:</b>\n"
+                    f"• <b>Class:</b> <code>{cls_name}</code>\n"
+                    f"• <b>Roll Number:</b> <code>{st_no}</code>\n"
+                    f"• <b>Student Code:</b> <code>{st_code}</code>\n"
+                    f"• <b>Parent Code:</b> <code>{pr_code}</code>\n\n"
+                    "<i>Use the menu below to view your grades and homework. Best of luck!</i>"
+                )
+            }.get(u_lang, "Student credentials.")
+
+        else: # parent
+            st = None
+            if req.student_match_id:
+                st = await session.get(Student, req.student_match_id)
+            if not st:
+                ps = (await session.execute(select(ParentStudent).where(ParentStudent.parent_telegram_id == req.telegram_id))).scalar_one_or_none()
+                if ps:
+                    st = await session.get(Student, ps.student_id)
+            
+            st_name = st.full_name if st else "Öğrenciniz"
+            pr_code = st.parent_code if st else "-"
+
+            cred_msg = {
+                "tr": (
+                    f"🎉 <b>Sayın {escape_html(req.full_name)},</b>\n\n"
+                    "Okul idaresi veli başvurunuzu onayladı ve öğrencinizle bağlantınız kuruldu.\n\n"
+                    "📋 <b>Veli Erişim Bilgileriniz:</b>\n"
+                    f"• <b>Rolünüz:</b> 👨‍👩‍👧 Veli\n"
+                    f"• <b>Bağlanan Öğrenci:</b> <b>{escape_html(st_name)}</b>\n"
+                    f"• <b>Veli Giriş Kodunuz:</b> <code>{pr_code}</code>\n\n"
+                    "<i>Aşağıdaki menüyü kullanarak öğrencimizin notlarını, devamsızlığını ve sağlık raporlarını takip edebilirsiniz.</i>"
+                ),
+                "ru": (
+                    f"🎉 <b>Уважаемый(ая) {escape_html(req.full_name)},</b>\n\n"
+                    "Администрация школы одобрила вашу заявку родителя.\n\n"
+                    "📋 <b>Данные доступа:</b>\n"
+                    f"• <b>Роль:</b> 👨‍👩‍👧 Родитель\n"
+                    f"• <b>Ученик:</b> <b>{escape_html(st_name)}</b>\n"
+                    f"• <b>Код доступа:</b> <code>{pr_code}</code>\n\n"
+                    "<i>Используйте меню ниже для просмотра успеваемости и посещаемости ребенка.</i>"
+                ),
+                "uz": (
+                    f"🎉 <b>Hurmatli {escape_html(req.full_name)},</b>\n\n"
+                    "Maktab ma'muriyati ota-ona arizangizni tasdiqladi.\n\n"
+                    "📋 <b>Kirish ma'lumotlari:</b>\n"
+                    f"• <b>Rol:</b> 👨‍👩‍👧 Ota-ona\n"
+                    f"• <b>Bog'langan o'quvchi:</b> <b>{escape_html(st_name)}</b>\n"
+                    f"• <b>Ota-ona kodingiz:</b> <code>{pr_code}</code>\n\n"
+                    "<i>Farzandingizning baholari va davomatini quyidagi menyu orqali kuzatib boring.</i>"
+                ),
+                "en": (
+                    f"🎉 <b>Dear {escape_html(req.full_name)},</b>\n\n"
+                    "The school administration has approved your parent request.\n\n"
+                    "📋 <b>Parent Access Info:</b>\n"
+                    f"• <b>Role:</b> 👨‍👩‍👧 Parent\n"
+                    f"• <b>Linked Student:</b> <b>{escape_html(st_name)}</b>\n"
+                    f"• <b>Parent Code:</b> <code>{pr_code}</code>\n\n"
+                    "<i>Use the menu below to monitor student grades, attendance, and medical reports.</i>"
+                )
+            }.get(u_lang, "Parent credentials.")
+
+        u_role = req.role or "guest"
+        role_kb = get_role_reply_kb(u_role, u_lang)
+        await safe_send_message(query.message.bot, req.telegram_id, cred_msg, reply_markup=role_kb, parse_mode="HTML")
+
+        if query.message and query.message.reply_markup:
+            new_rows = []
+            for row in query.message.reply_markup.inline_keyboard:
+                new_row = []
+                for b in row:
+                    if b.callback_data == query.data:
+                        sent_lbl = {"tr": "✅ Şifre Gönderildi", "ru": "✅ Пароль отправлен", "uz": "✅ Parol yuborildi", "en": "✅ Password Sent"}.get(lang, "✅ Sent")
+                        new_row.append(InlineKeyboardButton(text=sent_lbl, callback_data="noop"))
+                    else:
+                        new_row.append(b)
+                new_rows.append(new_row)
+            try:
+                await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=new_rows))
+            except Exception:
+                pass
+
+        alert_txt = {
+            "tr": "✅ Şifre ve giriş bilgileri kullanıcıya başarıyla gönderildi!",
+            "ru": "✅ Пароль и данные для входа успешно отправлены пользователю!",
+            "uz": "✅ Parol va kirish ma'lumotlari foydalanuvchiga muvaffaqiyatli yuborildi!",
+            "en": "✅ Credentials and password successfully sent to user!"
+        }.get(lang, "Credentials sent successfully!")
+        await query.answer(alert_txt, show_alert=True)
+
+        await log_audit(session, query.from_user.id, (admin_user.full_name if admin_user else "Yönetici"), "ŞİFRE İLETİLDİ", f"Başvuru #{req.id} ({req.full_name}) kullanıcısına şifre/kodlar iletildi.")
+        await session.commit()
 
 @router.callback_query(any_state, F.data.startswith("adm:appr_cls:"))
 async def cb_appr_select_class(query: CallbackQuery, state: FSMContext):
@@ -4778,7 +5184,15 @@ async def cb_appr_st_finalize(query: CallbackQuery, state: FSMContext):
             "en": f"🏫 View Class {cls_name}"
         }.get(lang, f"🏫 View Class {cls_name}")
 
+        btn_send_cred = {
+            "tr": "📲 Kullanıcıya Şifreyi Gönder",
+            "ru": "📲 Отправить пароль пользователю",
+            "uz": "📲 Foydalanuvchiga parolni yuborish",
+            "en": "📲 Send Credentials to User"
+        }.get(lang, "📲 Send Credentials")
+
         buttons = [
+            [InlineKeyboardButton(text=btn_send_cred, callback_data=f"adm:send_creds:{req_id}")],
             [InlineKeyboardButton(text=btn_view_cls, callback_data=f"adm:show_class:{cls_name}")],
             [InlineKeyboardButton(text=get_text("btn_requests", lang).split("(")[0].strip(), callback_data="adm:requests_list")],
             [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
@@ -10840,12 +11254,6 @@ async def global_reply_keyboard_router(message: Message, state: FSMContext):
         await message.delete()
     except Exception:
         pass
-    last_mid = LAST_MENU_MSG_ID.pop(message.chat.id, None)
-    if last_mid:
-        try:
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=last_mid)
-        except Exception:
-            pass
 
     if action:
         await state.clear()
