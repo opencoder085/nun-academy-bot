@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-OKUL YÖNETİM TELEGRAM BOTU - KURUMSAL VE EKSİKSİZ TAM SİSTEM MİMARİSİ (PROD V24 - BULLETPROOF ENTERPRISE)
+OKUL YÖNETİM TELEGRAM BOTU - KURUMSAL VE EKSİKSİZ TAM SİSTEM MİMARİSİ (PROD V26 - BULLETPROOF ENTERPRISE)
 Altyapı: FastAPI + aiogram 3.x Webhook + PostgreSQL (Neon / Supabase) / SQLite Çift Motor Kalkanı
 4 Dilli Kusursuz Arayüz (i18n): 🇹🇷 Türkçe, 🇷🇺 Русский, 🇺🇿 O'zbekcha (Lotin), 🇬🇧 English
 Platform: Render Web Service / VPS / Docker
@@ -18,7 +18,7 @@ Platform: Render Web Service / VPS / Docker
 - 📅 Sınav Takvimi & Akademik Takvim (Sınıf bazlı yaklaşan sınavlar ve etkinlikler).
 - 🚨 Acil Durum / Kırmızı Alarm Bildirimi (Yüksek öncelikli sesli uyarı ve zorunlu veli onay takibi).
 - 🎓 Dönem Sonu Sınıf Atlatma / Terfi Aracı.
-- 👨‍🏫 Öğretmen Toplu Excel Yükleme & Sorumlu Sınıf Kısıtlama Kalkanı.
+- 👨‍🏫 Öğretmen İnteraktif Sınıf Yönetim Masası (%100 In-Place Multi-Select, Sınıf Devretme & Ortak Hoca Ekleme).
 - 🔄 Okul Veri Yedeğinden Geri Yükleme (Disaster Recovery - Restore).
 - ⚠️ Yasal Devamsızlık Sınırı Kalkanı (5, 10, 15 gün barajlarında veliye otomatik resmi uyarı).
 - 📱 Telegram ile Doğrulanmış Telefon Paylaşımı (request_contact=True).
@@ -79,7 +79,7 @@ if not WEBHOOK_URL:
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "OkulBotSecret2026").strip()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///school.db").strip()
 
-PERMANENT_ADMIN_IDS = [8576061834, 2146753102, 1885043735]
+PERMANENT_ADMIN_IDS = [2146753102, 1885043735]
 ADMIN_CODE = os.getenv("ADMIN_CODE", "ADM-OKUL-2026").strip()
 TIMEZONE_OFFSET = int(os.getenv("TIMEZONE_OFFSET", "3"))
 
@@ -88,7 +88,7 @@ for x in os.getenv("ADMIN_IDS", "").split(","):
     clean_x = x.strip().replace("@", "")
     if clean_x.isdigit():
         val = int(clean_x)
-        if val not in ADMIN_IDS:
+        if val not in ADMIN_IDS and val != 8576061834:
             ADMIN_IDS.append(val)
 
 def get_local_now() -> datetime:
@@ -119,6 +119,10 @@ def normalize_code(code_str: str) -> str:
     if m:
         cleaned = f"{m.group(1)}-{m.group(2)}"
     return cleaned
+
+def clean_unicode_text(text: str | None) -> str:
+    if not text: return ""
+    return text.strip().casefold()
 
 async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_markup=None, parse_mode="Markdown"):
     if isinstance(target, CallbackQuery):
@@ -207,12 +211,12 @@ class AdminKey(Base):
 class User(Base):
     __tablename__ = "users"
     telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
-    role: Mapped[str] = mapped_column(String(20), default="guest") # admin, teacher, parent, student, guest
+    role: Mapped[str] = mapped_column(String(20), default="guest")
     language: Mapped[str] = mapped_column(String(5), default="tr")
     full_name: Mapped[str] = mapped_column(String(100), nullable=True)
     username: Mapped[str] = mapped_column(String(100), nullable=True)
     phone: Mapped[str] = mapped_column(String(30), nullable=True)
-    admin_type: Mapped[str] = mapped_column(String(20), default="none") # permanent, temporary, none
+    admin_type: Mapped[str] = mapped_column(String(20), default="none")
     admin_until: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     previous_role: Mapped[str] = mapped_column(String(20), default="guest")
     failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
@@ -256,7 +260,7 @@ class Attendance(Base):
     student_id: Mapped[int] = mapped_column(Integer, ForeignKey("students.id"), index=True)
     class_name: Mapped[str] = mapped_column(String(20), index=True)
     date: Mapped[date] = mapped_column(Date, default=lambda: datetime.utcnow().date(), index=True)
-    status: Mapped[str] = mapped_column(String(10), default="present") # present, absent, excused
+    status: Mapped[str] = mapped_column(String(10), default="present")
     teacher_id: Mapped[int] = mapped_column(BigInteger)
     notify_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     is_notified: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
@@ -269,7 +273,7 @@ class Grade(Base):
     subject: Mapped[str] = mapped_column(String(50))
     exam_type: Mapped[str] = mapped_column(String(40), default="1. Yazılı")
     score: Mapped[float] = mapped_column(Float)
-    badge: Mapped[str] = mapped_column(String(10)) # 🟢, 🟡, 🔴
+    badge: Mapped[str] = mapped_column(String(10))
     note: Mapped[str] = mapped_column(Text, nullable=True)
     teacher_id: Mapped[int] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -278,8 +282,8 @@ class BehaviorRecord(Base):
     __tablename__ = "behavior_records"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     student_id: Mapped[int] = mapped_column(Integer, ForeignKey("students.id"), index=True)
-    behavior_type: Mapped[str] = mapped_column(String(20), default="positive") # positive, negative
-    badge: Mapped[str] = mapped_column(String(10)) # ⭐, 🏆, 👏, ⚠️, 🔴
+    behavior_type: Mapped[str] = mapped_column(String(20), default="positive")
+    badge: Mapped[str] = mapped_column(String(10))
     title: Mapped[str] = mapped_column(String(100))
     note: Mapped[str] = mapped_column(Text, nullable=True)
     teacher_id: Mapped[int] = mapped_column(BigInteger)
@@ -316,7 +320,7 @@ class MedicalReport(Base):
     parent_telegram_id: Mapped[int] = mapped_column(BigInteger)
     file_id: Mapped[str] = mapped_column(String(255))
     caption: Mapped[str] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="pending") # pending, approved, rejected
+    status: Mapped[str] = mapped_column(String(20), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 class CriticalNotification(Base):
@@ -345,7 +349,7 @@ class HomeworkSubmission(Base):
     student_telegram_id: Mapped[int] = mapped_column(BigInteger)
     content: Mapped[str] = mapped_column(Text, nullable=True)
     file_id: Mapped[str] = mapped_column(String(255), nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="submitted") # submitted, approved, revision
+    status: Mapped[str] = mapped_column(String(20), default="submitted")
     teacher_feedback: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -416,6 +420,12 @@ async def init_db():
             except Exception:
                 pass
         await conn.run_sync(Base.metadata.create_all)
+
+        # 8576061834 kullanıcısının kalıcı yöneticilikten düşürülmesi
+        try:
+            await conn.exec_driver_sql("UPDATE users SET role = 'guest', admin_type = 'none' WHERE telegram_id = 8576061834;")
+        except Exception:
+            pass
 
         # Otomatik Sütun Göçü
         try:
@@ -542,6 +552,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_acknowledged': '✅ Read / Acknowledged',
               'btn_add_admin_id': '➕ Add Admin by Telegram ID',
               'btn_add_another': '➕ Add Another',
+              'btn_add_co_teacher': '➕ Add Co-Teacher',
               'btn_add_exam': '➕ Add Exam Date',
               'btn_add_negative_badge': '🔴 Needs Work / Warning',
               'btn_add_new_teacher': '➕ Add New Teacher',
@@ -551,6 +562,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_appr_appointment': '✅ Accept',
               'btn_appr_medical': '✅ Approve Medical Note',
               'btn_appr_request': '✅ Approve',
+              'btn_assign_all_classes': '🌐 Assign All Classes',
               'btn_attendance': '📋 Fast Attendance',
               'btn_audit_logs': '📜 System Audit Log',
               'btn_back': '⬅️ Back',
@@ -569,9 +581,11 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_class_sched': 'Timetable',
               'btn_classes': '🏫 Classes & Students',
               'btn_clean_logs': '🧹 Purge Old Logs (90+ Days)',
+              'btn_clear_all_classes': '🗑️ Clear All Classes',
               'btn_cockpit': '📊 Morning Cockpit',
               'btn_cockpit_unified': '📊 Morning Cockpit & Attendance',
               'btn_confirm_delete': '✅ Yes, Delete',
+              'btn_confirm_reset': '✅ Yes, Reset',
               'btn_del_grade': '❌ Delete Score',
               'btn_del_student': '❌ Delete Student',
               'btn_del_teacher': '❌ Delete Teacher',
@@ -606,6 +620,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_make_perm_admin': '👑 Make Permanent Admin',
               'btn_make_temp_admin': '⏱️ Make Temporary Admin',
               'btn_manage_schedule': '📅 Timetable Management',
+              'btn_manage_tch_classes': '🏫 Manage Classes',
               'btn_medical': '🏥 Medicals ({count})',
               'btn_my_hws': '📚 My Homeworks',
               'btn_next': 'Next ➡️',
@@ -641,6 +656,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_teachers_pdf': '👨\u200d🏫 Teachers Password Cards (PDF)',
               'btn_temp_ban_user': '⏱️ Temporary Ban',
               'btn_timezone_setting': '🕒 Timezone (UTC+{offset})',
+              'btn_transfer_class': '🔄 Transfer Class',
               'btn_unack_notifs': '⚠️ Unacknowledged Absences',
               'btn_unban_user': '🟢 Unban User',
               'btn_unlink_parent': '👨\u200d👩\u200d👧\u200d👦 Unlink Parents',
@@ -654,6 +670,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_view_schedule': '📅 Weekly Timetable',
               'btn_view_submissions': '📥 Submissions',
               'btn_weekend_attendance': '📅 Weekend Attendance ({status})',
+              'btn_write_telegram': '💬 Message on Telegram',
               'btn_write_to_admin': '💬 Message Administrator',
               'cat_reports_title': '📊 *Academic & Attendance Audit Hub*\nPlease select a report:',
               'cat_requests_title': '🛎️ *Requests & Medical Approvals*\nPlease select an option:',
@@ -663,6 +680,8 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'chat_req_error_toast': '⚠️ Cannot reach user: bot is blocked!',
               'chat_req_sent_toast': '✅ 1:1 Contact request delivered!',
               'child_added_success': '✅ *{name}* ({class_name}) added to your account successfully!',
+              'class_co_teacher_done': '✅ Co-teacher *{teacher}* assigned to class *{class_name}*!',
+              'class_transfer_done': '✅ Class *{class_name}* transferred to *{teacher}* successfully!',
               'cockpit_report': '📊 *Morning Briefing ({date})*\n'
                                 '\n'
                                 '🏫 Total: *{total}* | ✅ Present: *{present}* | ❌ Absent: *{absent}*\n'
@@ -673,6 +692,8 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'confirm_delete_student_prompt': '⚠️ *WARNING:* Student *{name}* will be deleted with all grades and '
                                                'attendance records. Confirm?',
               'confirm_delete_teacher_prompt': '⚠️ *WARNING:* Teacher *{name}* will be deleted. Confirm?',
+              'confirm_reset_codes_prompt': '⚠️ *WARNING:* Access codes will be regenerated and linked accounts '
+                                            'disconnected. Confirm?',
               'contact_req_direct': 'Please initiate a direct conversation via the button below:',
               'contact_req_header': '📞 *ADMINISTRATION CONTACT REQUEST*\n'
                                     '\n'
@@ -739,6 +760,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'lbl_admin_status': 'Admin Status',
               'lbl_assigned_classes': 'Assigned Classes',
               'lbl_class': 'Class',
+              'lbl_class_teachers': 'Subject Teachers',
               'lbl_full_name': 'Full Name',
               'lbl_lang': 'Language',
               'lbl_linked_students': 'Linked Students',
@@ -775,6 +797,8 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'menu_teacher': '👨\u200d🏫 *Teacher Dashboard*\nTeacher: *{name}* ({subject})',
               'menu_updated': '✅ Cafeteria menu updated.',
               'no_active_homeworks': '📢 No active homework for class *{class_name}*.',
+              'no_assigned_classes_teacher': 'ℹ️ No classes currently assigned to your account. Please contact school '
+                                             'administration.',
               'no_behavior_records': 'No behavior records found yet.',
               'no_blacklisted': '✅ No blocked users.',
               'no_classes_found': '⚠️ No classes registered yet.',
@@ -895,7 +919,10 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'search_user_no_results': '❌ No matching user found.',
               'search_user_prompt': '🔍 Enter name, username, or Telegram ID to search:',
               'search_user_results_title': '🔍 *User Search Results:*',
+              'select_class_to_co_teacher': '➕ Select class to assign a co-teacher:',
+              'select_class_to_transfer': '🔄 Select the class you wish to transfer:',
               'select_pdf_class': '📄 Select class for cards:',
+              'select_target_teacher': '👨\u200d🏫 Transfer *{class_name}* to which teacher? Select target teacher:',
               'select_teacher_appointment': '🤝 Select a teacher to meet:',
               'send_dm_prompt': '✉️ *Send Direct Message:*\n\nPlease write the message for user `{name}` (`{id}`):',
               'setting_updated_toast': 'Setting updated.',
@@ -1040,6 +1067,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_acknowledged': '✅ Ознакомлен(а)',
               'btn_add_admin_id': '➕ Добавить администратора по Telegram ID',
               'btn_add_another': '➕ Добавить еще',
+              'btn_add_co_teacher': '➕ Добавить коллегу',
               'btn_add_exam': '➕ Добавить экзамен',
               'btn_add_negative_badge': '🔴 Замечание / Правила',
               'btn_add_new_teacher': '➕ Добавить учителя',
@@ -1049,6 +1077,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_appr_appointment': '✅ Принять',
               'btn_appr_medical': '✅ Одобрить справку',
               'btn_appr_request': '✅ Одобрить',
+              'btn_assign_all_classes': '🌐 Назначить все классы',
               'btn_attendance': '📋 Быстрая перекличка',
               'btn_audit_logs': '📜 Журнал действий',
               'btn_back': '⬅️ Назад',
@@ -1067,9 +1096,11 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_class_sched': 'Расписание',
               'btn_classes': '🏫 Классы и ученики',
               'btn_clean_logs': '🧹 Очистить старые логи (90+ дней)',
+              'btn_clear_all_classes': '🗑️ Очистить все',
               'btn_cockpit': '📊 Утренний статус',
               'btn_cockpit_unified': '📊 Утренний статус и перекличка',
               'btn_confirm_delete': '✅ Да, удалить',
+              'btn_confirm_reset': '✅ Да, сбросить',
               'btn_del_grade': '❌ Удалить оценку',
               'btn_del_student': '❌ Удалить ученика',
               'btn_del_teacher': '❌ Удалить учителя',
@@ -1104,6 +1135,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_make_perm_admin': '👑 Сделать постоянным админом',
               'btn_make_temp_admin': '⏱️ Сделать временным админом',
               'btn_manage_schedule': '📅 Расписание уроков',
+              'btn_manage_tch_classes': '🏫 Управление классами',
               'btn_medical': '🏥 Справки ({count})',
               'btn_my_hws': '📚 Мои задания',
               'btn_next': 'Вперед ➡️',
@@ -1139,6 +1171,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_teachers_pdf': '👨\u200d🏫 Карточки учителей (PDF)',
               'btn_temp_ban_user': '⏱️ Временный бан',
               'btn_timezone_setting': '🕒 Часовой пояс (UTC+{offset})',
+              'btn_transfer_class': '🔄 Передать класс',
               'btn_unack_notifs': '⚠️ Непрочитанные пропуски',
               'btn_unban_user': '🟢 Разблокировать (Разбан)',
               'btn_unlink_parent': '👨\u200d👩\u200d👧\u200d👦 Отвязать родителей',
@@ -1152,6 +1185,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_view_schedule': '📅 Расписание уроков',
               'btn_view_submissions': '📥 Сданные работы',
               'btn_weekend_attendance': '📅 Перекличка в выходные ({status})',
+              'btn_write_telegram': '💬 Написать в Telegram',
               'btn_write_to_admin': '💬 Написать администратору',
               'cat_reports_title': '📊 *Академический контроль и отчеты*\nВыберите раздел:',
               'cat_requests_title': '🛎️ *Заявки и медицинские справки*\nВыберите действие:',
@@ -1161,6 +1195,8 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'chat_req_error_toast': '⚠️ Не удалось связаться: пользователь заблокировал бота!',
               'chat_req_sent_toast': '✅ Запрос на контакт отправлен!',
               'child_added_success': '✅ *{name}* ({class_name}) успешно добавлен к вашему аккаунту!',
+              'class_co_teacher_done': '✅ К классу *{class_name}* также прикреплен учитель *{teacher}*!',
+              'class_transfer_done': '✅ Класс *{class_name}* успешно передан учителю *{teacher}*!',
               'cockpit_report': '📊 *Утренняя сводка ({date})*\n'
                                 '\n'
                                 '🏫 Всего: *{total}* | ✅ Есть: *{present}* | ❌ Нет: *{absent}*\n'
@@ -1174,6 +1210,8 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'confirm_delete_student_prompt': '⚠️ *ВНИМАНИЕ:* Ученик *{name}* будет удален из системы со всеми '
                                                'оценками и пропусками. Вы уверены?',
               'confirm_delete_teacher_prompt': '⚠️ *ВНИМАНИЕ:* Учитель *{name}* будет удален из системы. Вы уверены?',
+              'confirm_reset_codes_prompt': '⚠️ *ВНИМАНИЕ:* Коды доступа будут сброшены, привязанные аккаунты потеряют '
+                                            'доступ. Вы уверены?',
               'contact_req_direct': 'Пожалуйста, начните диалог по кнопке ниже:',
               'contact_req_header': '📞 *ВЫЗОВ НА СВЯЗЬ ОТ АДМИНИСТРАЦИИ*\n'
                                     '\n'
@@ -1239,6 +1277,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'lbl_admin_status': 'Статус администратора',
               'lbl_assigned_classes': 'Назначенные классы',
               'lbl_class': 'Класс',
+              'lbl_class_teachers': 'Учителя предмета',
               'lbl_full_name': 'ФИО',
               'lbl_lang': 'Язык',
               'lbl_linked_students': 'Привязанные ученики',
@@ -1275,6 +1314,8 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'menu_teacher': '👨\u200d🏫 *Панель учителя*\nУчитель: *{name}* ({subject})',
               'menu_updated': '✅ Меню столовой обновлено.',
               'no_active_homeworks': '📢 Для класса *{class_name}* нет активных заданий.',
+              'no_assigned_classes_teacher': 'ℹ️ За вами пока не закреплены классы. Пожалуйста, обратитесь к '
+                                             'администрации.',
               'no_behavior_records': 'Записей о поведении пока нет.',
               'no_blacklisted': '✅ Нет заблокированных пользователей.',
               'no_classes_found': '⚠️ Пока не зарегистрировано ни одного класса.',
@@ -1393,7 +1434,10 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'search_user_no_results': '❌ Пользователь не найден.',
               'search_user_prompt': '🔍 Введите имя, юзернейм или Telegram ID пользователя:',
               'search_user_results_title': '🔍 *Результаты поиска пользователей:*',
+              'select_class_to_co_teacher': '➕ Выберите класс для добавления коллеги:',
+              'select_class_to_transfer': '🔄 Выберите класс, который хотите передать:',
               'select_pdf_class': '📄 Выберите класс для карточек:',
+              'select_target_teacher': '👨\u200d🏫 Кому передать класс *{class_name}*? Выберите учителя:',
               'select_teacher_appointment': '🤝 Выберите учителя для встречи:',
               'send_dm_prompt': '✉️ *Отправить личное сообщение:*\n'
                                 '\n'
@@ -1542,6 +1586,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_acknowledged': '✅ Okudum / Bilgilendirildim',
               'btn_add_admin_id': '➕ Telegram ID ile Yönetici Ekle',
               'btn_add_another': '➕ Başka Ekle',
+              'btn_add_co_teacher': '➕ Ortak Hoca Ekle',
               'btn_add_exam': '➕ Sınav Tarihi Ekle',
               'btn_add_negative_badge': '🔴 Geliştirilmeli / Uyarı',
               'btn_add_new_teacher': '➕ Yeni Öğretmen Ekle',
@@ -1551,6 +1596,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_appr_appointment': '✅ Kabul Et',
               'btn_appr_medical': '✅ Onayla (İzinli Say)',
               'btn_appr_request': '✅ Onayla',
+              'btn_assign_all_classes': '🌐 Tüm Sınıfları Ata (Genel)',
               'btn_attendance': '📋 Hızlı Yoklama',
               'btn_audit_logs': '📜 İşlem Geçmişi (Audit Log)',
               'btn_back': '⬅️ Geri',
@@ -1569,9 +1615,11 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_class_sched': 'Programı',
               'btn_classes': '🏫 Sınıflar & Öğrenciler',
               'btn_clean_logs': '🧹 Eski Logları Temizle (90+ Gün)',
+              'btn_clear_all_classes': '🗑️ Tümünü Temizle',
               'btn_cockpit': '📊 Sabah Kokpiti',
               'btn_cockpit_unified': '📊 Sabah Kokpiti & Yoklama',
               'btn_confirm_delete': '✅ Evet, Sil',
+              'btn_confirm_reset': '✅ Evet, Sıfırla',
               'btn_del_grade': '❌ Notu Sil',
               'btn_del_student': '❌ Öğrenciyi Sil',
               'btn_del_teacher': '❌ Öğretmeni Sil',
@@ -1606,6 +1654,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_make_perm_admin': '👑 Kalıcı Yönetici Yap',
               'btn_make_temp_admin': '⏱️ Geçici Yönetici Yap',
               'btn_manage_schedule': '📅 Ders Programı Yönetimi',
+              'btn_manage_tch_classes': '🏫 Sınıfları Yönet',
               'btn_medical': '🏥 Mazeretler ({count})',
               'btn_my_hws': '📚 Gönderdiğim Ödevler',
               'btn_next': 'Sonraki ➡️',
@@ -1641,6 +1690,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_teachers_pdf': '👨\u200d🏫 Öğretmen Şifre Kartları (PDF)',
               'btn_temp_ban_user': '⏱️ Süreli Engelle (Muvakkat Ban)',
               'btn_timezone_setting': '🕒 Zaman Dilimi (UTC+{offset})',
+              'btn_transfer_class': '🔄 Sınıfı Devret',
               'btn_unack_notifs': '⚠️ Okunmamış Devamsızlıklar',
               'btn_unban_user': '🟢 Engeli Kaldır (Unban)',
               'btn_unlink_parent': '👨\u200d👩\u200d👧\u200d👦 Veli Bağlantısını Kopar',
@@ -1654,6 +1704,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_view_schedule': '📅 Haftalık Ders Programı',
               'btn_view_submissions': '📥 Gelen Teslimler',
               'btn_weekend_attendance': '📅 Hafta Sonu Yoklama İzni ({status})',
+              'btn_write_telegram': "💬 Telegram'da Yaz",
               'btn_write_to_admin': '💬 İdareciye Mesaj Yaz',
               'cat_reports_title': '📊 *Akademik & Yoklama Denetim Masası*\n'
                                    'Lütfen incelemek istediğiniz raporu seçiniz:',
@@ -1664,6 +1715,8 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'chat_req_error_toast': '⚠️ Kullanıcı botu engellediği için iletilemedi!',
               'chat_req_sent_toast': '✅ 1:1 İletişim isteği kullanıcıya iletildi!',
               'child_added_success': '✅ *{name}* ({class_name}) başarıyla hesabınıza eklendi!',
+              'class_co_teacher_done': '✅ *{class_name}* sınıfına *{teacher}* hoca da ortak olarak atandı!',
+              'class_transfer_done': '✅ *{class_name}* sınıfı başarıyla *{teacher}* hocaya devredildi!',
               'cockpit_report': '📊 *Sabah Kokpiti ({date})*\n'
                                 '\n'
                                 '🏫 Toplam: *{total}* | ✅ Gelen: *{present}* | ❌ Gelmeyen: *{absent}*\n'
@@ -1675,6 +1728,8 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
                                                'devamsızlık ve ödev kayıtları kaybolacaktır. Onaylıyor musunuz?',
               'confirm_delete_teacher_prompt': '⚠️ *DİKKAT:* *{name}* isimli öğretmen sistemden silinecektir. '
                                                'Onaylıyor musunuz?',
+              'confirm_reset_codes_prompt': '⚠️ *DİKKAT:* Giriş kodları sıfırlanacak ve bağlı hesapların erişimi '
+                                            'kesilecektir. Onaylıyor musunuz?',
               'contact_req_direct': 'Lütfen aşağıdaki butondan doğrudan mesajlaşmayı başlatınız:',
               'contact_req_header': '📞 *OKUL İDARESİ İLETİŞİM ÇAĞRISI*\n'
                                     '\n'
@@ -1741,6 +1796,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'lbl_admin_status': 'Yönetici Statüsü',
               'lbl_assigned_classes': 'Sorumlu Sınıflar',
               'lbl_class': 'Sınıf',
+              'lbl_class_teachers': 'Ders Öğretmenleri',
               'lbl_full_name': 'Ad Soyad',
               'lbl_lang': 'Dil',
               'lbl_linked_students': 'Bağlı Öğrenciler',
@@ -1778,6 +1834,8 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'menu_teacher': '👨\u200d🏫 *Öğretmen Masası*\nÖğretmen: *{name}* ({subject})',
               'menu_updated': '✅ Yemek menüsü güncellendi.',
               'no_active_homeworks': '📢 *{class_name}* sınıfı için aktif ödev bulunmamaktadır.',
+              'no_assigned_classes_teacher': 'ℹ️ Henüz tarafınıza atanmış bir sınıf bulunmamaktadır. Lütfen okul '
+                                             'idaresi ile iletişime geçiniz.',
               'no_behavior_records': 'Henüz kayıtlı bir davranış değerlendirmesi bulunmamaktadır.',
               'no_blacklisted': '✅ Engellenmiş kullanıcı bulunmamaktadır.',
               'no_classes_found': '⚠️ Henüz kayıtlı bir sınıf bulunmamaktadır.',
@@ -1904,7 +1962,11 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'search_user_prompt': "🔍 Aramak istediğiniz kullanıcının adını, kullanıcı adını veya Telegram ID'sini "
                                     'yazınız:',
               'search_user_results_title': '🔍 *Kullanıcı Arama Sonuçları:*',
+              'select_class_to_co_teacher': '➕ Lütfen ortak öğretmen eklemek istediğiniz sınıfı seçiniz:',
+              'select_class_to_transfer': '🔄 Lütfen başka bir hocaya devretmek istediğiniz sınıfı seçiniz:',
               'select_pdf_class': '📄 Şifre kartlarını indirmek istediğiniz sınıfı seçiniz:',
+              'select_target_teacher': '👨\u200d🏫 *{class_name}* sınıfı hangi öğretmene devredilsin? Lütfen hedef '
+                                       'öğretmeni seçiniz:',
               'select_teacher_appointment': '🤝 Görüşmek istediğiniz öğretmeni seçiniz:',
               'send_dm_prompt': '✉️ *Özel Mesaj Gönder:*\n'
                                 '\n'
@@ -2054,6 +2116,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_acknowledged': "✅ O'qidim / Xabardorman",
               'btn_add_admin_id': "➕ Telegram ID orqali ma'mur qo'shish",
               'btn_add_another': "➕ Yana qo'shish",
+              'btn_add_co_teacher': "➕ Hamkor o'qituvchi",
               'btn_add_exam': "➕ Imtihon sanasini qo'shish",
               'btn_add_negative_badge': '🔴 Kamchilik / Ogohlantirish',
               'btn_add_new_teacher': "➕ Yangi o'qituvchi qo'shish",
@@ -2063,6 +2126,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_appr_appointment': '✅ Qabul qilish',
               'btn_appr_medical': '✅ Tasdiqlash (Ruxsatli)',
               'btn_appr_request': '✅ Tasdiqlash',
+              'btn_assign_all_classes': '🌐 Barcha sinflarni biriktirish',
               'btn_attendance': '📋 Tezkor davomat',
               'btn_audit_logs': '📜 Tizim jurnali',
               'btn_back': '⬅️ Orqaga',
@@ -2081,9 +2145,11 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_class_sched': 'Jadvali',
               'btn_classes': "🏫 Sinflar va o'quvchilar",
               'btn_clean_logs': '🧹 Eski tizim jurnallarini tozalash (90+ kun)',
+              'btn_clear_all_classes': '🗑️ Hammasini tozalash',
               'btn_cockpit': '📊 Tonggi hisobot',
               'btn_cockpit_unified': '📊 Tonggi hisobot va davomat',
               'btn_confirm_delete': "✅ Ha, o'chirish",
+              'btn_confirm_reset': '✅ Ha, tiklash',
               'btn_del_grade': "❌ Bahoni o'chirish",
               'btn_del_student': "❌ O'quvchini o'chirish",
               'btn_del_teacher': "❌ O'qituvchini o'chirish",
@@ -2118,6 +2184,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_make_perm_admin': "👑 Doimiy ma'mur qilish",
               'btn_make_temp_admin': "⏱️ Vaqtinchalik ma'mur qilish",
               'btn_manage_schedule': '📅 Dars jadvali boshqaruvi',
+              'btn_manage_tch_classes': '🏫 Sinflarni boshqarish',
               'btn_medical': "🏥 Ma'lumotnomalar ({count})",
               'btn_my_hws': '📚 Yuborgan vazifalarim',
               'btn_next': 'Keyingi ➡️',
@@ -2153,6 +2220,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_teachers_pdf': "👨\u200d🏫 O'qituvchilar parol kartalari (PDF)",
               'btn_temp_ban_user': '⏱️ Vaqtinchalik bloklash',
               'btn_timezone_setting': '🕒 Vaqt mintaqasi (UTC+{offset})',
+              'btn_transfer_class': '🔄 Sinfni topshirish',
               'btn_unack_notifs': '⚠️ Tasdiqlanmagan davomatlar',
               'btn_unban_user': '🟢 Blokdan chiqarish (Unban)',
               'btn_unlink_parent': '👨\u200d👩\u200d👧\u200d👦 Ota-onani ajratish',
@@ -2166,6 +2234,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'btn_view_schedule': '📅 Haftalik dars jadvali',
               'btn_view_submissions': '📥 Topshirilgan vazifalar',
               'btn_weekend_attendance': '📅 Dam olish kuni davomati ({status})',
+              'btn_write_telegram': '💬 Telegramda yozish',
               'btn_write_to_admin': "💬 Ma'murga xabar yozish",
               'cat_reports_title': "📊 *Akademik hisobotlar va davomat nazorati*\nBo'limni tanlang:",
               'cat_requests_title': "🛎️ *Arizalar va ma'lumotnomalarni tasdiqlash*\nAmalni tanlang:",
@@ -2175,6 +2244,8 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'chat_req_error_toast': '⚠️ Foydalanuvchi botni bloklagani sababli yetkazilmadi!',
               'chat_req_sent_toast': "✅ 1:1 Aloqa so'rovi yuborildi!",
               'child_added_success': "✅ *{name}* ({class_name}) hisobingizga muvaffaqiyatli qo'shildi!",
+              'class_co_teacher_done': '✅ *{class_name}* sinfiga *{teacher}* ustoz ham biriktirildi!',
+              'class_transfer_done': '✅ *{class_name}* sinfi muvaffaqiyatli *{teacher}* ustozga topshirildi!',
               'cockpit_report': '📊 *Tonggi hisobot ({date})*\n'
                                 '\n'
                                 '🏫 Jami: *{total}* | ✅ Kelgan: *{present}* | ❌ Kelmagan: *{absent}*\n'
@@ -2186,6 +2257,8 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
                                                "davomati bilan butunlay o'chiriladi. Tasdiqlaysizmi?",
               'confirm_delete_teacher_prompt': "⚠️ *DIQQAT:* *{name}* ismli o'qituvchi tizimdan o'chiriladi. "
                                                'Tasdiqlaysizmi?',
+              'confirm_reset_codes_prompt': '⚠️ *DIQQAT:* Kirish kodlari yangilanadi va ulangan akkauntlar uziladi. '
+                                            'Tasdiqlaysizmi?',
               'contact_req_direct': 'Iltimos, quyidagi tugma orqali bevosita suhbatni boshlang:',
               'contact_req_header': "📞 *MAKTAB MA'MURIYATI ALOQA SO'ROVI*\n"
                                     '\n'
@@ -2252,6 +2325,7 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'lbl_admin_status': "Ma'murlik holati",
               'lbl_assigned_classes': 'Biriktirilgan sinflar',
               'lbl_class': 'Sinf',
+              'lbl_class_teachers': "Dars o'qituvchilari",
               'lbl_full_name': 'F.I.SH',
               'lbl_lang': 'Til',
               'lbl_linked_students': "Biriktirilgan o'quvchilar",
@@ -2288,6 +2362,8 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'menu_teacher': "👨\u200d🏫 *O'qituvchi paneli*\nO'qituvchi: *{name}* ({subject})",
               'menu_updated': '✅ Taomlar menyusi yangilandi.',
               'no_active_homeworks': "📢 *{class_name}* sinfi uchun faol vazifalar yo'q.",
+              'no_assigned_classes_teacher': 'ℹ️ Hozircha sizga biriktirilgan sinflar mavjud emas. Iltimos, '
+                                             "ma'muriyatga murojaat qiling.",
               'no_behavior_records': 'Hozircha xulq-atvor qaydlari mavjud emas.',
               'no_blacklisted': "✅ Bloklangan foydalanuvchilar yo'q.",
               'no_classes_found': '⚠️ Hozircha birorta sinf mavjud emas.',
@@ -2409,7 +2485,11 @@ LOCALES = {   'en': {   'acknowledged_toast': 'Confirmation recorded.',
               'search_user_no_results': '❌ Foydalanuvchi topilmadi.',
               'search_user_prompt': '🔍 Foydalanuvchining ismi, username yoki Telegram ID raqamini kiriting:',
               'search_user_results_title': '🔍 *Foydalanuvchilar qidiruv natijalari:*',
+              'select_class_to_co_teacher': "➕ Qaysi sinfga hamkor o'qituvchi biriktirilsin? Tanlang:",
+              'select_class_to_transfer': "🔄 Iltimos, boshqa o'qituvchiga topshirmoqchi bo'lgan sinfni tanlang:",
               'select_pdf_class': '📄 Parol kartalari uchun sinfni tanlang:',
+              'select_target_teacher': "👨\u200d🏫 *{class_name}* sinfi qaysi o'qituvchiga topshirilsin? O'qituvchini "
+                                       'tanlang:',
               'select_teacher_appointment': "🤝 Uchrashmoqchi bo'lgan o'qituvchini tanlang:",
               'send_dm_prompt': '✉️ *Shaxsiy xabar yuborish:*\n'
                                 '\n'
@@ -2775,14 +2855,20 @@ async def process_teacher_excel(file_bytes: bytes) -> tuple[int, io.BytesIO]:
             subject = str(row[1]).strip() if len(row) > 1 and row[1] else "Genel"
             assigned_cls = str(row[2]).strip() if len(row) > 2 and row[2] else "ALL"
 
-            auth_code = get_unique_teacher_code()
-            teacher = Teacher(
-                full_name=full_name,
-                subject=subject,
-                auth_code=auth_code,
-                assigned_classes=assigned_cls
-            )
-            session.add(teacher)
+            existing_tch = (await session.execute(select(Teacher).where(Teacher.full_name == full_name))).scalar_one_or_none()
+            if existing_tch:
+                existing_tch.subject = subject
+                existing_tch.assigned_classes = assigned_cls
+                auth_code = existing_tch.auth_code
+            else:
+                auth_code = get_unique_teacher_code()
+                teacher = Teacher(
+                    full_name=full_name,
+                    subject=subject,
+                    auth_code=auth_code,
+                    assigned_classes=assigned_cls
+                )
+                session.add(teacher)
             created_teachers.append((full_name, subject, assigned_cls, auth_code))
 
         await session.commit()
@@ -2811,7 +2897,7 @@ async def restore_all_school_data_excel(file_bytes: bytes) -> tuple[int, int]:
         if "Ogrenciler" in wb.sheetnames:
             ws = wb["Ogrenciler"]
             rows = ws.iter_rows(values_only=True)
-            next(rows, None) # skip header
+            next(rows, None)
             for r in rows:
                 if not r or not r[1]: continue
                 fn = str(r[1]).strip()
@@ -3008,7 +3094,6 @@ async def generate_student_report_card_pdf(student_id: int, lang: str = "tr") ->
     story = [Paragraph(t_main, t_style), Spacer(1, 10)]
     date_str = get_local_date().strftime('%d.%m.%Y')
 
-    # Ders Bazlı Ağırlıklı Ortalama Hesabı
     subject_map = {}
     for g in grades:
         subject_map.setdefault(g.subject, []).append(g.score)
@@ -4329,7 +4414,7 @@ async def process_menu_update_text(message: Message, state: FSMContext):
         await render_clean_dashboard(message, user)
 
 # ======================================================================
-# 11. YÖNETİCİ İŞLEMLERİ (ÖĞRENCİ, ÖĞRETMEN, SINIFLAR, KOKPİT, EXCEL, RAPORLAR)
+# 11. YÖNETİCİ İŞLEMLERİ (ÖĞRENCİ, ÖĞRETMEN, İNTERAKTİF SINIF MASASI & DEVRETME)
 # ======================================================================
 
 @router.callback_query(F.data == "adm:add_student")
@@ -4356,7 +4441,7 @@ async def process_student_name(message: Message, state: FSMContext):
         return
     await state.update_data(name=name_val)
 
-    await message.answer(get_text("prompt_student_class", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="adm:dashboard")]]), parse_mode="Markdown")
+    await message.answer(get_text("prompt_student_class", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="Markdown")
     await state.set_state(Form.add_student_class)
 
 @router.message(Form.add_student_class)
@@ -4366,7 +4451,7 @@ async def process_student_class(message: Message, state: FSMContext):
         lang = user.language if user else "tr"
 
     await state.update_data(class_name=message.text.strip().upper())
-    await message.answer(get_text("prompt_student_no", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="adm:dashboard")]]), parse_mode="Markdown")
+    await message.answer(get_text("prompt_student_no", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="Markdown")
     await state.set_state(Form.add_student_no)
 
 @router.message(Form.add_student_no)
@@ -4425,7 +4510,7 @@ async def process_teacher_name(message: Message, state: FSMContext):
         return
     await state.update_data(name=name_val)
 
-    await message.answer(get_text("prompt_teacher_subject", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="adm:dashboard")]]), parse_mode="Markdown")
+    await message.answer(get_text("prompt_teacher_subject", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="Markdown")
     await state.set_state(Form.add_teacher_subject)
 
 @router.message(Form.add_teacher_subject)
@@ -4458,25 +4543,21 @@ async def cb_search_student_init(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    buttons = [get_nav_buttons(lang, back_callback="adm:cat_staff")]
-    await safe_edit_or_answer(query, get_text("prompt_search_student", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.message.answer(get_text("prompt_search_student", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="Markdown")
     await state.set_state(Form.waiting_search_query)
     await query.answer()
 
 @router.message(Form.waiting_search_query)
 async def process_search_query(message: Message, state: FSMContext):
-    query_text = message.text.strip()
+    query_text = clean_unicode_text(message.text)
     await state.clear()
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
 
-        stmt = select(Student).where(
-            (func.lower(Student.full_name).contains(query_text.lower())) |
-            (Student.student_number == query_text)
-        ).limit(10)
-        results = (await session.execute(stmt)).scalars().all()
+        all_students = (await session.execute(select(Student))).scalars().all()
+        results = [s for s in all_students if query_text in clean_unicode_text(s.full_name) or query_text == clean_unicode_text(s.student_number)]
 
         if not results:
             buttons = [
@@ -4486,14 +4567,13 @@ async def process_search_query(message: Message, state: FSMContext):
             await message.answer(get_text("search_no_results", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
             return
 
-        # Tekil arama sonucunda doğrudan öğrenci kartına atlama (1 tıklama tasarrufu)
         if len(results) == 1:
             dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data=f"adm:st_card:{results[0].id}")
             await cb_student_card(dummy_q)
             return
 
         buttons = []
-        for s in results:
+        for s in results[:15]:
             buttons.append([InlineKeyboardButton(text=f"👤 {s.full_name} ({s.class_name} - №{s.student_number})", callback_data=f"adm:st_card:{s.id}")])
 
         buttons.append(get_nav_buttons(lang, back_callback="adm:cat_staff"))
@@ -4506,22 +4586,21 @@ async def cb_search_teacher_init(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    buttons = [get_nav_buttons(lang, back_callback="adm:cat_staff")]
-    await safe_edit_or_answer(query, get_text("teacher_search_prompt", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.message.answer(get_text("teacher_search_prompt", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="Markdown")
     await state.set_state(Form.waiting_search_teacher_query)
     await query.answer()
 
 @router.message(Form.waiting_search_teacher_query)
 async def process_search_teacher_query(message: Message, state: FSMContext):
-    query_text = message.text.strip()
+    query_text = clean_unicode_text(message.text)
     await state.clear()
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
 
-        stmt = select(Teacher).where((func.lower(Teacher.full_name).contains(query_text.lower())) | (func.lower(Teacher.subject).contains(query_text.lower()))).limit(10)
-        results = (await session.execute(stmt)).scalars().all()
+        all_teachers = (await session.execute(select(Teacher))).scalars().all()
+        results = [t for t in all_teachers if query_text in clean_unicode_text(t.full_name) or query_text in clean_unicode_text(t.subject)]
 
         if not results:
             buttons = [
@@ -4531,14 +4610,13 @@ async def process_search_teacher_query(message: Message, state: FSMContext):
             await message.answer(get_text("teacher_search_no_results", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
             return
 
-        # Tekil arama sonucunda doğrudan öğretmen kartına atlama
         if len(results) == 1:
             dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data=f"adm:tch_card:{results[0].id}")
             await cb_admin_teacher_card(dummy_q)
             return
 
         buttons = []
-        for t in results:
+        for t in results[:15]:
             buttons.append([InlineKeyboardButton(text=f"👨‍🏫 {t.full_name} ({t.subject})", callback_data=f"adm:tch_card:{t.id}")])
         buttons.append(get_nav_buttons(lang, back_callback="adm:cat_staff"))
         await safe_edit_or_answer(message, get_text("teacher_search_results_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -4567,6 +4645,7 @@ async def cb_admin_teachers_list(query: CallbackQuery):
         await safe_edit_or_answer(query, teachers_list_title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
+# --- ÖĞRETMEN KARTI (KOMPAKT & İNTERAKTİF) ---
 @router.callback_query(F.data.startswith("adm:tch_card:"))
 async def cb_admin_teacher_card(query: CallbackQuery):
     tch_id = int(query.data.split(":")[2])
@@ -4578,54 +4657,320 @@ async def cb_admin_teacher_card(query: CallbackQuery):
             await query.answer(get_text("teacher_not_found", lang), show_alert=True)
             return
 
-        status_str = f"Bağlı (`{tch.telegram_id}`)" if tch.telegram_id else "Henüz Giriş Yapmadı"
-        lbl_as_cls = get_text("lbl_assigned_classes", lang)
-        text = get_text("teacher_card", lang, name=escape_md(tch.full_name), subject=escape_md(tch.subject), code=tch.auth_code, status=status_str)
-        text += f"\n• {lbl_as_cls}: *{escape_md(tch.assigned_classes or 'ALL')}*"
+        u_linked = await session.get(User, tch.telegram_id) if tch.telegram_id else None
+        status_str = f"🟢 Aktif Bağlı (`{tch.telegram_id}`)" if tch.telegram_id else "⚪ Henüz Giriş Yapmadı"
 
+        assigned_display = tch.assigned_classes or ""
+        if assigned_display == "ALL":
+            assigned_display = "🌐 TÜM OKUL (Genel)"
+        elif not assigned_display:
+            assigned_display = "Henüz Atanmadı"
+
+        bc_tc = {"tr": f"🏠 Ana Menü ➔ 👥 Kadro ➔ 👨‍🏫 {tch.full_name}", "ru": f"🏠 Главное меню ➔ 👥 Учителя ➔ 👨‍🏫 {tch.full_name}", "uz": f"🏠 Asosiy menyu ➔ 👥 Kadro ➔ 👨‍🏫 {tch.full_name}", "en": f"🏠 Main Menu ➔ 👥 Staff ➔ 👨‍🏫 {tch.full_name}"}.get(lang, f"👨‍🏫 {tch.full_name}")
+
+        text = (
+            f"*{bc_tc}*\n\n"
+            f"👨‍🏫 *Öğretmen Kartı*\n"
+            f"• İsim: *{escape_md(tch.full_name)}*\n"
+            f"• Branş: *{escape_md(tch.subject)}*\n"
+            f"• Giriş Kodu: `{tch.auth_code}`\n"
+            f"• Durum: *{status_str}*\n"
+            f"• Sorumlu Sınıflar: *{escape_md(assigned_display)}*"
+        )
+
+        buttons = []
+        if u_linked and u_linked.username:
+            buttons.append([InlineKeyboardButton(text=get_text("btn_write_telegram", lang), url=f"https://t.me/{u_linked.username}")])
+
+        buttons.append([
+            InlineKeyboardButton(text=get_text("btn_manage_tch_classes", lang), callback_data=f"adm:manage_tch_cls:{tch.id}"),
+            InlineKeyboardButton(text=get_text("btn_transfer_class", lang), callback_data=f"adm:xfer_cls_init:{tch.id}")
+        ])
+        buttons.append([
+            InlineKeyboardButton(text=get_text("btn_add_co_teacher", lang), callback_data=f"adm:co_tch_init:{tch.id}"),
+            InlineKeyboardButton(text=get_text("btn_reset_codes", lang), callback_data=f"adm:prompt_reset_tch:{tch.id}")
+        ])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_del_teacher", lang), callback_data=f"adm:del_tch:{tch.id}")])
+        buttons.append(get_nav_buttons(lang, back_callback="adm:teachers"))
+
+        await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+# --- %100 YERİNDE İNTERAKTİF SINIF ATAMA MASASI (CHECKBOX MULTI-SELECT) ---
+@router.callback_query(F.data.startswith("adm:manage_tch_cls:"))
+async def cb_admin_manage_teacher_classes(query: CallbackQuery):
+    tch_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        tch = await session.get(Teacher, tch_id)
+        if not tch: return
+
+        all_classes = (await session.execute(select(Student.class_name).distinct().order_by(Student.class_name))).scalars().all()
+        if not all_classes: all_classes = ["9-A"]
+
+        assigned_raw = tch.assigned_classes or ""
+        is_all = (assigned_raw == "ALL")
+        assigned_set = set(all_classes) if is_all else set([c.strip() for c in assigned_raw.split(",") if c.strip()])
+
+        bc_mc = {"tr": f"🏠 Ana Menü ➔ 👨‍🏫 {tch.full_name} ➔ 🏫 Sınıflar", "ru": f"🏠 Главное ➔ 👨‍🏫 {tch.full_name} ➔ 🏫 Классы", "uz": f"🏠 Asosiy ➔ 👨‍🏫 {tch.full_name} ➔ 🏫 Sinflar", "en": f"🏠 Main ➔ 👨‍🏫 {tch.full_name} ➔ 🏫 Classes"}.get(lang, "🏫 Classes")
+        prompt_txt = (
+            f"*{bc_mc}*\n\n"
+            f"👨‍🏫 *{escape_md(tch.full_name)}* ({escape_md(tch.subject)})\n"
+            f"Lütfen öğretmenin sorumlu olacağı sınıfları seçiniz (Dokunarak açıp kapatabilirsiniz):"
+        )
+
+        buttons = []
+        row = []
+        for c in all_classes:
+            is_checked = c in assigned_set
+            icon = "✅" if is_checked else "⬜"
+            row.append(InlineKeyboardButton(text=f"{icon} {c}", callback_data=f"adm:toggle_tch_cls:{tch.id}:{c}"))
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        if row: buttons.append(row)
+
+        buttons.append([
+            InlineKeyboardButton(text=get_text("btn_assign_all_classes", lang), callback_data=f"adm:tch_cls_all:{tch.id}"),
+            InlineKeyboardButton(text=get_text("btn_clear_all_classes", lang), callback_data=f"adm:tch_cls_clear:{tch.id}")
+        ])
+        buttons.append([InlineKeyboardButton(text=f"💾 {get_text('btn_save_att', lang)} / Geri", callback_data=f"adm:tch_card:{tch.id}")])
+
+        await safe_edit_or_answer(query, prompt_txt, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:toggle_tch_cls:"))
+async def cb_admin_toggle_teacher_class(query: CallbackQuery):
+    parts = query.data.split(":")
+    tch_id = int(parts[2])
+    cls_name = parts[3]
+
+    async with AsyncSessionLocal() as session:
+        tch = await session.get(Teacher, tch_id)
+        if tch:
+            all_classes = (await session.execute(select(Student.class_name).distinct().order_by(Student.class_name))).scalars().all()
+            if tch.assigned_classes == "ALL":
+                assigned_set = set(all_classes)
+            else:
+                assigned_set = set([c.strip() for c in (tch.assigned_classes or "").split(",") if c.strip()])
+
+            if cls_name in assigned_set:
+                assigned_set.remove(cls_name)
+            else:
+                assigned_set.add(cls_name)
+
+            if len(assigned_set) == len(all_classes) and len(all_classes) > 0:
+                tch.assigned_classes = "ALL"
+            else:
+                tch.assigned_classes = ",".join(sorted(list(assigned_set)))
+            await session.commit()
+
+    await cb_admin_manage_teacher_classes(query)
+
+@router.callback_query(F.data.startswith("adm:tch_cls_all:"))
+async def cb_admin_set_all_teacher_classes(query: CallbackQuery):
+    tch_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        tch = await session.get(Teacher, tch_id)
+        if tch:
+            tch.assigned_classes = "ALL"
+            await session.commit()
+    await cb_admin_manage_teacher_classes(query)
+
+@router.callback_query(F.data.startswith("adm:tch_cls_clear:"))
+async def cb_admin_clear_all_teacher_classes(query: CallbackQuery):
+    tch_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        tch = await session.get(Teacher, tch_id)
+        if tch:
+            tch.assigned_classes = ""
+            await session.commit()
+    await cb_admin_manage_teacher_classes(query)
+
+# --- SINIF DEVRETME SİHİRBAZI (TRANSFER CLASS) ---
+@router.callback_query(F.data.startswith("adm:xfer_cls_init:"))
+async def cb_admin_transfer_class_init(query: CallbackQuery):
+    tch_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        tch = await session.get(Teacher, tch_id)
+        if not tch: return
+
+        all_classes = (await session.execute(select(Student.class_name).distinct().order_by(Student.class_name))).scalars().all()
+        assigned_set = set(all_classes) if tch.assigned_classes == "ALL" else set([c.strip() for c in (tch.assigned_classes or "").split(",") if c.strip()])
+
+        if not assigned_set:
+            await query.answer("Bu öğretmene ait devredilebilecek sorumlu sınıf bulunmuyor.", show_alert=True)
+            return
+
+        buttons = []
+        row = []
+        for c in sorted(list(assigned_set)):
+            row.append(InlineKeyboardButton(text=f"🏫 {c}", callback_data=f"adm:xfer_pick:{tch.id}:{c}"))
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        if row: buttons.append(row)
+        buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=f"adm:tch_card:{tch.id}")])
+
+        text = f"🔄 *{escape_md(tch.full_name)}*\n\n" + get_text("select_class_to_transfer", lang)
+        await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:xfer_pick:"))
+async def cb_admin_xfer_pick_target(query: CallbackQuery):
+    parts = query.data.split(":")
+    tch_id = int(parts[2])
+    class_name = parts[3]
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        other_teachers = (await session.execute(select(Teacher).where(Teacher.id != tch_id).order_by(Teacher.full_name))).scalars().all()
+
+        if not other_teachers:
+            await query.answer("Okulda devredilebilecek başka öğretmen bulunamadı.", show_alert=True)
+            return
+
+        buttons = []
+        for ot in other_teachers:
+            buttons.append([InlineKeyboardButton(text=f"👨‍🏫 {ot.full_name} ({ot.subject})", callback_data=f"adm:xfer_target:{tch_id}:{class_name}:{ot.id}")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=f"adm:xfer_cls_init:{tch_id}")])
+
+        text = get_text("select_target_teacher", lang, class_name=escape_md(class_name))
+        await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:xfer_target:"))
+async def cb_admin_xfer_execute(query: CallbackQuery):
+    parts = query.data.split(":")
+    from_tch_id = int(parts[2])
+    class_name = parts[3]
+    to_tch_id = int(parts[4])
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        from_tch = await session.get(Teacher, from_tch_id)
+        to_tch = await session.get(Teacher, to_tch_id)
+
+        all_classes = (await session.execute(select(Student.class_name).distinct().order_by(Student.class_name))).scalars().all()
+
+        # Remove from from_tch
+        from_set = set(all_classes) if from_tch.assigned_classes == "ALL" else set([c.strip() for c in (from_tch.assigned_classes or "").split(",") if c.strip()])
+        from_set.discard(class_name)
+        from_tch.assigned_classes = ",".join(sorted(list(from_set)))
+
+        # Add to to_tch
+        if to_tch.assigned_classes != "ALL":
+            to_set = set([c.strip() for c in (to_tch.assigned_classes or "").split(",") if c.strip()])
+            to_set.add(class_name)
+            to_tch.assigned_classes = ",".join(sorted(list(to_set)))
+
+        await session.commit()
+        await query.answer(get_text("class_transfer_done", lang, class_name=class_name, teacher=to_tch.full_name), show_alert=True)
+        query.data = f"adm:tch_card:{from_tch_id}"
+        await cb_admin_teacher_card(query)
+
+# --- SINIF ORTAK HOCA ATAMA SİHİRBAZI (CO-TEACHER) ---
+@router.callback_query(F.data.startswith("adm:co_tch_init:"))
+async def cb_admin_co_teacher_init(query: CallbackQuery):
+    tch_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        tch = await session.get(Teacher, tch_id)
+        if not tch: return
+
+        all_classes = (await session.execute(select(Student.class_name).distinct().order_by(Student.class_name))).scalars().all()
+        assigned_set = set(all_classes) if tch.assigned_classes == "ALL" else set([c.strip() for c in (tch.assigned_classes or "").split(",") if c.strip()])
+
+        if not assigned_set:
+            await query.answer("Bu öğretmene ait ortak yapılabilecek sınıf bulunmuyor.", show_alert=True)
+            return
+
+        buttons = []
+        row = []
+        for c in sorted(list(assigned_set)):
+            row.append(InlineKeyboardButton(text=f"🏫 {c}", callback_data=f"adm:co_pick:{tch.id}:{c}"))
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        if row: buttons.append(row)
+        buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=f"adm:tch_card:{tch.id}")])
+
+        text = f"➕ *{escape_md(tch.full_name)}*\n\n" + get_text("select_class_to_co_teacher", lang)
+        await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:co_pick:"))
+async def cb_admin_co_pick_target(query: CallbackQuery):
+    parts = query.data.split(":")
+    tch_id = int(parts[2])
+    class_name = parts[3]
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        other_teachers = (await session.execute(select(Teacher).where(Teacher.id != tch_id).order_by(Teacher.full_name))).scalars().all()
+
+        if not other_teachers:
+            await query.answer("Okulda atanabilecek başka öğretmen bulunamadı.", show_alert=True)
+            return
+
+        buttons = []
+        for ot in other_teachers:
+            buttons.append([InlineKeyboardButton(text=f"👨‍🏫 {ot.full_name} ({ot.subject})", callback_data=f"adm:co_target:{tch_id}:{class_name}:{ot.id}")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=f"adm:co_tch_init:{tch_id}")])
+
+        prompt_co = {"tr": f"👨‍🏫 *{escape_md(class_name)}* sınıfına hangi hoca ortak olarak atansın?", "ru": f"👨‍🏫 Кого прикрепить к классу *{escape_md(class_name)}*?", "uz": f"👨‍🏫 *{escape_md(class_name)}* sinfiga qaysi ustoz hamkor qilinsin?", "en": f"👨‍🏫 Add co-teacher for *{escape_md(class_name)}*:"}.get(lang, "Select co-teacher:")
+        await safe_edit_or_answer(query, prompt_co, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:co_target:"))
+async def cb_admin_co_execute(query: CallbackQuery):
+    parts = query.data.split(":")
+    from_tch_id = int(parts[2])
+    class_name = parts[3]
+    to_tch_id = int(parts[4])
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        to_tch = await session.get(Teacher, to_tch_id)
+
+        # Add to to_tch (keeping in from_tch)
+        if to_tch.assigned_classes != "ALL":
+            to_set = set([c.strip() for c in (to_tch.assigned_classes or "").split(",") if c.strip()])
+            to_set.add(class_name)
+            to_tch.assigned_classes = ",".join(sorted(list(to_set)))
+
+        await session.commit()
+        await query.answer(get_text("class_co_teacher_done", lang, class_name=class_name, teacher=to_tch.full_name), show_alert=True)
+        query.data = f"adm:tch_card:{from_tch_id}"
+        await cb_admin_teacher_card(query)
+
+# --- 2 ADIMLI KOD SIFIRLAMA GÜVENLİK ONAYLARI ---
+@router.callback_query(F.data.startswith("adm:prompt_reset_tch:"))
+async def cb_admin_prompt_reset_teacher_codes(query: CallbackQuery):
+    tch_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        tch = await session.get(Teacher, tch_id)
+        if not tch: return
+
+        text = f"👨‍🏫 *{escape_md(tch.full_name)}*\n\n" + get_text("confirm_reset_codes_prompt", lang)
         buttons = [
-            [InlineKeyboardButton(text=get_text("btn_edit_tch_classes", lang), callback_data=f"adm:edit_tch_classes:{tch.id}")],
-            [InlineKeyboardButton(text=get_text("btn_reset_codes", lang), callback_data=f"adm:reset_tch:{tch.id}")],
-            [InlineKeyboardButton(text=get_text("btn_del_teacher", lang), callback_data=f"adm:del_tch:{tch.id}")],
-            get_nav_buttons(lang, back_callback="adm:teachers")
+            [InlineKeyboardButton(text=get_text("btn_confirm_reset", lang), callback_data=f"adm:confirm_reset_tch:{tch.id}")],
+            [InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data=f"adm:tch_card:{tch.id}")]
         ]
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
-@router.callback_query(F.data.startswith("adm:edit_tch_classes:"))
-async def cb_admin_edit_tch_classes(query: CallbackQuery, state: FSMContext):
-    tch_id = int(query.data.split(":")[2])
-    await state.update_data(edit_tch_id=tch_id)
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, query.from_user.id)
-        lang = user.language if user else "tr"
-
-    cancel_kb = get_cancel_reply_kb(lang)
-    await query.message.answer(get_text("prompt_edit_tch_classes", lang), reply_markup=cancel_kb, parse_mode="Markdown")
-    await state.set_state(Form.waiting_tch_classes)
-    await query.answer()
-
-@router.message(Form.waiting_tch_classes)
-async def process_tch_classes(message: Message, state: FSMContext):
-    raw_val = message.text.strip().upper()
-    data = await state.get_data()
-    tch_id = data.get("edit_tch_id")
-    await state.clear()
-
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, message.from_user.id)
-        lang = user.language if user else "tr"
-        tch = await session.get(Teacher, tch_id)
-        if tch:
-            if raw_val in ("TUMU", "HAMMASI", "ВСЕ", "ALL", "*"):
-                tch.assigned_classes = "ALL"
-            else:
-                tch.assigned_classes = raw_val
-            await session.commit()
-            await message.answer(get_text("tch_classes_updated", lang, classes=escape_md(tch.assigned_classes)), reply_markup=get_role_reply_kb("admin", lang), parse_mode="Markdown")
-            await render_clean_dashboard(message, user)
-
-@router.callback_query(F.data.startswith("adm:reset_tch:"))
+@router.callback_query(F.data.startswith("adm:confirm_reset_tch:"))
 async def cb_admin_reset_tch_code(query: CallbackQuery):
     tch_id = int(query.data.split(":")[2])
     async with AsyncSessionLocal() as session:
@@ -4728,171 +5073,6 @@ async def cb_classes_list(query: CallbackQuery, state: FSMContext | None = None)
 async def cb_noop(query: CallbackQuery):
     await query.answer()
 
-# ======================================================================
-# 12. KATEGORİ HUB'LARI VE RAPORLAR MASASI (ÇİFT YÖNLENDİRİCİ & IN-PLACE DÖNÜŞÜM)
-# ======================================================================
-
-@router.callback_query(F.data == "adm:cat_staff")
-@router.message(any_state, F.text.in_(["👥 Kadro & Öğrenci", "👥 Ученики и учителя", "👥 Kadro va o'quvchilar", "👥 Staff & Students"]))
-async def cb_cat_staff(event: Message | CallbackQuery, state: FSMContext | None = None):
-    if state: await state.clear()
-    user_id = event.from_user.id
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, user_id)
-        if not is_admin_user(user, user_id):
-            if isinstance(event, CallbackQuery): await event.answer()
-            return
-        lang = user.language if user else "tr"
-
-        bc = {"tr": "🏠 Ana Menü ➔ 👥 Kadro & Öğrenci", "ru": "🏠 Главное меню ➔ 👥 Ученики и учителя", "uz": "🏠 Asosiy menyu ➔ 👥 Kadro va o'quvchilar", "en": "🏠 Main Menu ➔ 👥 Staff & Students"}.get(lang, "👥 Staff & Students")
-        title = f"*{bc}*\n\n" + get_text("cat_staff_title", lang)
-
-        buttons = [
-            [InlineKeyboardButton(text=get_text("btn_classes", lang), callback_data="adm:classes"), InlineKeyboardButton(text=get_text("btn_teachers", lang), callback_data="adm:teachers")],
-            [InlineKeyboardButton(text=get_text("btn_search_student", lang), callback_data="adm:search_student"), InlineKeyboardButton(text=get_text("btn_search_teacher", lang), callback_data="adm:search_teacher")],
-            [InlineKeyboardButton(text=get_text("btn_school_admins", lang), callback_data="adm:admins_list"), InlineKeyboardButton(text=get_text("btn_users_hub", lang), callback_data="adm:users_hub:0")],
-            [InlineKeyboardButton(text=get_text("btn_class_promotion", lang), callback_data="adm:class_promotion_init")],
-            [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
-        ]
-        await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
-    if isinstance(event, CallbackQuery):
-        await event.answer()
-
-@router.callback_query(F.data == "adm:cat_reports")
-@router.message(any_state, F.text.in_(["📊 Raporlar & Denetim", "📊 Отчеты и контроль", "📊 Hisobotlar va nazorat", "📊 Reports & Audits"]))
-async def cb_cat_reports(event: Message | CallbackQuery, state: FSMContext | None = None):
-    if state: await state.clear()
-    user_id = event.from_user.id
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, user_id)
-        if not is_admin_user(user, user_id):
-            if isinstance(event, CallbackQuery): await event.answer()
-            return
-        lang = user.language if user else "tr"
-
-        bc = {"tr": "🏠 Ana Menü ➔ 📊 Raporlar & Denetim", "ru": "🏠 Главное меню ➔ 📊 Отчеты и контроль", "uz": "🏠 Asosiy menyu ➔ 📊 Hisobotlar va nazorat", "en": "🏠 Main Menu ➔ 📊 Reports & Audits"}.get(lang, "📊 Reports & Audits")
-        title = f"*{bc}*\n\n" + get_text("cat_reports_title", lang)
-
-        buttons = [
-            [InlineKeyboardButton(text=get_text("btn_cockpit_unified", lang), callback_data="adm:cockpit")],
-            [InlineKeyboardButton(text=get_text("btn_risk_radar", lang), callback_data="adm:risk_radar"), InlineKeyboardButton(text=get_text("btn_academic_report", lang), callback_data="adm:academic_report")],
-            [InlineKeyboardButton(text=get_text("btn_unack_notifs", lang), callback_data="adm:unack_notifs"), InlineKeyboardButton(text=get_text("btn_emergency_monitor", lang), callback_data="adm:emergency_monitor")],
-            [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
-        ]
-        await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
-    if isinstance(event, CallbackQuery):
-        await event.answer()
-
-@router.callback_query(F.data == "adm:cat_requests")
-@router.message(any_state, F.text.in_(["🛎️ Onay Masası", "🛎️ Центр одобрений", "🛎️ Tasdiqlash markazi", "🛎️ Approval Center"]))
-async def cb_cat_requests(event: Message | CallbackQuery, state: FSMContext | None = None):
-    if state: await state.clear()
-    user_id = event.from_user.id
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, user_id)
-        if not is_admin_user(user, user_id):
-            if isinstance(event, CallbackQuery): await event.answer()
-            return
-        lang = user.language if user else "tr"
-
-        req_cnt = (await session.execute(select(func.count(AccessRequest.id)).where(AccessRequest.status == "pending"))).scalar() or 0
-        med_cnt = (await session.execute(select(func.count(MedicalReport.id)).where(MedicalReport.status == "pending"))).scalar() or 0
-
-        bc = {"tr": "🏠 Ana Menü ➔ 🛎️ Onay Masası", "ru": "🏠 Главное меню ➔ 🛎️ Центр одобрений", "uz": "🏠 Asosiy menyu ➔ 🛎️ Tasdiqlash markazi", "en": "🏠 Main Menu ➔ 🛎️ Approval Center"}.get(lang, "🛎️ Approval Center")
-        title = f"*{bc}*\n\n" + get_text("cat_requests_title", lang)
-
-        buttons = [
-            [InlineKeyboardButton(text=get_text("btn_requests", lang, count=req_cnt), callback_data="adm:requests_list")],
-            [InlineKeyboardButton(text=get_text("btn_medical", lang, count=med_cnt), callback_data="adm:medical_list")],
-            [InlineKeyboardButton(text=get_text("btn_audit_logs", lang), callback_data="adm:audit_logs")],
-            [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
-        ]
-        await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
-    if isinstance(event, CallbackQuery):
-        await event.answer()
-
-@router.callback_query(F.data == "adm:cat_tools")
-@router.message(any_state, F.text.in_(["🛠️ İdari Araçlar", "🛠️ Инструменты", "🛠️ Boshqaruv vositalari", "🛠️ Admin Tools"]))
-async def cb_cat_tools(event: Message | CallbackQuery, state: FSMContext | None = None):
-    if state: await state.clear()
-    user_id = event.from_user.id
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, user_id)
-        if not is_admin_user(user, user_id):
-            if isinstance(event, CallbackQuery): await event.answer()
-            return
-        lang = user.language if user else "tr"
-
-        bc = {"tr": "🏠 Ana Menü ➔ 🛠️ İdari Araçlar", "ru": "🏠 Главное меню ➔ 🛠️ Инструменты", "uz": "🏠 Asosiy menyu ➔ 🛠️ Boshqaruv vositalari", "en": "🏠 Main Menu ➔ 🛠️ Admin Tools"}.get(lang, "🛠️ Admin Tools")
-        title = f"*{bc}*\n\n" + get_text("cat_tools_title", lang)
-
-        buttons = [
-            [InlineKeyboardButton(text=get_text("btn_broadcast", lang), callback_data="adm:broadcast_hub"), InlineKeyboardButton(text=get_text("btn_emergency_alert", lang), callback_data="adm:emergency_init")],
-            [InlineKeyboardButton(text=get_text("btn_excel_hub", lang), callback_data="adm:excel_hub"), InlineKeyboardButton(text=get_text("btn_pdf", lang), callback_data="adm:pdf_menu")],
-            [InlineKeyboardButton(text=get_text("btn_manage_schedule", lang), callback_data="adm:sched_edit_menu"), InlineKeyboardButton(text=get_text("btn_cafeteria_edit", lang), callback_data="adm:menu_edit")],
-            [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
-        ]
-        await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
-    if isinstance(event, CallbackQuery):
-        await event.answer()
-
-@router.callback_query(F.data == "adm:cat_settings")
-@router.message(any_state, F.text.in_(["⚙️ Sistem & Ayarlar", "⚙️ Настройки системы", "⚙️ Tizim va sozlamalar", "⚙️ System & Settings"]))
-async def cb_cat_settings(event: Message | CallbackQuery, state: FSMContext | None = None):
-    if state: await state.clear()
-    user_id = event.from_user.id
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, user_id)
-        if not is_admin_user(user, user_id):
-            if isinstance(event, CallbackQuery): await event.answer()
-            return
-        lang = user.language if user else "tr"
-
-        maint = await session.get(SystemSetting, "maintenance_mode")
-        is_maint = maint.value == "true" if maint else False
-
-        status_lbl = {
-            "tr": "AÇIK" if is_maint else "KAPALI",
-            "ru": "ВКЛ" if is_maint else "ВЫКЛ",
-            "uz": "TO'XTATILGAN" if is_maint else "ISHLAMOQDA",
-            "en": "ON" if is_maint else "OFF"
-        }.get(lang, "ON" if is_maint else "OFF")
-        maint_txt = get_text("btn_maintenance_toggle", lang, status=status_lbl)
-
-        wk_setting = await session.get(SystemSetting, "weekend_attendance_allowed")
-        is_wk = wk_setting.value == "true" if wk_setting else False
-        wk_lbl = "AÇIK" if is_wk else "KAPALI"
-        wk_btn_txt = get_text("btn_weekend_attendance", lang, status=wk_lbl)
-
-        bc = {"tr": "🏠 Ana Menü ➔ ⚙️ Sistem & Ayarlar", "ru": "🏠 Главное меню ➔ ⚙️ Настройки", "uz": "🏠 Asosiy menyu ➔ ⚙️ Tizim va sozlamalar", "en": "🏠 Main Menu ➔ ⚙️ System & Settings"}.get(lang, "⚙️ Settings")
-        title = f"*{bc}*\n\n" + get_text("cat_settings_title", lang)
-
-        buttons = [
-            [InlineKeyboardButton(text=maint_txt, callback_data="adm:toggle_maint"), InlineKeyboardButton(text=get_text("btn_blacklist", lang), callback_data="adm:blacklist")],
-            [InlineKeyboardButton(text=wk_btn_txt, callback_data="adm:toggle_weekend_att"), InlineKeyboardButton(text=get_text("btn_clean_logs", lang), callback_data="adm:clean_old_logs")],
-            [InlineKeyboardButton(text=get_text("btn_timezone_setting", lang, offset=TIMEZONE_OFFSET), callback_data="adm:timezone_menu"), InlineKeyboardButton(text=get_text("btn_export_all_data", lang), callback_data="adm:export_all_excel")],
-            [InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")],
-            [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
-        ]
-        await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
-    if isinstance(event, CallbackQuery):
-        await event.answer()
-
-@router.callback_query(F.data == "adm:toggle_weekend_att")
-async def cb_admin_toggle_weekend_att(query: CallbackQuery):
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, query.from_user.id)
-        lang = user.language if user else "tr"
-        wk_setting = await session.get(SystemSetting, "weekend_attendance_allowed")
-        if not wk_setting:
-            wk_setting = SystemSetting(key="weekend_attendance_allowed", value="true")
-            session.add(wk_setting)
-        else:
-            wk_setting.value = "false" if wk_setting.value == "true" else "true"
-        await session.commit()
-        await query.answer(get_text("weekend_attendance_updated", lang), show_alert=True)
-        await cb_cat_settings(query, None)
-
 @router.callback_query(F.data.startswith("adm:class_att_sheet:"))
 async def cb_class_attendance_sheet(query: CallbackQuery):
     class_name = query.data.split(":")[2]
@@ -4906,11 +5086,11 @@ async def cb_class_attendance_sheet(query: CallbackQuery):
             return
 
         header_att = {
-            "tr": f"📋 *{escape_md(class_name)} Sınıfı Toplu Devamsızlık Çizelgesi:*\n",
-            "ru": f"📋 *Ведомость посещаемости класса {escape_md(class_name)}:*\n",
-            "uz": f"📋 *{escape_md(class_name)} sinfining umumiy davomat qaydnomasi:*\n",
-            "en": f"📋 *Class Attendance Sheet for {escape_md(class_name)}:*\n"
-        }.get(lang, f"📋 *Attendance: {escape_md(class_name)}*\n")
+            "tr": f"📋 *{escape_md(class_name)} Sınıfı Toplu Devamsızlık Çizelgesi:*\\n",
+            "ru": f"📋 *Ведомость посещаемости класса {escape_md(class_name)}:*\\n",
+            "uz": f"📋 *{escape_md(class_name)} sinfining umumiy davomat qaydnomasi:*\\n",
+            "en": f"📋 *Class Attendance Sheet for {escape_md(class_name)}:*\\n"
+        }.get(lang, f"📋 *Attendance: {escape_md(class_name)}*\\n")
 
         lines = [header_att]
         total_abs_class = 0
@@ -4928,10 +5108,10 @@ async def cb_class_attendance_sheet(query: CallbackQuery):
         avg_abs = round(total_abs_class / len(students), 1) if students else 0
         lbl_total_st = {"tr": "Sınıf Mevcudu", "ru": "Всего учеников", "uz": "Sinf mevcudi", "en": "Class Total"}.get(lang, "Total")
         lbl_avg_abs = {"tr": "Ortalama Devamsızlık", "ru": "Средний пропуск", "uz": "O'rtacha davomat", "en": "Average Absence"}.get(lang, "Avg")
-        lines.append(f"\n📊 *{lbl_total_st}:* {len(students)} | *{lbl_avg_abs}:* {avg_abs} {lbl_day}")
+        lines.append(f"\\n📊 *{lbl_total_st}:* {len(students)} | *{lbl_avg_abs}:* {avg_abs} {lbl_day}")
 
         buttons = [get_nav_buttons(lang, back_callback=f"adm:show_class:{class_name}")]
-        await safe_edit_or_answer(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+        await safe_edit_or_answer(query, "\\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
 @router.callback_query(F.data.startswith("adm:show_class:"))
@@ -4949,6 +5129,12 @@ async def cb_show_class_students(query: CallbackQuery):
         total_students = len(all_students)
         total_pages = max(1, (total_students + PAGE_SIZE - 1) // PAGE_SIZE)
         page = max(0, min(page, total_pages - 1))
+
+        # O sınıfa giren öğretmenlerin listesi
+        all_teachers = (await session.execute(select(Teacher))).scalars().all()
+        class_teachers = [t for t in all_teachers if t.assigned_classes == "ALL" or class_name in [x.strip() for x in (t.assigned_classes or "").split(",")]]
+        tch_names = [f"{t.full_name} ({t.subject})" for t in class_teachers]
+        tch_summary = ", ".join(tch_names) if tch_names else "Henüz Atanmadı"
 
         start_idx = page * PAGE_SIZE
         paged_students = all_students[start_idx : start_idx + PAGE_SIZE]
@@ -4974,6 +5160,7 @@ async def cb_show_class_students(query: CallbackQuery):
         class_list_title = (
             f"*{bc_sc}*\n\n"
             f"🏫 *{escape_md(class_name)} Sınıfı Listesi* (Toplam {total_students} Öğrenci):\n"
+            f"👨‍🏫 *{get_text('lbl_class_teachers', lang)}:* _{escape_md(tch_summary)}_\n\n"
             f"Detay veya şifre işlemleri için öğrenciye tıklayınız:"
         )
         await safe_edit_or_answer(query, class_list_title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -5069,7 +5256,7 @@ async def cb_student_card(query: CallbackQuery):
         buttons = [
             [InlineKeyboardButton(text=get_text("btn_behavior", lang), callback_data=f"bh_st:{st.id}")],
             [InlineKeyboardButton(text=get_text("btn_edit_student", lang), callback_data=f"adm:edit_st:{st.id}")],
-            [InlineKeyboardButton(text=get_text("btn_reset_codes", lang), callback_data=f"adm:reset_codes:{st.id}")],
+            [InlineKeyboardButton(text=get_text("btn_reset_codes", lang), callback_data=f"adm:prompt_reset_st:{st.id}")],
             [InlineKeyboardButton(text=get_text("btn_unlink_parent", lang), callback_data=f"adm:unlink_pr:{st.id}")],
             [InlineKeyboardButton(text=get_text("btn_del_student", lang), callback_data=f"adm:del_student:{st.id}")],
             get_nav_buttons(lang, back_callback=f"adm:show_class:{st.class_name}")
@@ -5077,7 +5264,25 @@ async def cb_student_card(query: CallbackQuery):
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
-@router.callback_query(F.data.startswith("adm:reset_codes:"))
+# --- ÖĞRENCİ KOD SIFIRLAMA: 2 ADIMLI GÜVENLİK ONAYI ---
+@router.callback_query(F.data.startswith("adm:prompt_reset_st:"))
+async def cb_prompt_reset_student_codes(query: CallbackQuery):
+    st_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        st = await session.get(Student, st_id)
+        if not st: return
+
+        text = f"🧑‍🎓 *{escape_md(st.full_name)}*\n\n" + get_text("confirm_reset_codes_prompt", lang)
+        buttons = [
+            [InlineKeyboardButton(text=get_text("btn_confirm_reset", lang), callback_data=f"adm:confirm_reset_st:{st.id}")],
+            [InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data=f"adm:st_card:{st.id}")]
+        ]
+        await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await query.answer()
+
+@router.callback_query(F.data.startswith("adm:confirm_reset_st:"))
 async def cb_reset_student_codes(query: CallbackQuery):
     st_id = int(query.data.split(":")[2])
     async with AsyncSessionLocal() as session:
@@ -5677,6 +5882,171 @@ async def cb_reject_medical(query: CallbackQuery):
             await query.message.answer(get_text("medical_rejected", lang))
             if user: await render_clean_dashboard(query.message, user)
     await query.answer()
+
+# ======================================================================
+# 12. KATEGORİ HUB'LARI VE RAPORLAR MASASI (ÇİFT YÖNLENDİRİCİ & IN-PLACE DÖNÜŞÜM)
+# ======================================================================
+
+@router.callback_query(F.data == "adm:cat_staff")
+@router.message(any_state, F.text.in_(["👥 Kadro & Öğrenci", "👥 Ученики и учителя", "👥 Kadro va o'quvchilar", "👥 Staff & Students"]))
+async def cb_cat_staff(event: Message | CallbackQuery, state: FSMContext | None = None):
+    if state: await state.clear()
+    user_id = event.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not is_admin_user(user, user_id):
+            if isinstance(event, CallbackQuery): await event.answer()
+            return
+        lang = user.language if user else "tr"
+
+        bc = {"tr": "🏠 Ana Menü ➔ 👥 Kadro & Öğrenci", "ru": "🏠 Главное меню ➔ 👥 Ученики и учителя", "uz": "🏠 Asosiy menyu ➔ 👥 Kadro va o'quvchilar", "en": "🏠 Main Menu ➔ 👥 Staff & Students"}.get(lang, "👥 Staff & Students")
+        title = f"*{bc}*\n\n" + get_text("cat_staff_title", lang)
+
+        buttons = [
+            [InlineKeyboardButton(text=get_text("btn_classes", lang), callback_data="adm:classes"), InlineKeyboardButton(text=get_text("btn_teachers", lang), callback_data="adm:teachers")],
+            [InlineKeyboardButton(text=get_text("btn_search_student", lang), callback_data="adm:search_student"), InlineKeyboardButton(text=get_text("btn_search_teacher", lang), callback_data="adm:search_teacher")],
+            [InlineKeyboardButton(text=get_text("btn_school_admins", lang), callback_data="adm:admins_list"), InlineKeyboardButton(text=get_text("btn_users_hub", lang), callback_data="adm:users_hub:0")],
+            [InlineKeyboardButton(text=get_text("btn_class_promotion", lang), callback_data="adm:class_promotion_init")],
+            [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
+        ]
+        await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+
+@router.callback_query(F.data == "adm:cat_reports")
+@router.message(any_state, F.text.in_(["📊 Raporlar & Denetim", "📊 Отчеты и контроль", "📊 Hisobotlar va nazorat", "📊 Reports & Audits"]))
+async def cb_cat_reports(event: Message | CallbackQuery, state: FSMContext | None = None):
+    if state: await state.clear()
+    user_id = event.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not is_admin_user(user, user_id):
+            if isinstance(event, CallbackQuery): await event.answer()
+            return
+        lang = user.language if user else "tr"
+
+        bc = {"tr": "🏠 Ana Menü ➔ 📊 Raporlar & Denetim", "ru": "🏠 Главное меню ➔ 📊 Отчеты и контроль", "uz": "🏠 Asosiy menyu ➔ 📊 Hisobotlar va nazorat", "en": "🏠 Main Menu ➔ 📊 Reports & Audits"}.get(lang, "📊 Reports & Audits")
+        title = f"*{bc}*\n\n" + get_text("cat_reports_title", lang)
+
+        buttons = [
+            [InlineKeyboardButton(text=get_text("btn_cockpit_unified", lang), callback_data="adm:cockpit")],
+            [InlineKeyboardButton(text=get_text("btn_risk_radar", lang), callback_data="adm:risk_radar"), InlineKeyboardButton(text=get_text("btn_academic_report", lang), callback_data="adm:academic_report")],
+            [InlineKeyboardButton(text=get_text("btn_unack_notifs", lang), callback_data="adm:unack_notifs"), InlineKeyboardButton(text=get_text("btn_emergency_monitor", lang), callback_data="adm:emergency_monitor")],
+            [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
+        ]
+        await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+
+@router.callback_query(F.data == "adm:cat_requests")
+@router.message(any_state, F.text.in_(["🛎️ Onay Masası", "🛎️ Центр одобрений", "🛎️ Tasdiqlash markazi", "🛎️ Approval Center"]))
+async def cb_cat_requests(event: Message | CallbackQuery, state: FSMContext | None = None):
+    if state: await state.clear()
+    user_id = event.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not is_admin_user(user, user_id):
+            if isinstance(event, CallbackQuery): await event.answer()
+            return
+        lang = user.language if user else "tr"
+
+        req_cnt = (await session.execute(select(func.count(AccessRequest.id)).where(AccessRequest.status == "pending"))).scalar() or 0
+        med_cnt = (await session.execute(select(func.count(MedicalReport.id)).where(MedicalReport.status == "pending"))).scalar() or 0
+
+        bc = {"tr": "🏠 Ana Menü ➔ 🛎️ Onay Masası", "ru": "🏠 Главное меню ➔ 🛎️ Центр одобрений", "uz": "🏠 Asosiy menyu ➔ 🛎️ Tasdiqlash markazi", "en": "🏠 Main Menu ➔ 🛎️ Approval Center"}.get(lang, "🛎️ Approval Center")
+        title = f"*{bc}*\n\n" + get_text("cat_requests_title", lang)
+
+        buttons = [
+            [InlineKeyboardButton(text=get_text("btn_requests", lang, count=req_cnt), callback_data="adm:requests_list")],
+            [InlineKeyboardButton(text=get_text("btn_medical", lang, count=med_cnt), callback_data="adm:medical_list")],
+            [InlineKeyboardButton(text=get_text("btn_audit_logs", lang), callback_data="adm:audit_logs")],
+            [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
+        ]
+        await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+
+@router.callback_query(F.data == "adm:cat_tools")
+@router.message(any_state, F.text.in_(["🛠️ İdari Araçlar", "🛠️ Инструменты", "🛠️ Boshqaruv vositalari", "🛠️ Admin Tools"]))
+async def cb_cat_tools(event: Message | CallbackQuery, state: FSMContext | None = None):
+    if state: await state.clear()
+    user_id = event.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not is_admin_user(user, user_id):
+            if isinstance(event, CallbackQuery): await event.answer()
+            return
+        lang = user.language if user else "tr"
+
+        bc = {"tr": "🏠 Ana Menü ➔ 🛠️ İdari Araçlar", "ru": "🏠 Главное меню ➔ 🛠️ Инструменты", "uz": "🏠 Asosiy menyu ➔ 🛠️ Boshqaruv vositalari", "en": "🏠 Main Menu ➔ 🛠️ Admin Tools"}.get(lang, "🛠️ Admin Tools")
+        title = f"*{bc}*\n\n" + get_text("cat_tools_title", lang)
+
+        buttons = [
+            [InlineKeyboardButton(text=get_text("btn_broadcast", lang), callback_data="adm:broadcast_hub"), InlineKeyboardButton(text=get_text("btn_emergency_alert", lang), callback_data="adm:emergency_init")],
+            [InlineKeyboardButton(text=get_text("btn_excel_hub", lang), callback_data="adm:excel_hub"), InlineKeyboardButton(text=get_text("btn_pdf", lang), callback_data="adm:pdf_menu")],
+            [InlineKeyboardButton(text=get_text("btn_manage_schedule", lang), callback_data="adm:sched_edit_menu"), InlineKeyboardButton(text=get_text("btn_cafeteria_edit", lang), callback_data="adm:menu_edit")],
+            [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
+        ]
+        await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+
+@router.callback_query(F.data == "adm:cat_settings")
+@router.message(any_state, F.text.in_(["⚙️ Sistem & Ayarlar", "⚙️ Настройки системы", "⚙️ Tizim va sozlamalar", "⚙️ System & Settings"]))
+async def cb_cat_settings(event: Message | CallbackQuery, state: FSMContext | None = None):
+    if state: await state.clear()
+    user_id = event.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not is_admin_user(user, user_id):
+            if isinstance(event, CallbackQuery): await event.answer()
+            return
+        lang = user.language if user else "tr"
+
+        maint = await session.get(SystemSetting, "maintenance_mode")
+        is_maint = maint.value == "true" if maint else False
+
+        status_lbl = {
+            "tr": "AÇIK" if is_maint else "KAPALI",
+            "ru": "ВКЛ" if is_maint else "ВЫКЛ",
+            "uz": "TO'XTATILGAN" if is_maint else "ISHLAMOQDA",
+            "en": "ON" if is_maint else "OFF"
+        }.get(lang, "ON" if is_maint else "OFF")
+        maint_txt = get_text("btn_maintenance_toggle", lang, status=status_lbl)
+
+        wk_setting = await session.get(SystemSetting, "weekend_attendance_allowed")
+        is_wk = wk_setting.value == "true" if wk_setting else False
+        wk_lbl = "AÇIK" if is_wk else "KAPALI"
+        wk_btn_txt = get_text("btn_weekend_attendance", lang, status=wk_lbl)
+
+        bc = {"tr": "🏠 Ana Menü ➔ ⚙️ Sistem & Ayarlar", "ru": "🏠 Главное меню ➔ ⚙️ Настройки", "uz": "🏠 Asosiy menyu ➔ ⚙️ Tizim va sozlamalar", "en": "🏠 Main Menu ➔ ⚙️ System & Settings"}.get(lang, "⚙️ Settings")
+        title = f"*{bc}*\n\n" + get_text("cat_settings_title", lang)
+
+        buttons = [
+            [InlineKeyboardButton(text=maint_txt, callback_data="adm:toggle_maint"), InlineKeyboardButton(text=get_text("btn_blacklist", lang), callback_data="adm:blacklist")],
+            [InlineKeyboardButton(text=wk_btn_txt, callback_data="adm:toggle_weekend_att"), InlineKeyboardButton(text=get_text("btn_clean_logs", lang), callback_data="adm:clean_old_logs")],
+            [InlineKeyboardButton(text=get_text("btn_timezone_setting", lang, offset=TIMEZONE_OFFSET), callback_data="adm:timezone_menu"), InlineKeyboardButton(text=get_text("btn_export_all_data", lang), callback_data="adm:export_all_excel")],
+            [InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")],
+            [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
+        ]
+        await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+
+@router.callback_query(F.data == "adm:toggle_weekend_att")
+async def cb_admin_toggle_weekend_att(query: CallbackQuery):
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+        wk_setting = await session.get(SystemSetting, "weekend_attendance_allowed")
+        if not wk_setting:
+            wk_setting = SystemSetting(key="weekend_attendance_allowed", value="true")
+            session.add(wk_setting)
+        else:
+            wk_setting.value = "false" if wk_setting.value == "true" else "true"
+        await session.commit()
+        await query.answer(get_text("weekend_attendance_updated", lang), show_alert=True)
+        await cb_cat_settings(query, None)
 
 # ======================================================================
 # 13. KULLANICI REHBERİ, YÖNETİCİ KADROSU VE HEDEFLİ DUYURU MASASI
@@ -6614,7 +6984,12 @@ async def cb_teacher_classes(query: CallbackQuery, state: FSMContext):
 
         if tch and tch.assigned_classes and tch.assigned_classes != "ALL":
             allowed = [c.strip() for c in tch.assigned_classes.split(",") if c.strip()]
-            classes = [c for c in all_classes if c in allowed] or all_classes
+            classes = [c for c in all_classes if c in allowed]
+            if not classes:
+                buttons = [[InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]]
+                await safe_edit_or_answer(query, get_text("no_assigned_classes_teacher", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+                await query.answer()
+                return
         else:
             classes = all_classes or ["9-A"]
 
