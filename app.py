@@ -5290,6 +5290,27 @@ async def cb_admin_del_class(query: CallbackQuery):
         await query.answer(tst, show_alert=True)
         await cb_classes_list(query, None)
 
+@router.callback_query(F.data.startswith("adm:add_st_to_cls:"))
+async def cb_add_student_to_specific_class(query: CallbackQuery, state: FSMContext):
+    await state.clear()
+    class_name = query.data.split(":")[2]
+    await state.update_data(class_name=class_name)
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+    cancel_kb = get_cancel_reply_kb(lang)
+    prompt_msg = {
+        "tr": f"👤 <b>{class_name} Sınıfına Öğrenci Ekleme</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nLütfen öğrencinin Adını ve Soyadını yazınız:",
+        "ru": f"👤 <b>Добавление ученика в класс {class_name}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nВведите ФИО ученика:",
+        "uz": f"👤 <b>{class_name} sinfiga o'quvchi qo'shish</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nIltimos, o'quvchining Ism va Familiyasini kiriting:",
+        "en": f"👤 <b>Add Student to {class_name}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nPlease enter the student's Full Name:"
+    }.get(lang, "Enter Full Name:")
+
+    await safe_edit_or_answer(query, prompt_msg, reply_markup=cancel_kb, parse_mode="HTML")
+    await state.set_state(Form.add_student_name)
+    await query.answer()
+
 async def cb_start_add_student(query: CallbackQuery, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as session:
@@ -5314,6 +5335,12 @@ async def process_student_name(message: Message, state: FSMContext):
         await message.answer(get_text("student_name_invalid", lang))
         return
     await state.update_data(name=name_val)
+
+    data = await state.get_data()
+    if data.get("class_name"):
+        await message.answer(get_text("prompt_student_no", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="HTML")
+        await state.set_state(Form.add_student_no)
+        return
 
     await message.answer(get_text("prompt_student_class", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="HTML")
     await state.set_state(Form.add_student_class)
@@ -6093,26 +6120,6 @@ async def cb_show_class_students(query: CallbackQuery):
         tch_names = [f"{t.full_name} ({t.subject})" for t in class_teachers]
         tch_summary = ", ".join(tch_names) if tch_names else "Henüz Atanmadı"
 
-        start_idx = page * PAGE_SIZE
-        paged_students = all_students[start_idx : start_idx + PAGE_SIZE]
-
-        buttons = []
-        for s in paged_students:
-            buttons.append([InlineKeyboardButton(text=f"👤 {s.full_name} ({s.student_number})", callback_data=f"adm:st_card:{s.id}")])
-
-        if total_pages > 1:
-            nav_row = []
-            if page > 0:
-                nav_row.append(InlineKeyboardButton(text=get_text("btn_prev", lang), callback_data=f"adm:show_class:{class_name}:{page - 1}"))
-            nav_row.append(InlineKeyboardButton(text=f"📄 {page + 1}/{total_pages}", callback_data="noop"))
-            if page < total_pages - 1:
-                nav_row.append(InlineKeyboardButton(text=get_text("btn_next", lang), callback_data=f"adm:show_class:{class_name}:{page + 1}"))
-            buttons.append(nav_row)
-
-        buttons.append([InlineKeyboardButton(text=f"📋 {class_name} {get_text('btn_class_att_sheet', lang)}", callback_data=f"adm:class_att_sheet:{class_name}")])
-        buttons.append([InlineKeyboardButton(text=f"📄 {class_name} {get_text('btn_class_pdf_cards', lang)}", callback_data=f"adm:gen_pdf:{class_name}")])
-        buttons.append(get_nav_buttons(lang, back_callback="adm:classes"))
-
         bc_sc = {"tr": f"🏠 Ana Menü ➔ 👥 Kadro ➔ 🏫 {class_name}", "ru": f"🏠 Главное меню ➔ 👥 Ученики ➔ 🏫 {class_name}", "uz": f"🏠 Asosiy menyu ➔ 👥 Kadro ➔ 🏫 {class_name}", "en": f"🏠 Main Menu ➔ 👥 Staff ➔ 🏫 {class_name}"}.get(lang, f"🏫 {class_name}")
         header_roster = {
             "tr": f"🏫 <b>{escape_html(class_name)} Sınıfı Listesi</b> (Toplam {total_students} Öğrenci):",
@@ -6120,19 +6127,66 @@ async def cb_show_class_students(query: CallbackQuery):
             "uz": f"🏫 <b>{escape_html(class_name)} sinfi ro'yxati</b> (Jami: {total_students} o'quvchi):",
             "en": f"🏫 <b>Class {escape_html(class_name)} Roster</b> (Total: {total_students} Students):"
         }.get(lang, f"🏫 <b>Class {escape_html(class_name)}</b>:")
-        tap_hint = {
-            "tr": "Detay veya şifre işlemleri için öğrenciye tıklayınız:",
-            "ru": "Нажмите на ученика для просмотра данных или кодов:",
-            "uz": "Ma'lumotlar yoki kodlar uchun o'quvchini tanlang:",
-            "en": "Tap a student to manage details or credentials:"
-        }.get(lang, "Tap a student:")
-        class_list_title = (
-            f"<b>{bc_sc}</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"{header_roster}\n"
-            f"👨‍🏫 <b>{get_text('lbl_class_teachers', lang)}:</b> <i>{escape_html(tch_summary)}</i>\n\n"
-            f"{tap_hint}"
-        )
+
+        btn_add_to_cls = {"tr": "➕ Bu Sınıfa Öğrenci Ekle", "ru": "➕ Добавить ученика в этот класс", "uz": "➕ Bu sinfga o'quvchi qo'shish", "en": "➕ Add Student to Class"}.get(lang, "➕ Add Student")
+        btn_del_cls = {"tr": "🗑️ Sınıfı Sil", "ru": "🗑️ Удалить класс", "uz": "🗑️ Sinfni o'chirish", "en": "🗑️ Delete Class"}.get(lang, "🗑️ Delete Class")
+
+        buttons = []
+
+        if total_students == 0:
+            empty_hint = {
+                "tr": "ℹ️ <i>Bu sınıfta henüz kayıtlı öğrenci bulunmamaktadır.</i>",
+                "ru": "ℹ️ <i>В этом классе пока нет зарегистрированных учеников.</i>",
+                "uz": "ℹ️ <i>Ushbu sinfda hali o'quvchilar ro'yxatga olinmagan.</i>",
+                "en": "ℹ️ <i>No students are currently registered in this class.</i>"
+            }.get(lang, "No students registered.")
+            buttons = [
+                [InlineKeyboardButton(text=btn_add_to_cls, callback_data=f"adm:add_st_to_cls:{class_name}")],
+                [InlineKeyboardButton(text=btn_del_cls, callback_data=f"adm:del_class:{class_name}")],
+                get_nav_buttons(lang, back_callback="adm:classes")
+            ]
+            class_list_title = (
+                f"<b>{bc_sc}</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"{header_roster}\n"
+                f"👨‍🏫 <b>{get_text('lbl_class_teachers', lang)}:</b> <i>{escape_html(tch_summary)}</i>\n\n"
+                f"{empty_hint}"
+            )
+        else:
+            start_idx = page * PAGE_SIZE
+            paged_students = all_students[start_idx : start_idx + PAGE_SIZE]
+
+            for s in paged_students:
+                buttons.append([InlineKeyboardButton(text=f"👤 {s.full_name} ({s.student_number})", callback_data=f"adm:st_card:{s.id}")])
+
+            if total_pages > 1:
+                nav_row = []
+                if page > 0:
+                    nav_row.append(InlineKeyboardButton(text=get_text("btn_prev", lang), callback_data=f"adm:show_class:{class_name}:{page - 1}"))
+                nav_row.append(InlineKeyboardButton(text=f"📄 {page + 1}/{total_pages}", callback_data="noop"))
+                if page < total_pages - 1:
+                    nav_row.append(InlineKeyboardButton(text=get_text("btn_next", lang), callback_data=f"adm:show_class:{class_name}:{page + 1}"))
+                buttons.append(nav_row)
+
+            buttons.append([InlineKeyboardButton(text=btn_add_to_cls, callback_data=f"adm:add_st_to_cls:{class_name}")])
+            buttons.append([InlineKeyboardButton(text=f"📋 {class_name} {get_text('btn_class_att_sheet', lang)}", callback_data=f"adm:class_att_sheet:{class_name}")])
+            buttons.append([InlineKeyboardButton(text=f"📄 {class_name} {get_text('btn_class_pdf_cards', lang)}", callback_data=f"adm:gen_pdf:{class_name}")])
+            buttons.append(get_nav_buttons(lang, back_callback="adm:classes"))
+
+            tap_hint = {
+                "tr": "Detay veya şifre işlemleri için öğrenciye tıklayınız:",
+                "ru": "Нажмите на ученика для просмотра данных или кодов:",
+                "uz": "Ma'lumotlar yoki kodlar uchun o'quvchini tanlang:",
+                "en": "Tap a student to manage details or credentials:"
+            }.get(lang, "Tap a student:")
+            class_list_title = (
+                f"<b>{bc_sc}</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"{header_roster}\n"
+                f"👨‍🏫 <b>{get_text('lbl_class_teachers', lang)}:</b> <i>{escape_html(tch_summary)}</i>\n\n"
+                f"{tap_hint}"
+            )
+
         await safe_edit_or_answer(query, class_list_title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
@@ -6401,30 +6455,10 @@ async def cb_admin_dashboard(query: CallbackQuery, state: FSMContext | None = No
         try: await bot_obj.delete_message(chat_id=chat_id, message_id=sub_id)
         except Exception: pass
 
-    # Mevcut menü kartını ve tüm önceki bot mesajlarını tamamen temizle
-    try:
-        if query.message: await query.message.delete()
-    except Exception: pass
-    await purge_previous_bot_messages(bot_obj, chat_id)
-
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         if user:
-            reply_kb = get_role_reply_kb(user.role, user.language)
-            dash_text = await get_dashboard_card_text(user)
-
-            parent_quick_kb = None
-            if user.role == "parent":
-                all_k = (await session.execute(select(Student).join(ParentStudent, ParentStudent.student_id == Student.id).where(ParentStudent.parent_telegram_id == user.telegram_id))).scalars().all()
-                if len(all_k) > 1:
-                    sw_txt = {"tr": "🔄 Öğrenciyi Değiştir", "ru": "🔄 Сменить ученика", "uz": "🔄 O'quvchini almashtirish", "en": "🔄 Switch Student"}.get(user.language, "🔄 Switch Student")
-                    parent_quick_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=sw_txt, callback_data="parent:switch_student")]])
-
-            sent_dash = await bot_obj.send_message(chat_id=chat_id, text=dash_text, reply_markup=parent_quick_kb, parse_mode="HTML")
-            if sent_dash:
-                LAST_MENU_MSG_ID[chat_id] = sent_dash.message_id
-                ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(sent_dash.message_id)
-
+            await render_clean_dashboard(query, user)
     await query.answer()
 
 @router.callback_query(F.data == "adm:unack_notifs")
@@ -10628,6 +10662,8 @@ REPLY_BUTTON_ACTIONS = {
     "rk_restart": "act_restart",
     "rk_main_menu": "act_main_menu",
     "rk_admin_dash": "act_main_menu",
+    "btn_main_menu": "act_main_menu",
+    "bc_home": "act_main_menu",
     "rk_lang": "act_lang",
     "btn_lang": "act_lang",
     "btn_login_prompt": "act_enter_code",
@@ -10668,6 +10704,14 @@ def match_reply_button(text: str) -> str | None:
             btn_txt = LOCALES[lang_code].get(key, "")
             if btn_txt and btn_txt == clean_text:
                 return action
+
+    # Normalleştirilmiş ana menü / glavnoye menyu kontrolü
+    clean_norm = clean_text.lower().replace("🏠", "").replace("⚡", "").replace("•", "").strip()
+    if clean_norm in [
+        "ana menu", "ana menü", "baş menü", "bas menu", "главное меню", "главное",
+        "glavnoe menu", "glavnoye menyu", "asosiy menyu", "main menu", "menu", "меню"
+    ]:
+        return "act_main_menu"
     return None
 
 @router.message(any_state, F.text.func(lambda text: match_reply_button(text) is not None))
@@ -10833,6 +10877,43 @@ async def global_reply_keyboard_router(message: Message, state: FSMContext):
         elif action == "act_upload_medical" and user.role == "parent":
             dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="upload_medical_init")
             await cb_upload_med_init(dummy_q, state)
+            return
+        elif action == "act_parent_info":
+            buttons = [
+                [InlineKeyboardButton(text=get_text("btn_notices", lang), callback_data="act_view_notices"), InlineKeyboardButton(text=get_text("btn_view_schedule", lang), callback_data="act_view_sched")],
+                [InlineKeyboardButton(text=get_text("btn_view_cafeteria", lang), callback_data="act_view_cafe"), InlineKeyboardButton(text=get_text("btn_exam_schedule", lang), callback_data="act_view_exams")]
+            ]
+            if user.role == "parent":
+                buttons.append([InlineKeyboardButton(text=get_text("rk_appointments", lang), callback_data="act_book_app"), InlineKeyboardButton(text=get_text("rk_upload_medical", lang), callback_data="upload_medical_init")])
+            buttons.append([InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")])
+
+            title = get_text("parent_info_title", lang)
+            info_desc = {
+                "tr": f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nOkul duyurularını, haftalık ders programını, yemekhane menüsünü veya sınav takvimini görüntülemek için bir işlem seçiniz:",
+                "ru": f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nВыберите раздел для просмотра объявлений школы, расписания уроков, меню или экзаменов:",
+                "uz": f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nMaktab e'lonlari, dars jadvali, oshxona menyusi yoki imtihonlar jadvalini ko'rish uchun tanlang:",
+                "en": f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSelect an option to view school announcements, timetable, cafeteria menu, or exams:"
+            }.get(lang, f"<b>{title}</b>\nSelect an option:")
+
+            sent_m = await message.bot.send_message(chat_id=message.chat.id, text=info_desc, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+            if sent_m:
+                LAST_MENU_MSG_ID[message.chat.id] = sent_m.message_id
+                ACTIVE_CHAT_MESSAGES.setdefault(message.chat.id, set()).add(sent_m.message_id)
+            return
+        elif action == "act_parent_settings":
+            btn_brief = get_text("btn_briefing_on", lang) if user.evening_briefing else get_text("btn_briefing_off", lang)
+            buttons = [
+                [InlineKeyboardButton(text=btn_brief, callback_data="parent:toggle_briefing")],
+                [InlineKeyboardButton(text="➕ " + {"tr": "Başka Çocuk Ekle", "ru": "Привязать ребенка", "uz": "Boshqa farzandni ulash", "en": "Link Child"}.get(lang, "Link Child"), callback_data="parent:add_child_code")],
+                [InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")],
+                [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
+            ]
+            title = get_text("parent_settings_title", lang)
+            p_desc = f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + {"tr": "Ayarlarınızı yapılandırabilirsiniz:", "ru": "Настройки аккаунта:", "uz": "Sozlamalarni boshqarish:", "en": "Configure your settings:"}.get(lang, "Settings:")
+            sent_m = await message.bot.send_message(chat_id=message.chat.id, text=p_desc, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+            if sent_m:
+                LAST_MENU_MSG_ID[message.chat.id] = sent_m.message_id
+                ACTIVE_CHAT_MESSAGES.setdefault(message.chat.id, set()).add(sent_m.message_id)
             return
 
 @router.message(any_state, F.text.func(lambda text: normalize_code(text).startswith(("VELI-", "OGR-", "HCA-", "ADM-")) or normalize_code(text) == ADMIN_CODE))
