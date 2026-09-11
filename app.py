@@ -561,7 +561,15 @@ LOCALES = {
         "btn_cancel_action": "⬅️ İptal",
         "rk_cancel_action": "❌ İşlemi İptal Et",
         "action_cancelled": "❌ *İşlem iptal edildi.*",
-        "admin_restart_confirmed": "🔄 *Yönetici Paneli Yeniden Başlatıldı.*"
+        "admin_restart_confirmed": "🔄 *Yönetici Paneli Yeniden Başlatıldı.*",
+        "btn_next": "Sonraki ➡️",
+        "btn_appr_appointment": "✅ Kabul Et",
+        "btn_view_photo": "Görseli Aç",
+        "btn_class_att_sheet": "Devamsızlık Çizelgesi",
+        "btn_class_pdf_cards": "Şifre Kartları (PDF)",
+        "btn_class_grade_sheet": "Not Çizelgesi",
+        "btn_send_new_hw": "Yeni Ödev Gönder",
+        "btn_class_sched": "Programı",
     },
     "ru": {
         "lang_select": "🌍 Пожалуйста, выберите язык:",
@@ -723,7 +731,15 @@ LOCALES = {
         "btn_cancel_action": "⬅️ Отмена",
         "rk_cancel_action": "❌ Отменить действие",
         "action_cancelled": "❌ *Действие отменено.*",
-        "admin_restart_confirmed": "🔄 *Панель администратора перезапущена.*"
+        "admin_restart_confirmed": "🔄 *Панель администратора перезапущена.*",
+        "btn_next": "Вперед ➡️",
+        "btn_appr_appointment": "✅ Принять",
+        "btn_view_photo": "Открыть фото",
+        "btn_class_att_sheet": "Ведомость посещаемости",
+        "btn_class_pdf_cards": "Карточки с кодами (PDF)",
+        "btn_class_grade_sheet": "Ведомость оценок",
+        "btn_send_new_hw": "Отправить задание",
+        "btn_class_sched": "Расписание",
     },
     "uz": {
         "lang_select": "🌍 Iltimos, tilni tanlang / Пожалуйста, выберите язык / Lütfen dil seçiniz / Please select language:",
@@ -885,7 +901,15 @@ LOCALES = {
         "btn_cancel_action": "⬅️ Bekor qilish",
         "rk_cancel_action": "❌ Bekor qilish",
         "action_cancelled": "❌ *Amal bekor qilindi.*",
-        "admin_restart_confirmed": "🔄 *Boshqaruv paneli qayta ishga tushirildi.*"
+        "admin_restart_confirmed": "🔄 *Boshqaruv paneli qayta ishga tushirildi.*",
+        "btn_next": "Keyingi ➡️",
+        "btn_appr_appointment": "✅ Qabul qilish",
+        "btn_view_photo": "Rasmni ochish",
+        "btn_class_att_sheet": "Davomat qaydnomasi",
+        "btn_class_pdf_cards": "Parol kartalari (PDF)",
+        "btn_class_grade_sheet": "Baholar qaydnomasi",
+        "btn_send_new_hw": "Yangi vazifa yuborish",
+        "btn_class_sched": "Jadvali",
     },
     "en": {
         "lang_select": "🌍 Please select your language / Tilni tanlang / Пожалуйста, выберите язык / Lütfen dil seçiniz:",
@@ -1047,8 +1071,16 @@ LOCALES = {
         "btn_cancel_action": "⬅️ Cancel",
         "rk_cancel_action": "❌ Cancel Action",
         "action_cancelled": "❌ *Action cancelled.*",
-        "admin_restart_confirmed": "🔄 *Administrator Panel Restarted.*"
-    }
+        "admin_restart_confirmed": "🔄 *Administrator Panel Restarted.*",
+        "btn_next": "Next ➡️",
+        "btn_appr_appointment": "✅ Accept",
+        "btn_view_photo": "View Photo",
+        "btn_class_att_sheet": "Attendance Sheet",
+        "btn_class_pdf_cards": "Password Cards (PDF)",
+        "btn_class_grade_sheet": "Grade Sheet",
+        "btn_send_new_hw": "Send Homework",
+        "btn_class_sched": "Timetable",
+    },
 }
 
 def get_text(key: str, lang: str = "tr", **kwargs) -> str:
@@ -1561,8 +1593,16 @@ async def run_morning_briefing_worker(bot: Bot):
         missing_str = ", ".join(missing) if missing else "Tümü Alındı"
 
         admins = (await session.execute(select(User.telegram_id).where(User.role == "admin"))).scalars().all()
-        for a_id in set(ADMIN_IDS + list(admins)):
-            msg = f"☀️ *GÜNLÜK İDARİ BRİFİNG (09:30)*\n\n🏫 Toplam: {total_students} | ✅ Gelen: {present} | ❌ Gelmeyen: {absent}\n⚠️ Yoklama Girmeyen: {missing_str}"
+        admin_users = (await session.execute(select(User).where(User.role == "admin"))).scalars().all()
+        admin_lang_map = {u.telegram_id: u.language for u in admin_users}
+        for a_id in set(ADMIN_IDS + list(admin_lang_map.keys())):
+            a_lang = admin_lang_map.get(a_id, "tr")
+            msg = {
+                "tr": f"☀️ *GÜNLÜK İDARİ BRİFİNG (09:30)*\n\n🏫 Toplam: {total_students} | ✅ Gelen: {present} | ❌ Gelmeyen: {absent}\n⚠️ Yoklama Girmeyen: {missing_str}",
+                "ru": f"☀️ *ЕЖЕДНЕВНЫЙ ОТЧЕТ ДИРЕКТОРУ (09:30)*\n\n🏫 Всего: {total_students} | ✅ Присутствуют: {present} | ❌ Отсутствуют: {absent}\n⚠️ Без переклички: {missing_str}",
+                "uz": f"☀️ *KUNLIK TONGGI HISOBOT (09:30)*\n\n🏫 Jami: {total_students} | ✅ Kelgan: {present} | ❌ Kelmagan: {absent}\n⚠️ Davomat olinmagan: {missing_str}",
+                "en": f"☀️ *DAILY EXECUTIVE BRIEFING (09:30)*\n\n🏫 Total: {total_students} | ✅ Present: {present} | ❌ Absent: {absent}\n⚠️ Pending Attendance: {missing_str}"
+            }.get(a_lang, f"☀️ *DAILY BRIEFING (09:30)*")
             await safe_send_message(bot, a_id, msg, parse_mode="Markdown")
 
 async def run_friday_backup_worker(bot: Bot):
@@ -1571,12 +1611,20 @@ async def run_friday_backup_worker(bot: Bot):
         today_str = get_local_date().strftime('%d_%m_%Y')
         data_bytes = buf.read()
         buf.close()
-        caption = f"📦 *HAFTALIK OTOMATİK OKUL VERİ YEDEĞİ (CUMA 18:00)*\nTarih: {today_str}"
+        backup_captions = {
+            "tr": f"📦 *HAFTALIK OTOMATİK OKUL VERİ YEDEĞİ (CUMA 18:00)*\n📅 Tarih: {today_str}\nOkulunuzun tüm güncel verileri ektedir.",
+            "ru": f"📦 *ЕЖЕНЕДЕЛЬНЫЙ АВТОМАТИЧЕСКИЙ АРХИВ (ПЯТНИЦА 18:00)*\n📅 Дата: {today_str}\nВсе актуальные данные школы прикреплены.",
+            "uz": f"📦 *HAFTALIK AVTOMATIK MAKTAB ZAXIRASI (JUMA 18:00)*\n📅 Sana: {today_str}\nMaktabingizning barcha joriy ma'lumotlari biriktirildi.",
+            "en": f"📦 *WEEKLY AUTOMATIC SCHOOL DATA BACKUP (FRIDAY 18:00)*\n📅 Date: {today_str}\nComplete school data backup is attached."
+        }
         async with AsyncSessionLocal() as session:
-            admins = (await session.execute(select(User.telegram_id).where(User.role == "admin"))).scalars().all()
-        for a_id in set(ADMIN_IDS + list(admins)):
+            admin_users = (await session.execute(select(User).where(User.role == "admin"))).scalars().all()
+            admin_lang_map = {u.telegram_id: u.language for u in admin_users}
+        for a_id in set(ADMIN_IDS + list(admin_lang_map.keys())):
+            a_lang = admin_lang_map.get(a_id, "tr")
+            caption_txt = backup_captions.get(a_lang, backup_captions["en"])
             doc_file = BufferedInputFile(data_bytes, filename=f"Okul_Yedek_{today_str}.xlsx")
-            await bot.send_document(chat_id=a_id, document=doc_file, caption=caption, parse_mode="Markdown")
+            await bot.send_document(chat_id=a_id, document=doc_file, caption=caption_txt, parse_mode="Markdown")
             await asyncio.sleep(0.05)
     except Exception as e:
         pass
@@ -1645,7 +1693,12 @@ async def cmd_profile(message: Message):
             tch = (await session.execute(select(Teacher).where(Teacher.telegram_id == user.telegram_id))).scalar_one_or_none()
             if tch: extra = f"Branş: *{escape_md(tch.subject)}*\n"
 
-        text = f"👤 *Kullanıcı Profil Kartı*\n\nAd Soyad: *{escape_md(user.full_name or 'Kullanıcı')}*\nRol: *{role_label}*\nTelegram ID: `{user.telegram_id}`\n{extra}"
+        p_title = {"tr": "👤 *Kullanıcı Profil Kartı*", "ru": "👤 *Профиль пользователя*", "uz": "👤 *Foydalanuvchi profili*", "en": "👤 *User Profile Card*"}.get(lang, "👤 *Profile*")
+        lbl_name = {"tr": "Ad Soyad", "ru": "ФИО", "uz": "F.I.SH", "en": "Name"}.get(lang, "Name")
+        lbl_r = {"tr": "Rol", "ru": "Роль", "uz": "Rol", "en": "Role"}.get(lang, "Role")
+        lbl_user = {"tr": "Kullanıcı", "ru": "Пользователь", "uz": "Foydalanuvchi", "en": "User"}.get(lang, "User")
+
+        text = f"{p_title}\n\n{lbl_name}: *{escape_md(user.full_name or lbl_user)}*\n{lbl_r}: *{role_label}*\nTelegram ID: `{user.telegram_id}`\n{extra}"
         await safe_edit_or_answer(message, text, parse_mode="Markdown")
 
 @router.message(any_state, Command("help", "yardim"))
@@ -1653,8 +1706,20 @@ async def cmd_help(message: Message):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
-        role_label = {"admin": "Yönetici", "teacher": "Öğretmen", "parent": "Veli", "student": "Öğrenci"}.get(user.role if user else "guest", "Kullanıcı")
-        await safe_edit_or_answer(message, f"📖 *Okul Yönetim Sistemi Kılavuzu*\n\nRolünüz: *{role_label}*\n• Alt menüyü kullanarak işlemlerinizi yapabilirsiniz.\n• İptal için /cancel yazabilirsiniz.", parse_mode="Markdown")
+        role_map = {
+            "tr": {"admin": "Yönetici", "teacher": "Öğretmen", "parent": "Veli", "student": "Öğrenci", "guest": "Misafir"},
+            "ru": {"admin": "Администратор", "teacher": "Учитель", "parent": "Родитель", "student": "Ученик", "guest": "Гость"},
+            "uz": {"admin": "Ma'mur", "teacher": "O'qituvchi", "parent": "Ota-ona", "student": "O'quvchi", "guest": "Mehmon"},
+            "en": {"admin": "Administrator", "teacher": "Teacher", "parent": "Parent", "student": "Student", "guest": "Guest"}
+        }
+        role_label = role_map.get(lang, role_map["en"]).get(user.role if user else "guest", "User")
+        help_texts = {
+            "tr": f"📖 *Okul Yönetim Sistemi Kılavuzu*\n\nRolünüz: *{role_label}*\n• Alt menüyü kullanarak işlemlerinizi yapabilirsiniz.\n• İptal için /cancel yazabilirsiniz.\n• Destek için okul idaresine başvurabilirsiniz.",
+            "ru": f"📖 *Справка по системе управления школой*\n\nВаша роль: *{role_label}*\n• Используйте нижнее меню для навигации.\n• Для отмены напишите /cancel.\n• По вопросам обращайтесь к администрации.",
+            "uz": f"📖 *Maktab boshqaruv tizimi bo'yicha qo'llanma*\n\nSizning rolingiz: *{role_label}*\n• Pastdagi menyu orqali amallarni bajarishingiz mumkin.\n• Bekor qilish uchun /cancel yozishingiz mumkin.\n• Savollar bo'yicha maktab ma'muriyatiga murojaat qiling.",
+            "en": f"📖 *School Management System Guide*\n\nYour Role: *{role_label}*\n• Use the bottom menu to navigate.\n• Type /cancel to abort any action.\n• Contact school administration for support."
+        }
+        await safe_edit_or_answer(message, help_texts.get(lang, help_texts["en"]), parse_mode="Markdown")
 
 @router.message(any_state, Command("cancel", "iptal"))
 @router.message(any_state, F.text.in_(["❌ İşlemi İptal Et", "❌ Отменить действие", "❌ Bekor qilish", "❌ Cancel Action", "iptal", "İptal", "cancel"]))
@@ -1722,8 +1787,14 @@ async def cmd_start(message: Message, state: FSMContext):
             return
 
         reply_kb = get_role_reply_kb(user.role, user.language)
+        gen_welcome = {
+            "tr": f"👋 *Hoş Geldiniz, {escape_md(user.full_name or '')}*",
+            "ru": f"👋 *Добро пожаловать, {escape_md(user.full_name or '')}*",
+            "uz": f"👋 *Xush kelibsiz, {escape_md(user.full_name or '')}*",
+            "en": f"👋 *Welcome, {escape_md(user.full_name or '')}*"
+        }.get(user.language, f"👋 *Welcome, {escape_md(user.full_name or '')}*")
         await message.answer(
-            f"👋 *Hoş Geldiniz, {escape_md(user.full_name or '')}*",
+            gen_welcome,
             reply_markup=reply_kb,
             parse_mode="Markdown"
         )
@@ -1960,8 +2031,8 @@ async def cb_act_req_access(query: CallbackQuery, state: FSMContext):
             return
 
         buttons = [
-            [InlineKeyboardButton(text="👨‍🏫 Öğretmen", callback_data="req_role:teacher"), InlineKeyboardButton(text="👨‍👩‍👧‍👦 Veli", callback_data="req_role:parent")],
-            [InlineKeyboardButton(text="🎓 Öğrenci", callback_data="req_role:student")],
+            [InlineKeyboardButton(text=get_text("role_teacher_btn", lang), callback_data="req_role:teacher"), InlineKeyboardButton(text=get_text("role_parent_btn", lang), callback_data="req_role:parent")],
+            [InlineKeyboardButton(text=get_text("role_student_btn", lang), callback_data="req_role:student")],
             [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
         ]
         await safe_edit_or_answer(query, get_text("req_role_select", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -2067,8 +2138,8 @@ async def process_req_details(message: Message, state: FSMContext):
         )
         adm_kb = InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Onayla ve Yetkilendir", callback_data=f"adm:appr_req:{req.id}"),
-                InlineKeyboardButton(text="❌ Reddet", callback_data=f"adm:rej_req:{req.id}")
+                InlineKeyboardButton(text=get_text("btn_appr_request", lang), callback_data=f"adm:appr_req:{req.id}"),
+                InlineKeyboardButton(text=get_text("btn_reject", lang), callback_data=f"adm:rej_req:{req.id}")
             ]
         ])
 
@@ -2126,7 +2197,7 @@ async def cb_admin_view_request(query: CallbackQuery):
             f"Lütfen yapılacak işlemi seçiniz:"
         )
         buttons = [
-            [InlineKeyboardButton(text="✅ Onayla ve Yetkilendir", callback_data=f"adm:appr_req:{req.id}"), InlineKeyboardButton(text="❌ Reddet", callback_data=f"adm:rej_req:{req.id}")],
+            [InlineKeyboardButton(text=get_text("btn_appr_request", lang), callback_data=f"adm:appr_req:{req.id}"), InlineKeyboardButton(text=get_text("btn_reject", lang), callback_data=f"adm:rej_req:{req.id}")],
             [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="adm:requests_list")]
         ]
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -2216,7 +2287,8 @@ async def cb_admin_reject_request(query: CallbackQuery):
 
         await safe_send_message(query.message.bot, req.telegram_id, get_text("req_rejected_user", target_user.language if target_user else "tr"), parse_mode="Markdown")
         await safe_edit_or_answer(query, get_text("req_rejected_admin_msg", lang, id=req.id, name=escape_md(req.full_name)), parse_mode="Markdown")
-    await query.answer("Reddedildi.")
+    lbl_rej = {"tr": "Talep reddedildi.", "ru": "Заявка отклонена.", "uz": "Ariza rad etildi.", "en": "Request rejected."}.get(lang, "Rejected.")
+    await query.answer(lbl_rej)
 
 # ======================================================================
 # 10. RANDEVU, DERS PROGRAMI, YEMEKHANE VE KARA LİSTE
@@ -2292,8 +2364,8 @@ async def process_appointment_note(message: Message, state: FSMContext):
             )
             t_kb = InlineKeyboardMarkup(inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="✅ Kabul Et", callback_data=f"tch:appr_app:{app.id}"),
-                    InlineKeyboardButton(text="❌ Müsait Değilim", callback_data=f"tch:rej_app:{app.id}")
+                    InlineKeyboardButton(text=get_text("btn_appr_appointment", lang), callback_data=f"tch:appr_app:{app.id}"),
+                    InlineKeyboardButton(text=get_text("btn_not_available", lang), callback_data=f"tch:rej_app:{app.id}")
                 ]
             ])
             await safe_send_message(message.bot, tch.telegram_id, t_text, reply_markup=t_kb, parse_mode="Markdown")
@@ -2349,8 +2421,8 @@ async def cb_teacher_view_appointment(query: CallbackQuery):
         )
         buttons = [
             [
-                InlineKeyboardButton(text="✅ Kabul Et", callback_data=f"tch:appr_app:{app.id}"),
-                InlineKeyboardButton(text="❌ Müsait Değilim", callback_data=f"tch:rej_app:{app.id}")
+                InlineKeyboardButton(text=get_text("btn_appr_appointment", lang), callback_data=f"tch:appr_app:{app.id}"),
+                InlineKeyboardButton(text=get_text("btn_not_available", lang), callback_data=f"tch:rej_app:{app.id}")
             ],
             [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="tch:appointments")]
         ]
@@ -2505,10 +2577,13 @@ async def cb_admin_blacklist(query: CallbackQuery):
             return
 
         buttons = []
+        lbl_bl = {"tr": "🚫 Kara Liste", "ru": "🚫 Черный список", "uz": "🚫 Qora ro'yxat", "en": "🚫 Blacklist"}.get(lang, "🚫 Blacklist")
+        lbl_lock = {"tr": "⏱️ Kilitli", "ru": "⏱️ Заблокирован", "uz": "⏱️ Bloklangan", "en": "⏱️ Locked"}.get(lang, "⏱️ Locked")
+        lbl_unban = {"tr": "🟢 Engeli Kaldır", "ru": "🟢 Разблокировать", "uz": "🟢 Blokdan chiqarish", "en": "🟢 Unban"}.get(lang, "🟢 Unban")
         for u in blocked_users:
-            b_type = "🚫 Kara Liste" if u.is_blacklisted else "⏱️ Kilitli"
+            b_type = lbl_bl if u.is_blacklisted else lbl_lock
             name_str = u.full_name or f"ID: {u.telegram_id}"
-            buttons.append([InlineKeyboardButton(text=f"🟢 Engeli Kaldır: {b_type} - {name_str}", callback_data=f"adm:unban:{u.telegram_id}")])
+            buttons.append([InlineKeyboardButton(text=f"{lbl_unban}: {b_type} - {name_str}", callback_data=f"adm:unban:{u.telegram_id}")])
 
         buttons.append(get_nav_buttons(lang))
         await safe_edit_or_answer(query, get_text("blacklisted_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -2543,7 +2618,7 @@ async def cb_admin_sched_edit_menu(query: CallbackQuery):
         buttons = []
         row = []
         for c in classes:
-            row.append(InlineKeyboardButton(text=f"✏️ {c} Programı", callback_data=f"adm:sched_edit_cls:{c}"))
+            row.append(InlineKeyboardButton(text=f"✏️ {c} {get_text('btn_class_sched', lang)}", callback_data=f"adm:sched_edit_cls:{c}"))
             if len(row) == 2:
                 buttons.append(row)
                 row = []
@@ -2587,7 +2662,7 @@ async def process_sched_update_text(message: Message, state: FSMContext):
             sched.schedule_text = new_text
         await session.commit()
 
-        await message.answer(f"✅ *{escape_md(class_name)} Sınıfı Ders Programı Güncellendi!*", reply_markup=get_role_reply_kb("admin", lang), parse_mode="Markdown")
+        await message.answer(get_text("admin_sched_updated", lang, class_name=escape_md(class_name)), reply_markup=get_role_reply_kb("admin", lang), parse_mode="Markdown")
         await render_clean_dashboard(message, user)
 
 @router.callback_query(F.data == "adm:menu_edit")
@@ -2691,7 +2766,7 @@ async def process_student_no(message: Message, state: FSMContext):
 
         text = get_text("student_added_card", lang, name=escape_md(full_name), class_name=escape_md(class_name), no=escape_md(student_no), st_code=st_code, pr_code=pr_code)
         buttons = [
-            [InlineKeyboardButton(text="➕ Başka Ekle", callback_data="adm:add_student")],
+            [InlineKeyboardButton(text=get_text("btn_add_another", lang), callback_data="adm:add_student")],
             [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
         ]
         await safe_edit_or_answer(message, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -2741,7 +2816,7 @@ async def process_teacher_subject(message: Message, state: FSMContext):
 
         text = get_text("teacher_added_card", lang, name=escape_md(full_name), subject=escape_md(subject), code=auth_code)
         buttons = [
-            [InlineKeyboardButton(text="➕ Başka Ekle", callback_data="adm:add_teacher")],
+            [InlineKeyboardButton(text=get_text("btn_add_another", lang), callback_data="adm:add_teacher")],
             [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
         ]
         await safe_edit_or_answer(message, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -2775,7 +2850,7 @@ async def process_search_query(message: Message, state: FSMContext):
 
         if not results:
             buttons = [
-                [InlineKeyboardButton(text="🔍 Tekrar Ara", callback_data="adm:search_student")],
+                [InlineKeyboardButton(text=get_text("btn_search_again", lang), callback_data="adm:search_student")],
                 [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
             ]
             await message.answer(get_text("search_no_results", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -2814,7 +2889,7 @@ async def process_search_teacher_query(message: Message, state: FSMContext):
 
         if not results:
             buttons = [
-                [InlineKeyboardButton(text="🔍 Tekrar Ara", callback_data="adm:search_teacher")],
+                [InlineKeyboardButton(text=get_text("btn_search_again", lang), callback_data="adm:search_teacher")],
                 [InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")]
             ]
             await message.answer(get_text("teacher_search_no_results", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -2838,10 +2913,16 @@ async def cb_admin_teachers_list(query: CallbackQuery):
             status_dot = "🟢" if t.telegram_id else "⚪"
             buttons.append([InlineKeyboardButton(text=f"{status_dot} {t.full_name} ({t.subject})", callback_data=f"adm:tch_card:{t.id}")])
 
-        buttons.append([InlineKeyboardButton(text="➕ Yeni Öğretmen Ekle", callback_data="adm:add_teacher")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_add_new_teacher", lang), callback_data="adm:add_teacher")])
         buttons.append(get_nav_buttons(lang))
 
-        text = f"👨‍🏫 *Öğretmenler Listesi* (Toplam {len(teachers)} Öğretmen):\nDetay veya şifre işlemleri için tıklayınız:"
+        teachers_list_title = {
+            "tr": f"👨‍🏫 *Öğretmenler Listesi* (Toplam {len(teachers)} Öğretmen):\nDetay veya şifre işlemleri için tıklayınız:",
+            "ru": f"👨‍🏫 *Список учителей* (Всего {len(teachers)}):\nНажмите для просмотра данных или пароля:",
+            "uz": f"👨‍🏫 *O'qituvchilar ro'yxati* (Jami {len(teachers)} ta o'qituvchi):\nBatafsil ma'lumot yoki parollar uchun tanlang:",
+            "en": f"👨‍🏫 *Teachers List* (Total {len(teachers)} Teachers):\nTap to view details or credentials:"
+        }.get(lang, f"👨‍🏫 *Teachers List*\n")
+        text = teachers_list_title
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
@@ -2861,7 +2942,7 @@ async def cb_admin_teacher_card(query: CallbackQuery):
 
         buttons = [
             [InlineKeyboardButton(text=get_text("btn_reset_codes", lang), callback_data=f"adm:reset_tch:{tch.id}")],
-            [InlineKeyboardButton(text="❌ Öğretmeni Sil", callback_data=f"adm:del_tch:{tch.id}")],
+            [InlineKeyboardButton(text=get_text("btn_del_teacher", lang), callback_data=f"adm:del_tch:{tch.id}")],
             get_nav_buttons(lang, back_callback="adm:teachers")
         ]
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -3086,14 +3167,20 @@ async def cb_show_class_students(query: CallbackQuery):
                 nav_row.append(InlineKeyboardButton(text=get_text("btn_prev", lang), callback_data=f"adm:show_class:{class_name}:{page - 1}"))
             nav_row.append(InlineKeyboardButton(text=f"📄 {page + 1}/{total_pages}", callback_data="noop"))
             if page < total_pages - 1:
-                nav_row.append(InlineKeyboardButton(text="Sonraki ➡️", callback_data=f"adm:show_class:{class_name}:{page + 1}"))
+                nav_row.append(InlineKeyboardButton(text=get_text("btn_next", lang), callback_data=f"adm:show_class:{class_name}:{page + 1}"))
             buttons.append(nav_row)
 
-        buttons.append([InlineKeyboardButton(text=f"📋 {class_name} Devamsızlık Çizelgesi", callback_data=f"adm:class_att_sheet:{class_name}")])
-        buttons.append([InlineKeyboardButton(text=f"📄 {class_name} Şifre Kartları (PDF)", callback_data=f"adm:gen_pdf:{class_name}")])
+        buttons.append([InlineKeyboardButton(text=f"📋 {class_name} {get_text('btn_class_att_sheet', lang)}", callback_data=f"adm:class_att_sheet:{class_name}")])
+        buttons.append([InlineKeyboardButton(text=f"📄 {class_name} {get_text('btn_class_pdf_cards', lang)}", callback_data=f"adm:gen_pdf:{class_name}")])
         buttons.append(get_nav_buttons(lang, back_callback="adm:classes"))
 
-        text = f"🏫 *{escape_md(class_name)} Sınıfı Listesi* (Toplam {total_students} Öğrenci):\nDetay veya şifre işlemleri için öğrenciye tıklayınız:"
+        class_list_title = {
+            "tr": f"🏫 *{escape_md(class_name)} Sınıfı Listesi* (Toplam {total_students} Öğrenci):\nDetay veya şifre işlemleri için öğrenciye tıklayınız:",
+            "ru": f"🏫 *Список класса {escape_md(class_name)}* (Всего {total_students} учеников):\nНажмите на ученика для просмотра данных или кодов:",
+            "uz": f"🏫 *{escape_md(class_name)} sinfi ro'yxati* (Jami {total_students} o'quvchi):\nMa'lumot yoki parollar uchun o'quvchini tanlang:",
+            "en": f"🏫 *Class {escape_md(class_name)} List* (Total {total_students} Students):\nTap a student to view details or access credentials:"
+        }.get(lang, f"🏫 *Class {escape_md(class_name)}*\n")
+        text = class_list_title
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
 
@@ -3107,9 +3194,9 @@ async def cb_admin_edit_student_menu(query: CallbackQuery):
         if not st: return
 
         buttons = [
-            [InlineKeyboardButton(text="👤 İsim Değiştir", callback_data=f"adm:edf:{st.id}:name")],
-            [InlineKeyboardButton(text="🏫 Sınıf / Nakil", callback_data=f"adm:edf:{st.id}:class")],
-            [InlineKeyboardButton(text="🔢 Numara Değiştir", callback_data=f"adm:edf:{st.id}:no")],
+            [InlineKeyboardButton(text=get_text("btn_edit_name", lang), callback_data=f"adm:edf:{st.id}:name")],
+            [InlineKeyboardButton(text=get_text("btn_edit_class", lang), callback_data=f"adm:edf:{st.id}:class")],
+            [InlineKeyboardButton(text=get_text("btn_edit_no", lang), callback_data=f"adm:edf:{st.id}:no")],
             get_nav_buttons(lang, back_callback=f"adm:st_card:{st.id}")
         ]
         text = f"✏️ *{escape_md(st.full_name)}* ({escape_md(st.class_name)} - No: {escape_md(st.student_number)})\nDüzenlemek istediğiniz bilgiyi seçiniz:"
@@ -3128,7 +3215,7 @@ async def cb_admin_edit_field_init(query: CallbackQuery, state: FSMContext):
         "class": "🏫 Öğrencinin yeni Sınıfını yazınız (Örn: `10-B`):",
         "no": "🔢 Öğrencinin yeni Okul Numarasını yazınız (Örn: `205`):"
     }
-    await safe_edit_or_answer(query, prompts.get(field, "Lütfen yeni değeri yazınız:"), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ İptal", callback_data=f"adm:st_card:{st_id}")]]))
+    await safe_edit_or_answer(query, prompts.get(field, "Lütfen yeni değeri yazınız:"), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data=f"adm:st_card:{st_id}")]]))
     await state.set_state(Form.edit_student_val)
     await query.answer()
 
@@ -3149,7 +3236,7 @@ async def process_student_edit_val(message: Message, state: FSMContext):
             elif field == "class": st.class_name = new_val.upper()
             elif field == "no": st.student_number = new_val
             await session.commit()
-            await message.answer(f"✅ *Öğrenci Bilgisi Güncellendi:* {escape_md(st.full_name)} ({escape_md(st.class_name)} - No: {escape_md(st.student_number)})", parse_mode="Markdown")
+            await message.answer(get_text("student_info_updated", lang, name=escape_md(st.full_name), class_name=escape_md(st.class_name), no=escape_md(st.student_number)), parse_mode="Markdown")
 
 @router.callback_query(F.data.startswith("adm:st_card:"))
 async def cb_student_card(query: CallbackQuery):
@@ -3162,14 +3249,16 @@ async def cb_student_card(query: CallbackQuery):
             await query.answer(get_text("student_not_found", lang), show_alert=True)
             return
 
-        st_status = "Kullanıldı" if st.is_student_code_burned else "Aktif / Boşta"
-        pr_status = "Kullanıldı" if st.is_parent_code_burned else "Aktif / Boşta"
+        lbl_used = {"tr": "Kullanıldı", "ru": "Использован", "uz": "Ishlatildi", "en": "Used"}.get(lang, "Used")
+        lbl_free = {"tr": "Aktif / Boşta", "ru": "Активен / Свободен", "uz": "Faol / Bo'sh", "en": "Active / Unused"}.get(lang, "Active")
+        st_status = lbl_used if st.is_student_code_burned else lbl_free
+        pr_status = lbl_used if st.is_parent_code_burned else lbl_free
 
         text = get_text("student_card", lang, name=escape_md(st.full_name), class_name=escape_md(st.class_name), no=escape_md(st.student_number), st_code=st.student_code, st_status=st_status, pr_code=st.parent_code, pr_status=pr_status)
         buttons = [
-            [InlineKeyboardButton(text="✏️ Bilgileri Düzenle", callback_data=f"adm:edit_st:{st.id}")],
+            [InlineKeyboardButton(text=get_text("btn_edit_student", lang), callback_data=f"adm:edit_st:{st.id}")],
             [InlineKeyboardButton(text=get_text("btn_reset_codes", lang), callback_data=f"adm:reset_codes:{st.id}")],
-            [InlineKeyboardButton(text="👨‍👩‍👧‍👦 Veli Bağlantısını Kopar", callback_data=f"adm:unlink_pr:{st.id}")],
+            [InlineKeyboardButton(text=get_text("btn_unlink_parent", lang), callback_data=f"adm:unlink_pr:{st.id}")],
             [InlineKeyboardButton(text=get_text("btn_del_student", lang), callback_data=f"adm:del_student:{st.id}")],
             get_nav_buttons(lang, back_callback=f"adm:show_class:{st.class_name}")
         ]
@@ -3217,7 +3306,7 @@ async def cb_admin_unlink_parent(query: CallbackQuery):
             st.parent_code = generate_secure_code("VELI")
             st.is_parent_code_burned = False
             await session.commit()
-            await query.answer(f"Veli bağlantıları koparıldı. Yeni kod: {st.parent_code}", show_alert=True)
+            await query.answer(get_text("parent_unlinked_success", lang, code=st.parent_code), show_alert=True)
             await cb_student_card(query)
             return
     await query.answer()
@@ -3307,7 +3396,7 @@ async def cb_cockpit(query: CallbackQuery):
         text = get_text("cockpit_report", lang, date=today.strftime("%d.%m.%Y"), total=total_students, present=present_count, absent=absent_count, missing_cnt=len(missing), missing=missing_str)
         buttons = []
         if missing:
-            buttons.append([InlineKeyboardButton(text="🔔 Öğretmenlere Hatırlat", callback_data="adm:remind_all_att")])
+            buttons.append([InlineKeyboardButton(text=get_text("btn_remind_att", lang), callback_data="adm:remind_all_att")])
         buttons.append(get_nav_buttons(lang))
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
@@ -3445,7 +3534,7 @@ async def cb_pdf_menu(query: CallbackQuery):
             await query.answer()
             return
 
-        buttons = [[InlineKeyboardButton(text="👨‍🏫 Tüm Öğretmen Şifre Kartları (PDF)", callback_data="adm:gen_pdf_teachers")]]
+        buttons = [[InlineKeyboardButton(text=get_text("btn_teachers_pdf", lang), callback_data="adm:gen_pdf_teachers")]]
         row = []
         for c in classes:
             row.append(InlineKeyboardButton(text=f"📄 {c}", callback_data=f"adm:gen_pdf:{c}"))
@@ -3459,9 +3548,18 @@ async def cb_pdf_menu(query: CallbackQuery):
 
 @router.callback_query(F.data == "adm:gen_pdf_teachers")
 async def cb_generate_pdf_teachers(query: CallbackQuery):
-    pdf_buffer = await generate_teachers_pdf_cards()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+    pdf_buffer = await generate_teachers_pdf_cards(lang=lang)
     file = BufferedInputFile(pdf_buffer.read(), filename="Ogretmen_Sifre_Kartlari.pdf")
-    await query.message.answer_document(file, caption="👨‍🏫 *Tüm Öğretmenlerin Giriş Şifre Kartları Ektedir.*", parse_mode="Markdown")
+    pdf_tch_caption = {
+        "tr": "👨‍🏫 *Tüm Öğretmenlerin Giriş Şifre Kartları Ektedir.*",
+        "ru": "👨‍🏫 *Карточки с кодами доступа всех учителей прикреплены к сообщению.*",
+        "uz": "👨‍🏫 *Barcha o'qituvchilarning kirish parol kartalari biriktirildi.*",
+        "en": "👨‍🏫 *Access credential cards for all teachers are attached.*"
+    }.get(lang, "👨‍🏫 *Teacher Access Cards Attached.*")
+    await query.message.answer_document(file, caption=pdf_tch_caption, parse_mode="Markdown")
     pdf_buffer.close()
     await query.answer()
 
@@ -3488,7 +3586,7 @@ async def cb_admin_export_all(query: CallbackQuery):
     buf = await export_all_school_data_excel()
     today_str = datetime.utcnow().strftime("%d_%m_%Y")
     file = BufferedInputFile(buf.read(), filename=f"Okul_Genel_Yedek_{today_str}.xlsx")
-    await query.message.answer_document(file, caption=f"📥 *Tüm Okul Veri Yedeği Ektedir.* ({today_str})", parse_mode="Markdown")
+    await query.message.answer_document(file, caption=get_text("export_ready", lang, date=today_str), parse_mode="Markdown")
     buf.close()
     await query.answer()
 
@@ -3573,10 +3671,16 @@ async def cb_view_medical(query: CallbackQuery):
             return
 
         adm_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Onayla (İzinli Say)", callback_data=f"adm:appr_med:{rep.id}"), InlineKeyboardButton(text="❌ Reddet", callback_data=f"adm:rej_med:{rep.id}")],
+            [InlineKeyboardButton(text=get_text("btn_appr_medical", lang), callback_data=f"adm:appr_med:{rep.id}"), InlineKeyboardButton(text=get_text("btn_reject", lang), callback_data=f"adm:rej_med:{rep.id}")],
             [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="adm:medical_list")]
         ])
-        caption = f"🏥 *Mazeret Raporu*\nÖğrenci: *{escape_md(st.full_name)}* ({escape_md(st.class_name)})\nNot: {escape_md(rep.caption)}"
+        med_caption_texts = {
+            "tr": f"🏥 *Mazeret Raporu*\nÖğrenci: *{escape_md(st.full_name)}* ({escape_md(st.class_name)})\nNot: {escape_md(rep.caption or '-')}",
+            "ru": f"🏥 *Медицинская справка*\nУченик: *{escape_md(st.full_name)}* ({escape_md(st.class_name)})\nПримечание: {escape_md(rep.caption or '-')}",
+            "uz": f"🏥 *Tibbiy ma'lumotnoma*\nO'quvchi: *{escape_md(st.full_name)}* ({escape_md(st.class_name)})\nIzoh: {escape_md(rep.caption or '-')}",
+            "en": f"🏥 *Medical Excuse Certificate*\nStudent: *{escape_md(st.full_name)}* ({escape_md(st.class_name)})\nNote: {escape_md(rep.caption or '-')}"
+        }
+        caption = med_caption_texts.get(lang, med_caption_texts["en"])
         try: await query.message.delete()
         except Exception: pass
         await query.message.bot.send_photo(chat_id=query.from_user.id, photo=rep.file_id, caption=caption, reply_markup=adm_kb, parse_mode="Markdown")
@@ -3699,11 +3803,11 @@ async def cb_admin_users_hub(query: CallbackQuery):
             buttons.append([InlineKeyboardButton(text=btn_txt, callback_data=f"adm:user_card:{u.telegram_id}")])
 
         nav_row = []
-        if page > 0: nav_row.append(InlineKeyboardButton(text="⬅️ Önceki", callback_data=f"adm:users_hub:{page - 1}"))
-        if (page + 1) * per_page < total_users: nav_row.append(InlineKeyboardButton(text="Sonraki ➡️", callback_data=f"adm:users_hub:{page + 1}"))
+        if page > 0: nav_row.append(InlineKeyboardButton(text=get_text("btn_prev", lang), callback_data=f"adm:users_hub:{page - 1}"))
+        if (page + 1) * per_page < total_users: nav_row.append(InlineKeyboardButton(text=get_text("btn_next", lang), callback_data=f"adm:users_hub:{page + 1}"))
         if nav_row: buttons.append(nav_row)
 
-        buttons.append([InlineKeyboardButton(text="🔍 Kullanıcı Ara", callback_data="adm:search_user_init")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_search_user", lang), callback_data="adm:search_user_init")])
         buttons.append(get_nav_buttons(lang, back_callback="adm:cat_staff"))
 
         await safe_edit_or_answer(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -3715,7 +3819,7 @@ async def cb_admin_search_user_init(query: CallbackQuery, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-    buttons = [[InlineKeyboardButton(text="⬅️ İptal", callback_data="adm:users_hub:0")]]
+    buttons = [[InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data="adm:users_hub:0")]]
     await safe_edit_or_answer(query, get_text("search_user_prompt", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await state.set_state(Form.waiting_search_user_query)
     await query.answer()
@@ -3736,8 +3840,8 @@ async def process_search_user_query(message: Message, state: FSMContext):
         res = (await session.execute(select(User).where(or_(*conds)).limit(10))).scalars().all()
         if not res:
             buttons = [
-                [InlineKeyboardButton(text="🔍 Tekrar Ara", callback_data="adm:search_user_init")],
-                [InlineKeyboardButton(text="⬅️ Kullanıcı Listesi", callback_data="adm:users_hub:0")]
+                [InlineKeyboardButton(text=get_text("btn_search_again", lang), callback_data="adm:search_user_init")],
+                [InlineKeyboardButton(text=get_text("btn_users_list", lang), callback_data="adm:users_hub:0")]
             ]
             await message.answer(get_text("search_user_no_results", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
             return
@@ -3746,7 +3850,7 @@ async def process_search_user_query(message: Message, state: FSMContext):
         for u in res:
             tag = f" (@{u.username})" if u.username else ""
             buttons.append([InlineKeyboardButton(text=f"👤 {u.full_name or 'İsimsiz'}{tag} [{u.role.upper()}]", callback_data=f"adm:user_card:{u.telegram_id}")])
-        buttons.append([InlineKeyboardButton(text="⬅️ Kullanıcı Listesi", callback_data="adm:users_hub:0")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_users_list", lang), callback_data="adm:users_hub:0")])
         await safe_edit_or_answer(message, get_text("search_user_results_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
 
 @router.callback_query(F.data.startswith("adm:user_card:"))
@@ -3827,27 +3931,27 @@ async def cb_admin_user_card(query: CallbackQuery):
         buttons = []
         if target_u.role != "admin" or target_u.admin_type == "none":
             buttons.append([
-                InlineKeyboardButton(text="👑 Kalıcı Yönetici Yap", callback_data=f"adm:make_perm:{tg_id}"),
-                InlineKeyboardButton(text="⏱️ Geçici Yönetici Yap", callback_data=f"adm:make_temp:{tg_id}")
+                InlineKeyboardButton(text=get_text("btn_make_perm_admin", lang), callback_data=f"adm:make_perm:{tg_id}"),
+                InlineKeyboardButton(text=get_text("btn_make_temp_admin", lang), callback_data=f"adm:make_temp:{tg_id}")
             ])
         else:
             if tg_id not in PERMANENT_ADMIN_IDS:
-                buttons.append([InlineKeyboardButton(text="❌ Yönetici Yetkisini Al", callback_data=f"adm:revoke_adm:{tg_id}")])
+                buttons.append([InlineKeyboardButton(text=get_text("btn_revoke_admin_perm", lang), callback_data=f"adm:revoke_adm:{tg_id}")])
 
         buttons.append([
-            InlineKeyboardButton(text="✉️ Özel Mesaj Gönder", callback_data=f"adm:send_dm:{tg_id}"),
-            InlineKeyboardButton(text="📞 1:1 İletişim İsteği", callback_data=f"adm:req_chat:{tg_id}")
+            InlineKeyboardButton(text=get_text("btn_send_dm", lang), callback_data=f"adm:send_dm:{tg_id}"),
+            InlineKeyboardButton(text=get_text("btn_req_chat", lang), callback_data=f"adm:req_chat:{tg_id}")
         ])
 
         if tg_id not in PERMANENT_ADMIN_IDS:
             if target_u.is_blacklisted:
-                buttons.append([InlineKeyboardButton(text="🟢 Engeli Kaldır (Unban)", callback_data=f"adm:unban_u:{tg_id}")])
+                buttons.append([InlineKeyboardButton(text=get_text("btn_unban_user", lang), callback_data=f"adm:unban_u:{tg_id}")])
             else:
-                buttons.append([InlineKeyboardButton(text="🚫 Engelle (Ban)", callback_data=f"adm:ban_u:{tg_id}")])
+                buttons.append([InlineKeyboardButton(text=get_text("btn_ban_user", lang), callback_data=f"adm:ban_u:{tg_id}")])
 
         buttons.append([
-            InlineKeyboardButton(text="🔄 Verileri Yenile", callback_data=f"adm:user_card:{tg_id}"),
-            InlineKeyboardButton(text="⬅️ Kullanıcı Listesi", callback_data="adm:users_hub:0")
+            InlineKeyboardButton(text=get_text("btn_refresh_data", lang), callback_data=f"adm:user_card:{tg_id}"),
+            InlineKeyboardButton(text=get_text("btn_users_list", lang), callback_data="adm:users_hub:0")
         ])
 
         await safe_edit_or_answer(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -3878,9 +3982,12 @@ async def cb_admin_make_perm_admin(query: CallbackQuery):
 @router.callback_query(F.data.startswith("adm:make_temp:"))
 async def cb_admin_choose_temp_admin(query: CallbackQuery):
     tg_id = int(query.data.split(":")[2])
+    async with AsyncSessionLocal() as session:
+        admin_u = await session.get(User, query.from_user.id)
+        lang = admin_u.language if admin_u else "tr"
     buttons = [
-        [InlineKeyboardButton(text="⏱️ 24 Saat", callback_data=f"adm:set_temp:{tg_id}:24h"), InlineKeyboardButton(text="⏱️ 7 Gün", callback_data=f"adm:set_temp:{tg_id}:7d")],
-        [InlineKeyboardButton(text="⏱️ 30 Gün", callback_data=f"adm:set_temp:{tg_id}:30d"), InlineKeyboardButton(text="⬅️ İptal", callback_data=f"adm:user_card:{tg_id}")]
+        [InlineKeyboardButton(text=get_text("btn_dur_24h", lang), callback_data=f"adm:set_temp:{tg_id}:24h"), InlineKeyboardButton(text=get_text("btn_dur_7d", lang), callback_data=f"adm:set_temp:{tg_id}:7d")],
+        [InlineKeyboardButton(text=get_text("btn_dur_30d", lang), callback_data=f"adm:set_temp:{tg_id}:30d"), InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data=f"adm:user_card:{tg_id}")]
     ]
     await safe_edit_or_answer(query, get_text("temp_admin_choose_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
@@ -3908,7 +4015,7 @@ async def cb_admin_set_temp_admin(query: CallbackQuery):
             exp_str = (until + timedelta(hours=TIMEZONE_OFFSET)).strftime('%d.%m.%Y %H:%M')
             notify_msg = f"⏱️ *Sayın {escape_md(target_u.full_name or 'Kullanıcı')},*\n\nSisteme *GEÇİCİ YÖNETİCİ* olarak yetkilendirildiniz!\nBitiş: `{exp_str}`"
             await safe_send_message(query.message.bot, tg_id, notify_msg, reply_markup=get_role_reply_kb("admin", target_u.language), parse_mode="Markdown")
-            await query.answer(f"Kullanıcı {dur} süreyle geçici yönetici yapıldı.", show_alert=True)
+            await query.answer(get_text("temp_admin_assigned_toast", lang, dur=dur), show_alert=True)
             await cb_admin_user_card(query)
             return
     await query.answer()
@@ -3972,8 +4079,8 @@ async def cb_admin_unban_user(query: CallbackQuery):
 async def cb_admin_send_dm_init(query: CallbackQuery, state: FSMContext):
     tg_id = int(query.data.split(":")[2])
     await state.update_data(target_dm_id=tg_id)
-    buttons = [[InlineKeyboardButton(text="⬅️ İptal", callback_data=f"adm:user_card:{tg_id}")]]
-    await safe_edit_or_answer(query, f"✉️ *Özel Mesaj Gönder:*\n\nLütfen `{tg_id}` ID'li kullanıcıya iletmek istediğiniz mesajı yazınız:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    buttons = [[InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data=f"adm:user_card:{tg_id}")]]
+    await safe_edit_or_answer(query, get_text("send_dm_prompt", lang, id=tg_id), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await state.set_state(Form.waiting_admin_dm_text)
     await query.answer()
 
@@ -4010,7 +4117,9 @@ async def cb_admin_req_contact(query: CallbackQuery):
         buttons = []
         if admin_u and admin_u.username:
             chat_msg += f"Kullanıcı Adı: @{admin_u.username}\n\nLütfen aşağıdaki butondan doğrudan mesajlaşmayı başlatınız:"
-            buttons.append([InlineKeyboardButton(text="💬 İdareciye Mesaj Yaz", url=f"https://t.me/{admin_u.username}")])
+            target_u = await session.get(User, tg_id)
+            btn_lang = target_u.language if target_u else "tr"
+            buttons.append([InlineKeyboardButton(text=get_text("btn_write_to_admin", btn_lang), url=f"https://t.me/{admin_u.username}")])
         else:
             chat_msg += f"ID: `{query.from_user.id}`\nLütfen okul idaresine yazınız."
 
@@ -4263,7 +4372,7 @@ async def cb_grade_classes(query: CallbackQuery, state: FSMContext):
         classes = (await session.execute(select(Student.class_name).distinct().order_by(Student.class_name))).scalars().all()
         if not classes: classes = ["9-A"]
 
-        buttons = [[InlineKeyboardButton(text="📝 Son Girilen Notlar", callback_data="tch:recent_grades")]]
+        buttons = [[InlineKeyboardButton(text=get_text("btn_recent_grades_menu", lang), callback_data="tch:recent_grades")]]
         for c in classes:
             buttons.append([InlineKeyboardButton(text=f"🏫 {c}", callback_data=f"gr_cls:{c}")])
         buttons.append([InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")])
@@ -4284,7 +4393,18 @@ async def cb_teacher_class_grade_sheet(query: CallbackQuery):
             await query.answer(get_text("no_students_in_class", lang), show_alert=True)
             return
 
-        lines = [f"📊 *{escape_md(class_name)} Sınıfı {escape_md(subject_name)} Not Çizelgesi:*\n"]
+        gr_sheet_title = {
+            "tr": f"📊 *{escape_md(class_name)} Sınıfı {escape_md(subject_name)} Not Çizelgesi:*\n",
+            "ru": f"📊 *Ведомость оценок класса {escape_md(class_name)} ({escape_md(subject_name)}):*\n",
+            "uz": f"📊 *{escape_md(class_name)} sinfining {escape_md(subject_name)} fanidan baholar qaydnomasi:*\n",
+            "en": f"📊 *Grade Sheet for Class {escape_md(class_name)} ({escape_md(subject_name)}):*\n"
+        }.get(lang, f"📊 *Grade Sheet: {escape_md(class_name)}*\n")
+
+        no_gr_str = {"tr": "_Not girilmedi_", "ru": "_Оценок нет_", "uz": "_Baho qo'yilmagan_", "en": "_No grades recorded_"}.get(lang, "_No grades_")
+        lbl_avg_cls = {"tr": "Sınıf Dersi Ortalaması", "ru": "Средний балл по предмету", "uz": "Sinf fan o'rtachasi", "en": "Class Subject Average"}.get(lang, "Average")
+        lbl_cnt = {"tr": "not", "ru": "оценок", "uz": "baho", "en": "grades"}.get(lang, "grades")
+
+        lines = [gr_sheet_title]
         scores_all = []
         for s in students:
             grades = (await session.execute(select(Grade).where(Grade.student_id == s.id, Grade.subject == subject_name).order_by(Grade.created_at))).scalars().all()
@@ -4292,11 +4412,11 @@ async def cb_teacher_class_grade_sheet(query: CallbackQuery):
                 g_str = ", ".join([f"{g.exam_type or '1. Yazılı'}: *{g.score}*" for g in grades])
                 for g in grades: scores_all.append(g.score)
             else:
-                g_str = "_Not girilmedi_"
+                g_str = no_gr_str
             lines.append(f"• *{escape_md(s.full_name)}* (№{s.student_number}): {g_str}")
 
         avg_class = round(sum(scores_all)/len(scores_all), 1) if scores_all else 0
-        lines.append(f"\n📈 *Sınıf Dersi Ortalaması:* {avg_class} ({len(scores_all)} not)")
+        lines.append(f"\n📈 *{lbl_avg_cls}:* {avg_class} ({len(scores_all)} {lbl_cnt})")
 
         buttons = [get_nav_buttons(lang, back_callback=f"gr_cls:{class_name}")]
         await safe_edit_or_answer(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -4313,7 +4433,7 @@ async def cb_grade_students(query: CallbackQuery):
         buttons = []
         for s in students:
             buttons.append([InlineKeyboardButton(text=f"👤 {s.full_name} ({s.student_number})", callback_data=f"gr_st:{s.id}")])
-        buttons.append([InlineKeyboardButton(text=f"📊 {class_name} Not Çizelgesi", callback_data=f"tch:grade_sheet:{class_name}")])
+        buttons.append([InlineKeyboardButton(text=f"📊 {class_name} {get_text('btn_class_grade_sheet', lang)}", callback_data=f"tch:grade_sheet:{class_name}")])
         buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="tch:grade_classes")])
         await safe_edit_or_answer(query, get_text("grade_select_student", lang, class_name=escape_md(class_name)), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
     await query.answer()
@@ -4454,8 +4574,8 @@ async def cb_teacher_view_grade(query: CallbackQuery):
 
         text = f"📝 *Not Detayı*\nÖğrenci: *{st_name}* ({st_cls})\nDers: *{escape_md(grade.subject)}* ({escape_md(grade.exam_type or '1. Yazılı')})\nNot: *{grade.score}* ({grade.badge})\nTarih: {date_str}"
         buttons = [
-            [InlineKeyboardButton(text="✏️ Notu Değiştir", callback_data=f"tch:edit_gr:{grade.id}")],
-            [InlineKeyboardButton(text="❌ Notu Sil", callback_data=f"tch:del_gr:{grade.id}")],
+            [InlineKeyboardButton(text=get_text("btn_edit_grade", lang), callback_data=f"tch:edit_gr:{grade.id}")],
+            [InlineKeyboardButton(text=get_text("btn_del_grade", lang), callback_data=f"tch:del_gr:{grade.id}")],
             [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="tch:recent_grades")]
         ]
         await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -4524,8 +4644,8 @@ async def cb_admin_excel_hub(query: CallbackQuery):
         lang = user.language if user else "tr"
 
         buttons = [
-            [InlineKeyboardButton(text="📥 Toplu Öğrenci Yükle (Excel)", callback_data="adm:excel_info")],
-            [InlineKeyboardButton(text="📤 Tüm Okul Verisini İndir", callback_data="adm:export_all_excel")],
+            [InlineKeyboardButton(text=get_text("btn_upload_excel", lang), callback_data="adm:excel_info")],
+            [InlineKeyboardButton(text=get_text("btn_export_all_data", lang), callback_data="adm:export_all_excel")],
             get_nav_buttons(lang)
         ]
         await safe_edit_or_answer(query, get_text("excel_hub_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -4538,11 +4658,11 @@ async def cb_parent_info_board(message: Message, state: FSMContext):
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
 
-        briefing_txt = "🔔 18:30 Bülteni: Açık" if (user and user.evening_briefing) else "🔕 18:30 Bülteni: Kapalı"
+        briefing_txt = get_text("btn_briefing_on", lang) if (user and user.evening_briefing) else get_text("btn_briefing_off", lang)
         buttons = [
-            [InlineKeyboardButton(text="📅 Ders Programı", callback_data="act_view_sched")],
-            [InlineKeyboardButton(text="📢 Son Duyurular", callback_data="act_view_notices")],
-            [InlineKeyboardButton(text="🍲 Günün Menüsü", callback_data="act_view_cafe")],
+            [InlineKeyboardButton(text=get_text("btn_view_schedule", lang), callback_data="act_view_sched")],
+            [InlineKeyboardButton(text=get_text("btn_notices", lang), callback_data="act_view_notices")],
+            [InlineKeyboardButton(text=get_text("btn_view_cafeteria", lang), callback_data="act_view_cafe")],
             [InlineKeyboardButton(text=briefing_txt, callback_data="parent:toggle_briefing")]
         ]
         await safe_edit_or_answer(message, get_text("parent_info_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
@@ -4554,11 +4674,11 @@ async def cb_parent_settings_hub(message: Message, state: FSMContext):
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
 
-        briefing_txt = "🔔 18:30 Bülteni: Açık" if (user and user.evening_briefing) else "🔕 18:30 Bülteni: Kapalı"
+        briefing_txt = get_text("btn_briefing_on", lang) if (user and user.evening_briefing) else get_text("btn_briefing_off", lang)
         buttons = [
             [InlineKeyboardButton(text=briefing_txt, callback_data="parent:toggle_briefing")],
             [InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")],
-            [InlineKeyboardButton(text="🚪 Çıkış Yap", callback_data="act_logout")]
+            [InlineKeyboardButton(text=get_text("rk_logout", lang), callback_data="act_logout")]
         ]
         await safe_edit_or_answer(message, get_text("parent_settings_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
 
@@ -4588,7 +4708,7 @@ async def cb_view_homeworks_list(query: CallbackQuery):
         for h in hws:
             lines.append(f"📌 *{escape_md(h.subject)}* ({h.created_at.strftime('%d.%m.%Y')}):\n{escape_md(h.content)}")
             if h.file_id:
-                buttons.append([InlineKeyboardButton(text=f"📷 Görseli Aç: {h.subject}", callback_data=f"hw_photo:{h.id}")])
+                buttons.append([InlineKeyboardButton(text=f"📷 {get_text('btn_view_photo', lang)}: {h.subject}", callback_data=f"hw_photo:{h.id}")])
             lines.append("")
 
         buttons.append(get_nav_buttons(lang))
@@ -4603,7 +4723,13 @@ async def cb_view_hw_photo(query: CallbackQuery):
         lang = user.language if user else "tr"
         hw = await session.get(Homework, hw_id)
         if hw and hw.file_id:
-            caption = f"📚 *{escape_md(hw.class_name)} Ödev Görseli ({escape_md(hw.subject)})*\n\n{escape_md(hw.content)}"
+            hw_caption_texts = {
+                "tr": f"📚 *{escape_md(hw.class_name)} Ödev Görseli ({escape_md(hw.subject)})*\n\n{escape_md(hw.content)}",
+                "ru": f"📚 *Класс {escape_md(hw.class_name)} Фото задания ({escape_md(hw.subject)})*\n\n{escape_md(hw.content)}",
+                "uz": f"📚 *{escape_md(hw.class_name)} sinfi vazifa rasmi ({escape_md(hw.subject)})*\n\n{escape_md(hw.content)}",
+                "en": f"📚 *Class {escape_md(hw.class_name)} Homework Image ({escape_md(hw.subject)})*\n\n{escape_md(hw.content)}"
+            }
+            caption = hw_caption_texts.get(lang, hw_caption_texts["en"])
             try:
                 await query.message.bot.send_photo(chat_id=query.from_user.id, photo=hw.file_id, caption=caption, parse_mode="Markdown")
                 await query.answer()
@@ -4622,8 +4748,8 @@ async def cb_hw_classes(query: CallbackQuery, state: FSMContext):
 
         buttons = []
         for c in classes:
-            buttons.append([InlineKeyboardButton(text=f"📢 {c} İçin Yeni Ödev Gönder", callback_data=f"hw_cls:{c}")])
-        buttons.append([InlineKeyboardButton(text="📚 Yayınlanan Ödevler", callback_data="tch:view_my_hws")])
+            buttons.append([InlineKeyboardButton(text=f"📢 {c} - {get_text('btn_send_new_hw', lang)}", callback_data=f"hw_cls:{c}")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_my_hws", lang), callback_data="tch:view_my_hws")])
         buttons.append([InlineKeyboardButton(text=get_text("btn_main_menu", lang), callback_data="adm:dashboard")])
         await safe_edit_or_answer(query, get_text("prompt_hw_class", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await query.answer()
@@ -4646,7 +4772,7 @@ async def cb_teacher_view_my_hws(query: CallbackQuery):
             btn_txt = f"📚 {h.class_name} ({h.subject}): {h.content[:15]}..."
             buttons.append([
                 InlineKeyboardButton(text=btn_txt, callback_data="noop"),
-                InlineKeyboardButton(text="❌ Sil", callback_data=f"tch:del_hw:{h.id}")
+                InlineKeyboardButton(text=get_text("btn_delete_action", lang), callback_data=f"tch:del_hw:{h.id}")
             ])
         buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="tch:hw_classes")])
         await safe_edit_or_answer(query, get_text("published_homeworks_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -4701,7 +4827,15 @@ async def process_hw_content(message: Message, state: FSMContext):
 
         target_ids = set(parent_tg_ids + student_tg_ids)
         for t_id in target_ids:
-            caption = f"📢 *{escape_md(class_name)} ÖDEV PANOSU ({escape_md(subj)})*\n\n{escape_md(hw_text)}"
+            u_rec = await session.get(User, t_id)
+            u_l = u_rec.language if u_rec else "tr"
+            dispatch_texts = {
+                "tr": f"📢 *{escape_md(class_name)} ÖDEV PANOSU ({escape_md(subj)})*\n\n{escape_md(hw_text)}",
+                "ru": f"📢 *ДОСКА ЗАДАНИЙ КЛАССА {escape_md(class_name)} ({escape_md(subj)})*\n\n{escape_md(hw_text)}",
+                "uz": f"📢 *{escape_md(class_name)} SINFI VAZIFALAR PANELI ({escape_md(subj)})*\n\n{escape_md(hw_text)}",
+                "en": f"📢 *CLASS {escape_md(class_name)} HOMEWORK BOARD ({escape_md(subj)})*\n\n{escape_md(hw_text)}"
+            }
+            caption = dispatch_texts.get(u_l, dispatch_texts["en"])
             if photo_id:
                 try: await message.bot.send_photo(chat_id=t_id, photo=photo_id, caption=caption, parse_mode="Markdown")
                 except Exception: pass
@@ -4895,7 +5029,7 @@ async def handle_medical_photo(message: Message, state: FSMContext):
         admins = (await session.execute(select(User.telegram_id).where(User.role == "admin"))).scalars().all()
         caption_adm = f"🏥 *YENİ SAĞLIK / MAZERET RAPORU* (#{report.id})\n\n🧑‍🎓 *Öğrenci:* {escape_md(st.full_name)} ({escape_md(st.class_name)})\n👤 *Veli:* {escape_md(user.full_name or 'Veli')}"
         adm_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Onayla", callback_data=f"adm:appr_med:{report.id}"), InlineKeyboardButton(text="❌ Reddet", callback_data=f"adm:rej_med:{report.id}")]
+            [InlineKeyboardButton(text=get_text("btn_appr_medical", "tr"), callback_data=f"adm:appr_med:{report.id}"), InlineKeyboardButton(text=get_text("btn_reject", "tr"), callback_data=f"adm:rej_med:{report.id}")]
         ])
         for a_id in set(ADMIN_IDS + list(admins)):
             try:
