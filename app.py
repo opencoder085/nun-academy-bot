@@ -3536,7 +3536,9 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
 
     if isinstance(target, Bot):
         sent_m = await safe_send_message(target, target_chat_id, text, reply_markup=parent_quick_kb, parse_mode="HTML")
-        if sent_m: LAST_MENU_MSG_ID[target_chat_id] = sent_m.message_id
+        if sent_m:
+            LAST_MENU_MSG_ID[target_chat_id] = sent_m.message_id
+            ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(sent_m.message_id)
         return
 
     if isinstance(target, CallbackQuery):
@@ -3545,14 +3547,17 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
             try:
                 await msg.edit_text(text, reply_markup=parent_quick_kb, parse_mode="HTML")
                 LAST_MENU_MSG_ID[target_chat_id] = msg.message_id
+                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(msg.message_id)
                 return
             except Exception:
                 pass
         sent_m = await msg.answer(text, reply_markup=parent_quick_kb, parse_mode="HTML")
         LAST_MENU_MSG_ID[target_chat_id] = sent_m.message_id
+        ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(sent_m.message_id)
     elif isinstance(target, Message):
         sent_m = await target.answer(text, reply_markup=parent_quick_kb, parse_mode="HTML")
         LAST_MENU_MSG_ID[target_chat_id] = sent_m.message_id
+        ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(sent_m.message_id)
 
 async def process_auth_code_string(code: str, user_id: int, message: Message, state: FSMContext):
     clean_code = normalize_code(code)
@@ -6239,6 +6244,21 @@ PIN_CHANGE_SESSION = {}
 
 PIN_MSG_ID = {}
 PIN_CHAT_ID = {}
+ACTIVE_CHAT_MESSAGES = {}
+
+async def cleanup_chat_history(bot: Bot, chat_id: int, keep_msg_id: int | None = None):
+    msg_ids = ACTIVE_CHAT_MESSAGES.get(chat_id, set())
+    last_mid = LAST_MENU_MSG_ID.pop(chat_id, None)
+    if last_mid:
+        msg_ids.add(last_mid)
+    for mid in list(msg_ids):
+        if keep_msg_id and mid == keep_msg_id:
+            continue
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=mid)
+        except Exception:
+            pass
+    ACTIVE_CHAT_MESSAGES[chat_id] = {keep_msg_id} if keep_msg_id else set()
 
 def render_pin_screen(cur_pin: str, error_msg: str = "", is_success: bool = False, is_locked: bool = False, lang: str = "tr", custom_title: str = "", custom_prompt: str = "") -> str:
     if is_success:
@@ -6316,41 +6336,45 @@ async def prompt_for_admin_pin(query: CallbackQuery, state: FSMContext | None, a
     ADMIN_PIN_INPUT[user_id] = ""
     ADMIN_PIN_FAILURES[user_id] = 0
 
-    if query and query.message:
-        PIN_MSG_ID[user_id] = query.message.message_id
-        PIN_CHAT_ID[user_id] = query.message.chat.id
+    chat_id = query.message.chat.id if (query and query.message) else user_id
 
-    pin_kb = get_pin_inline_kb(lang, callback_prefix="pinkey")
-    await safe_edit_or_answer(query, render_pin_screen("", lang=lang), reply_markup=pin_kb, parse_mode="HTML")
-    await query.answer()
-
-    # Alt Menüyü Numaratöre Dönüştür (Kullanıcı alt klavyeden de tuşlayabilir)
+    # Eski mesajları temizle
+    await cleanup_chat_history(query.message.bot, chat_id)
     try:
-        temp_numpad_txt = {
-            "tr": "🔢 PIN kodunuzu aşağıdaki tuşlardan da girebilirsiniz:",
-            "ru": "🔢 Вы также можете ввести ПИН-код на клавиатуре ниже:",
-            "uz": "🔢 PIN kodni quyidagi klaviaturada ham kiritishingiz mumkin:",
-            "en": "🔢 You can also enter your PIN using the keyboard below:"
-        }.get(lang, "🔢 Enter PIN below:")
-        m_sent = await query.message.answer(temp_numpad_txt, reply_markup=get_pin_reply_kb(lang))
-        # Hatırlatma mesajını da temizlik listesine al
-        LAST_MENU_MSG_ID[query.message.chat.id] = m_sent.message_id
+        await query.message.delete()
     except Exception:
         pass
 
+    text = render_pin_screen("", lang=lang)
+    m_sent = await query.message.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=get_pin_reply_kb(lang),
+        parse_mode="HTML"
+    )
+    PIN_MSG_ID[user_id] = m_sent.message_id
+    PIN_CHAT_ID[user_id] = chat_id
+    LAST_MENU_MSG_ID[chat_id] = m_sent.message_id
+    ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(m_sent.message_id)
+    await query.answer()
+
 @router.callback_query(F.data.startswith("pinkey:"))
 async def cb_process_inline_pin_key(query: CallbackQuery, state: FSMContext | None = None):
-    # Sıfır gecikmeli Telegram cevabı (saat ikonu anında kaybolur)
     try: await query.answer()
     except Exception: pass
-
     key = query.data.split(":")[1]
     user_id = query.from_user.id
+    chat_id = query.message.chat.id if query and query.message else query.from_user.id
+    msg_id = PIN_MSG_ID.get(user_id) or (query.message.message_id if query and query.message else None)
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         lang = user.language if user else "tr"
 
+    if msg_id:
+        await process_action_pin_step(query.message.bot, chat_id, msg_id, user_id, user, lang, key)
+
+async def process_action_pin_step(bot: Bot, chat_id: int, msg_id: int, user_id: int, user: User, lang: str, key: str):
     target_action = PIN_PENDING_ACTIONS.get(user_id)
     if not target_action:
         return
@@ -6360,18 +6384,25 @@ async def cb_process_inline_pin_key(query: CallbackQuery, state: FSMContext | No
         ADMIN_PIN_INPUT.pop(user_id, None)
         ADMIN_PIN_FAILURES.pop(user_id, None)
         PIN_MSG_ID.pop(user_id, None)
-        # Alt menüyü ana role menüsüne geri getir
-        try: await query.message.answer("🏠 " + get_text("btn_main_menu", lang), reply_markup=get_role_reply_kb(user.role, lang))
-        except Exception: pass
-        await render_clean_dashboard(query, user)
+        PIN_CHAT_ID.pop(user_id, None)
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except Exception:
+            pass
+        m_ret = await bot.send_message(chat_id=chat_id, text=get_text("action_cancelled", lang), reply_markup=get_role_reply_kb(user.role, lang), parse_mode="Markdown")
+        LAST_MENU_MSG_ID[chat_id] = m_ret.message_id
+        ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(m_ret.message_id)
+        await render_clean_dashboard(bot, user, chat_id=chat_id)
         return
 
     cur = ADMIN_PIN_INPUT.get(user_id, "")
     if key == "del":
         cur = cur[:-1]
         ADMIN_PIN_INPUT[user_id] = cur
-        pin_kb = get_pin_inline_kb(lang, callback_prefix="pinkey")
-        await safe_edit_or_answer(query, render_pin_screen(cur, lang=lang), reply_markup=pin_kb, parse_mode="HTML")
+        try:
+            await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=render_pin_screen(cur, lang=lang), parse_mode="HTML")
+        except Exception:
+            pass
         return
 
     if key.isdigit() and len(cur) < 4:
@@ -6379,39 +6410,48 @@ async def cb_process_inline_pin_key(query: CallbackQuery, state: FSMContext | No
         ADMIN_PIN_INPUT[user_id] = cur
 
         if len(cur) < 4:
-            pin_kb = get_pin_inline_kb(lang, callback_prefix="pinkey")
-            await safe_edit_or_answer(query, render_pin_screen(cur, lang=lang), reply_markup=pin_kb, parse_mode="HTML")
+            try:
+                await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=render_pin_screen(cur, lang=lang), parse_mode="HTML")
+            except Exception:
+                pass
             return
         else:
-            # 4. Hane girildi: Anında bellek içi doğrulama
             real_admin_pin = await get_current_admin_pin()
             if cur == real_admin_pin:
                 action = PIN_PENDING_ACTIONS.pop(user_id, None)
                 ADMIN_PIN_INPUT.pop(user_id, None)
                 ADMIN_PIN_FAILURES.pop(user_id, None)
                 PIN_MSG_ID.pop(user_id, None)
+                PIN_CHAT_ID.pop(user_id, None)
 
                 async with AsyncSessionLocal() as session:
                     await log_audit(session, user_id, (user.full_name if user else "Yönetici"), "PİN DOĞRULANDI", f"İşlem: {action}")
                     await session.commit()
 
-                # Yeşil Başarı Animasyonu
-                succ_msg = "✅ <b>İdari PIN Doğrulandı! İşlem yapılıyor...</b>" if lang == "tr" else ("✅ <b>ПИН-код подтвержден!</b>" if lang == "ru" else ("✅ <b>PIN kod tasdiqlandi!</b>" if lang == "uz" else "✅ <b>PIN Verified! Processing...</b>"))
-                await safe_edit_or_answer(query, render_pin_screen(cur, is_success=True, lang=lang) + f"\n\n{succ_msg}", reply_markup=None, parse_mode="HTML")
-                await asyncio.sleep(0.25)
+                try:
+                    await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=render_pin_screen(cur, is_success=True, lang=lang) + "\n\n✅ <b>İdari PIN Doğrulandı! İşlem yapılıyor...</b>", parse_mode="HTML")
+                except Exception:
+                    pass
 
-                # Alt menüyü ana menüye geri getir
-                try: await query.message.answer("🏠 " + get_text("btn_main_menu", lang), reply_markup=get_role_reply_kb(user.role, lang))
-                except Exception: pass
+                await asyncio.sleep(0.3)
+                try:
+                    await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                except Exception:
+                    pass
 
+                m_r = await bot.send_message(chat_id=chat_id, text="⚡ " + get_text("admin_title", lang), reply_markup=get_role_reply_kb("admin", lang), parse_mode="Markdown")
+                LAST_MENU_MSG_ID[chat_id] = m_r.message_id
+                ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(m_r.message_id)
+
+                dummy_q = CallbackQuery(id="0", from_user=types.User(id=user_id, is_bot=False, first_name=user.full_name or "Admin", username=user.username), chat_instance="0", message=Message(message_id=m_r.message_id, date=datetime.utcnow(), chat=types.Chat(id=chat_id, type="private")), data=action)
                 if action == "adm:export_all_excel":
-                    await cb_admin_export_all_direct(query)
+                    await cb_admin_export_all_direct(dummy_q)
                 elif action == "adm:emergency_init":
-                    await cb_admin_emergency_init(query, state)
+                    await cb_admin_emergency_init(dummy_q, None)
                 elif action == "adm:class_promotion_confirm":
-                    await cb_admin_class_promotion_confirm(query)
+                    await cb_admin_class_promotion_confirm(dummy_q)
                 elif action == "adm:restore_backup_init":
-                    await cb_admin_restore_backup_direct(query, state)
+                    await cb_admin_restore_backup_direct(dummy_q, None)
                 return
             else:
                 fails = ADMIN_PIN_FAILURES.get(user_id, 0) + 1
@@ -6427,20 +6467,29 @@ async def cb_process_inline_pin_key(query: CallbackQuery, state: FSMContext | No
                     ADMIN_PIN_INPUT.pop(user_id, None)
                     ADMIN_PIN_FAILURES.pop(user_id, None)
                     PIN_MSG_ID.pop(user_id, None)
-                    await log_audit(session, user_id, (user.full_name if user else "Kullanıcı"), "GÜVENLİK ALARMI: 3 Hatalı PIN", f"3 kez hatalı PIN girildi. Hedef işlem: {action}")
-                    await session.commit()
-                    # Kırmızı Kilit Animasyonu
-                    await safe_edit_or_answer(query, render_pin_screen("", is_locked=True, lang=lang) + f"\n\n❌ <b>{get_text('invalid_admin_pin', lang)}</b>", reply_markup=None, parse_mode="HTML")
-                    await asyncio.sleep(1.0)
-                    try: await query.message.answer("🏠 " + get_text("btn_main_menu", lang), reply_markup=get_role_reply_kb(user.role, lang))
-                    except Exception: pass
-                    await render_clean_dashboard(query, user)
+                    PIN_CHAT_ID.pop(user_id, None)
+
+                    try:
+                        await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=render_pin_screen("", is_locked=True, lang=lang) + f"\n\n❌ <b>{get_text('invalid_admin_pin', lang)}</b>", parse_mode="HTML")
+                    except Exception:
+                        pass
+                    await asyncio.sleep(1.2)
+                    try:
+                        await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                    except Exception:
+                        pass
+                    m_l = await bot.send_message(chat_id=chat_id, text="⛔ " + get_text("auth_locked", lang), reply_markup=get_role_reply_kb("admin", lang), parse_mode="Markdown")
+                    LAST_MENU_MSG_ID[chat_id] = m_l.message_id
+                    ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(m_l.message_id)
+                    await render_clean_dashboard(bot, user, chat_id=chat_id)
                     return
                 else:
                     rem = 3 - fails
                     err_txt = f"Hatalı PIN! Kalan Deneme: {rem}" if lang == "tr" else (f"Неверный ПИН! Осталось: {rem}" if lang == "ru" else (f"Noto'g'ri PIN! Qoldi: {rem}" if lang == "uz" else f"Invalid PIN! Remaining: {rem}"))
-                    pin_kb = get_pin_inline_kb(lang, callback_prefix="pinkey")
-                    await safe_edit_or_answer(query, render_pin_screen("", error_msg=err_txt, lang=lang), reply_markup=pin_kb, parse_mode="HTML")
+                    try:
+                        await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=render_pin_screen("", error_msg=err_txt, lang=lang), parse_mode="HTML")
+                    except Exception:
+                        pass
                     return
 
 # --- AYARLARDAN İDARİ PİN DEĞİŞTİRME SİSTEMİ (İLK KURULUM VE SIFIRLAMA DESTEKLİ) ---
@@ -6456,9 +6505,7 @@ async def cb_admin_change_pin_init(query: CallbackQuery):
         is_custom_pin_set = (pin_setting is not None and bool(pin_setting.value.strip()))
         is_perm_admin = ((user_id in ADMIN_IDS) or (user and user.admin_type == "permanent") or (user_id in [2146753102, 1885043735]))
 
-    if query and query.message:
-        PIN_MSG_ID[user_id] = query.message.message_id
-        PIN_CHAT_ID[user_id] = query.message.chat.id
+    chat_id = query.message.chat.id if query and query.message else query.from_user.id
 
     # Eğer daha önce özel PIN belirlenmemişse, doğrudan YENİ PIN belirleme adımına geç!
     if not is_custom_pin_set:
@@ -6468,7 +6515,6 @@ async def cb_admin_change_pin_init(query: CallbackQuery):
             "new_pin": "",
             "is_perm": is_perm_admin
         }
-        step = "enter_new"
         setup_hint = {
             "tr": "💡 <i>İlk Kurulum: Henüz özel bir PIN belirlenmemiş. (Varsayılan PIN: 1923)</i>\n",
             "ru": "💡 <i>Первичная настройка: ПИН-код еще не задан. (По умолчанию: 1923)</i>\n",
@@ -6483,11 +6529,9 @@ async def cb_admin_change_pin_init(query: CallbackQuery):
             "new_pin": "",
             "is_perm": is_perm_admin
         }
-        step = "verify_current"
         def_hint = " (Varsayılan PIN: 1923)" if pin_setting and pin_setting.value == "1923" else ""
         prompt = get_text('prompt_pin_current', lang) + def_hint
 
-    pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=is_perm_admin, step=step)
     p_title = {
         "tr": "🔐 <b>İDARİ GÜVENLİK PİN DEĞİŞTİRME</b>",
         "ru": "🔐 <b>ИЗМЕНЕНИЕ ПИН-КОДА АДМИНИСТРАТОРА</b>",
@@ -6499,45 +6543,52 @@ async def cb_admin_change_pin_init(query: CallbackQuery):
         f"{p_title}\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"{prompt}\n\n"
-        f"<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n"
+        "<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
-    await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
-    await query.answer()
 
-    # Alt Menüyü de Numaratöre Dönüştür
+    # Eski mesajları temizle
+    await cleanup_chat_history(query.message.bot, chat_id)
     try:
-        temp_numpad_txt = {
-            "tr": "🔢 PIN kodunuzu aşağıdaki tuşlardan da girebilirsiniz:",
-            "ru": "🔢 Вы также можете ввести ПИН-код на клавиатуре ниже:",
-            "uz": "🔢 PIN kodni quyidagi klaviaturada ham kiritishingiz mumkin:",
-            "en": "🔢 You can also enter your PIN using the keyboard below:"
-        }.get(lang, "🔢 Enter PIN below:")
-        m_sent = await query.message.answer(temp_numpad_txt, reply_markup=get_pin_reply_kb(lang))
-        LAST_MENU_MSG_ID[query.message.chat.id] = m_sent.message_id
+        await query.message.delete()
     except Exception:
         pass
 
+    m_sent = await query.message.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=get_pin_reply_kb(lang),
+        parse_mode="HTML"
+    )
+    PIN_MSG_ID[user_id] = m_sent.message_id
+    PIN_CHAT_ID[user_id] = chat_id
+    LAST_MENU_MSG_ID[chat_id] = m_sent.message_id
+    ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(m_sent.message_id)
+    await query.answer()
+
 @router.callback_query(F.data.startswith("chgpin:"))
 async def handle_pin_change_callback(query: CallbackQuery):
-    # Sıfır gecikmeli Telegram cevabı
     try: await query.answer()
     except Exception: pass
-
     key = query.data.split(":")[1]
     user_id = query.from_user.id
+    chat_id = query.message.chat.id if query and query.message else query.from_user.id
+    msg_id = PIN_MSG_ID.get(user_id) or (query.message.message_id if query and query.message else None)
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         lang = user.language if user else "tr"
 
+    if msg_id:
+        await process_pin_change_step(query.message.bot, chat_id, msg_id, user_id, user, lang, key)
+
+async def process_pin_change_step(bot: Bot, chat_id: int, msg_id: int, user_id: int, user: User, lang: str, key: str):
     sess = PIN_CHANGE_SESSION.get(user_id)
     if not sess:
         return
 
     step = sess["step"]
     cur = sess["input"]
-    is_perm = sess.get("is_perm", False)
 
     p_title = {
         "tr": "🔐 <b>İDARİ GÜVENLİK PİN DEĞİŞTİRME</b>",
@@ -6546,37 +6597,30 @@ async def handle_pin_change_callback(query: CallbackQuery):
         "en": "🔐 <b>CHANGE ADMIN SECURITY PIN</b>"
     }.get(lang, "🔐 <b>CHANGE ADMIN SECURITY PIN</b>")
 
-    # Kurucu Yönetici doğrudan yeni PIN belirleme seçeneği
-    if key == "perm_reset":
-        sess["step"] = "enter_new"
-        sess["input"] = ""
-        pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=False, step="enter_new")
-        rst_info = {
-            "tr": "🔑 <i>Kurucu yetkisiyle PIN sıfırlanıyor.</i>\n",
-            "ru": "🔑 <i>Сброс ПИН-кода правами владельца.</i>\n",
-            "uz": "🔑 <i>Asosiy ma'mur huquqi bilan PIN tiklanmoqda.</i>\n",
-            "en": "🔑 <i>Resetting PIN via Owner Authority.</i>\n"
-        }.get(lang, "")
-        text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{rst_info}{get_text('prompt_pin_new', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
-        return
-
     if key == "cancel":
         PIN_CHANGE_SESSION.pop(user_id, None)
         PIN_MSG_ID.pop(user_id, None)
-        try: await query.message.answer("🏠 " + get_text("btn_main_menu", lang), reply_markup=get_role_reply_kb(user.role, lang))
-        except Exception: pass
-        await cb_cat_settings(query, None)
+        PIN_CHAT_ID.pop(user_id, None)
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except Exception:
+            pass
+        m_c = await bot.send_message(chat_id=chat_id, text=get_text("action_cancelled", lang), reply_markup=get_role_reply_kb(user.role, lang), parse_mode="Markdown")
+        LAST_MENU_MSG_ID[chat_id] = m_c.message_id
+        ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(m_c.message_id)
+        await cb_cat_settings(m_c, None)
         return
 
     if key == "del":
         cur = cur[:-1]
         sess["input"] = cur
-        pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=is_perm, step=step)
         prompt = get_text('prompt_pin_current' if step == 'verify_current' else ('prompt_pin_new' if step == 'enter_new' else 'prompt_pin_confirm'), lang)
         dots = "  ".join(["🔵" if i < len(cur) else "⚪" for i in range(4)])
         text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{prompt}\n\n<code>[  {dots}  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
+        try:
+            await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, parse_mode="HTML")
+        except Exception:
+            pass
         return
 
     if key.isdigit() and len(cur) < 4:
@@ -6584,47 +6628,57 @@ async def handle_pin_change_callback(query: CallbackQuery):
         sess["input"] = cur
 
         if len(cur) < 4:
-            pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=is_perm, step=step)
             prompt = get_text('prompt_pin_current' if step == 'verify_current' else ('prompt_pin_new' if step == 'enter_new' else 'prompt_pin_confirm'), lang)
             dots = "  ".join(["🔵" if i < len(cur) else "⚪" for i in range(4)])
             text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{prompt}\n\n<code>[  {dots}  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
+            try:
+                await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, parse_mode="HTML")
+            except Exception:
+                pass
             return
         else:
-            # 4. Hane girildi
             real_admin_pin = await get_current_admin_pin()
             if step == "verify_current":
                 if cur == real_admin_pin:
                     sess["step"] = "enter_new"
                     sess["input"] = ""
-                    pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=False, step="enter_new")
                     text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{get_text('prompt_pin_new', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
+                    try:
+                        await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, parse_mode="HTML")
+                    except Exception:
+                        pass
                     return
                 else:
                     PIN_CHANGE_SESSION.pop(user_id, None)
                     PIN_MSG_ID.pop(user_id, None)
-                    try: await query.message.answer("🏠 " + get_text("btn_main_menu", lang), reply_markup=get_role_reply_kb(user.role, lang))
-                    except Exception: pass
-                    await query.answer(get_text("pin_current_wrong", lang), show_alert=True)
-                    await cb_cat_settings(query, None)
+                    PIN_CHAT_ID.pop(user_id, None)
+                    try:
+                        await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                    except Exception:
+                        pass
+                    m_err = await bot.send_message(chat_id=chat_id, text="❌ " + get_text("pin_current_wrong", lang), reply_markup=get_role_reply_kb(user.role, lang), parse_mode="Markdown")
+                    LAST_MENU_MSG_ID[chat_id] = m_err.message_id
+                    ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(m_err.message_id)
+                    await cb_cat_settings(m_err, None)
                     return
 
             elif step == "enter_new":
                 sess["new_pin"] = cur
                 sess["step"] = "confirm_new"
                 sess["input"] = ""
-                pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=False, step="confirm_new")
                 text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{get_text('prompt_pin_confirm', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
+                try:
+                    await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, parse_mode="HTML")
+                except Exception:
+                    pass
                 return
 
             elif step == "confirm_new":
                 if cur == sess["new_pin"]:
-                    # PIN başarıyla onaylandı ve kaydedildi!
                     new_pin_val = cur
                     PIN_CHANGE_SESSION.pop(user_id, None)
                     PIN_MSG_ID.pop(user_id, None)
+                    PIN_CHAT_ID.pop(user_id, None)
 
                     async with AsyncSessionLocal() as session:
                         setting = await session.get(SystemSetting, "admin_pin")
@@ -6640,23 +6694,81 @@ async def handle_pin_change_callback(query: CallbackQuery):
                     global ADMIN_PIN
                     ADMIN_PIN = new_pin_val
 
-                    await safe_edit_or_answer(query, f"<code>[  🟢  🟢  🟢  🟢  ]</code>\n\n{get_text('pin_changed_success', lang)}", reply_markup=None, parse_mode="HTML")
+                    try:
+                        await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"<code>[  🟢  🟢  🟢  🟢  ]</code>\n\n{get_text('pin_changed_success', lang)}", parse_mode="HTML")
+                    except Exception:
+                        pass
                     await asyncio.sleep(0.5)
-                    try: await query.message.answer("🏠 " + get_text("btn_main_menu", lang), reply_markup=get_role_reply_kb(user.role, lang))
-                    except Exception: pass
-                    await cb_cat_settings(query, None)
+                    try:
+                        await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                    except Exception:
+                        pass
+                    m_ok = await bot.send_message(chat_id=chat_id, text="✅ " + get_text("pin_changed_success", lang), reply_markup=get_role_reply_kb("admin", lang), parse_mode="HTML")
+                    LAST_MENU_MSG_ID[chat_id] = m_ok.message_id
+                    ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(m_ok.message_id)
+                    await cb_cat_settings(m_ok, None)
                     return
                 else:
-                    # Eşleşmedi, tekrar yeni şifre adımına dön
                     sess["step"] = "enter_new"
                     sess["input"] = ""
                     sess["new_pin"] = ""
-                    pin_kb = get_pin_inline_kb(lang, callback_prefix="chgpin", is_perm_admin=False, step="enter_new")
                     text = f"{p_title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <i>{get_text('pin_mismatch_error', lang)}</i>\n\n{get_text('prompt_pin_new', lang)}\n\n<code>[  ⚪  ⚪  ⚪  ⚪  ]</code>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    await safe_edit_or_answer(query, text, reply_markup=pin_kb, parse_mode="HTML")
+                    try:
+                        await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, parse_mode="HTML")
+                    except Exception:
+                        pass
                     return
 
-@router.callback_query(F.data == "adm:export_all_excel")
+# --- ALT MENÜDEN (REPLY KEYBOARD) NUMARATÖR GİRİŞİ DİNLEYİCİSİ ---
+PIN_NUMPAD_KEYS = {
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+    "⌫", "⌫ Sil", "⌫ Стереть", "⌫ O'chirish", "⌫ Del",
+    "❌", "❌ Vazgeç", "❌ Отмена", "❌ Bekor", "❌ Cancel"
+}
+
+@router.message(any_state, F.text.in_(PIN_NUMPAD_KEYS))
+async def handle_pin_reply_key_press(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    txt = message.text.strip()
+
+    in_action_pin = (user_id in PIN_PENDING_ACTIONS)
+    in_change_pin = (user_id in PIN_CHANGE_SESSION)
+
+    if not in_action_pin and not in_change_pin:
+        return
+
+    # 1. Kullanıcının attığı rakam/sil/vazgeç mesajını anında sil (Sohbette tek bir karakter bile kalmaz!)
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        lang = user.language if user else "tr"
+
+    if txt in ["❌", "❌ Vazgeç", "❌ Отмена", "❌ Bekor", "❌ Cancel", "cancel", "iptal"]:
+        key = "cancel"
+    elif txt in ["⌫", "⌫ Sil", "⌫ Стереть", "⌫ O'chirish", "⌫ Del", "del", "sil"]:
+        key = "del"
+    elif txt.isdigit():
+        key = txt
+    else:
+        return
+
+    target_msg_id = PIN_MSG_ID.get(user_id)
+    if not target_msg_id:
+        return
+
+    if in_change_pin:
+        await process_pin_change_step(message.bot, chat_id, target_msg_id, user_id, user, lang, key)
+        return
+
+    if in_action_pin:
+        await process_action_pin_step(message.bot, chat_id, target_msg_id, user_id, user, lang, key)
+        return
+
 async def cb_admin_export_all(query: CallbackQuery, state: FSMContext | None = None):
     await prompt_for_admin_pin(query, state, "adm:export_all_excel")
 
@@ -9906,6 +10018,16 @@ async def handle_pin_reply_numpad_key(message: Message, state: FSMContext):
 async def global_reply_keyboard_router(message: Message, state: FSMContext):
     action = match_reply_button(message.text)
     user_id = message.from_user.id
+    chat_id = message.chat.id
+
+    # Kullanıcının bastığı menü komut mesajını anında silerek sohbeti tertemiz tut
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    # Önceki tüm aktif işlem kartlarını temizle
+    await cleanup_chat_history(message.bot, chat_id)
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
