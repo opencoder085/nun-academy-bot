@@ -224,21 +224,24 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
     bot_obj = target.bot if isinstance(target, Message) else (target.message.bot if target.message else bot)
     target_chat_id = target.chat.id if isinstance(target, Message) else (target.message.chat.id if target.message else target.from_user.id)
     is_reply_kb = isinstance(reply_markup, ReplyKeyboardMarkup)
+    anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)
 
-    # If incoming target was a user message (e.g. from reply keyboard click), delete it immediately
+    # Kullanıcı alt menüden tıkladığında gelen metin mesajını anında yok et (sıfır geçiş artığı!)
     if isinstance(target, Message):
         try: await target.delete()
         except Exception: pass
 
-    # 1. Determine message ID to edit in-place:
-    # Always prefer the existing active card on screen (LAST_MENU_MSG_ID or target.message_id)
+    # 1. Yerinde dönüştürülecek mesajı belirle (Asla klavye çapasına dokunma!)
     edit_mid = None
     if isinstance(target, CallbackQuery) and target.message and target.message.from_user and target.message.from_user.is_bot and not target.message.photo:
         edit_mid = target.message.message_id
     elif LAST_MENU_MSG_ID.get(target_chat_id):
         edit_mid = LAST_MENU_MSG_ID.get(target_chat_id)
 
-    # 2. Attempt in-place edit (only if not replacing with a ReplyKeyboardMarkup)
+    if edit_mid and anchor_id and edit_mid == anchor_id and not is_reply_kb:
+        edit_mid = None
+
+    # 2. Kartı yerinde dönüştür (edit_message_text) - Yeni mesaj üretme!
     if edit_mid and not is_reply_kb:
         try:
             await bot_obj.edit_message_text(chat_id=target_chat_id, message_id=edit_mid, text=text, reply_markup=reply_markup, parse_mode="HTML")
@@ -256,14 +259,14 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
                     return
                 pass
 
-    # 3. If in-place edit failed or not possible, send replacement card and delete previous card immediately
+    # 3. Yerinde dönüşüm yapılamadıysa yeni kartı bas ve eski kartı temizle (ÇAPAYI ASLA SİLME!)
     old_card_id = LAST_MENU_MSG_ID.get(target_chat_id)
     try:
         s_m = await bot_obj.send_message(chat_id=target_chat_id, text=text, reply_markup=reply_markup, parse_mode="HTML")
         if s_m:
             LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
             ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
-            if old_card_id and old_card_id != s_m.message_id:
+            if old_card_id and old_card_id != s_m.message_id and old_card_id != anchor_id:
                 try: await bot_obj.delete_message(chat_id=target_chat_id, message_id=old_card_id)
                 except Exception: pass
         return
@@ -273,7 +276,7 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
         if s_m:
             LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
             ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
-            if old_card_id and old_card_id != s_m.message_id:
+            if old_card_id and old_card_id != s_m.message_id and old_card_id != anchor_id:
                 try: await bot_obj.delete_message(chat_id=target_chat_id, message_id=old_card_id)
                 except Exception: pass
 
@@ -4024,20 +4027,56 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
         try: await target.delete()
         except Exception: pass
 
-    # In single-surface architecture: exactly ONE card exists at all times!
-    # Sending dashboard with target_reply_kb sets the persistent 2-column bottom menu!
-    sent_m = await bot_obj.send_message(
-        chat_id=target_chat_id,
-        text=text,
-        reply_markup=target_reply_kb,
-        parse_mode="HTML"
-    )
-    if sent_m:
-        new_mid = sent_m.message_id
-        LAST_MENU_MSG_ID[target_chat_id] = new_mid
-        ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(new_mid)
-        # Purge all previous bot messages so zero old cards remain above it!
-        await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
+    # 1. Klavye Çapası (Anchor): ReplyKeyboardMarkup taşıyan ve ASLA silinmeyen sabit üst çapa
+    anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)
+    if not anchor_id:
+        anchor_hdr = {
+            "tr": "🏫 <b>Haliç Okul Yönetim Sistemi</b>",
+            "ru": "🏫 <b>Система управления школой Haliç</b>",
+            "uz": "🏫 <b>Haliç maktab boshqaruv tizimi</b>",
+            "en": "🏫 <b>Haliç School Management System</b>"
+        }.get(lang, "🏫 <b>Haliç Okul Yönetim Sistemi</b>")
+        try:
+            anc = await bot_obj.send_message(
+                chat_id=target_chat_id,
+                text=anchor_hdr,
+                reply_markup=target_reply_kb,
+                parse_mode="HTML"
+            )
+            if anc:
+                KEYBOARD_ANCHOR_MSG_ID[target_chat_id] = anc.message_id
+                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(anc.message_id)
+        except Exception:
+            pass
+
+    # 2. Aktif Operasyon Kartı (LAST_MENU_MSG_ID): Yerinde güncellenen tek çalışma kartı
+    old_card_id = LAST_MENU_MSG_ID.get(target_chat_id)
+    card_edited = False
+    if old_card_id and old_card_id != KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id):
+        try:
+            await bot_obj.edit_message_text(
+                chat_id=target_chat_id,
+                message_id=old_card_id,
+                text=text,
+                reply_markup=None,
+                parse_mode="HTML"
+            )
+            card_edited = True
+        except Exception:
+            pass
+
+    if not card_edited:
+        sent_m = await bot_obj.send_message(
+            chat_id=target_chat_id,
+            text=text,
+            reply_markup=None,
+            parse_mode="HTML"
+        )
+        if sent_m:
+            new_mid = sent_m.message_id
+            LAST_MENU_MSG_ID[target_chat_id] = new_mid
+            ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(new_mid)
+            await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
 
     if isinstance(target, CallbackQuery) and target.message and target.message.message_id != LAST_MENU_MSG_ID.get(target_chat_id):
         try: await target.message.delete()
