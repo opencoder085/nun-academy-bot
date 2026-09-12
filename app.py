@@ -71,6 +71,13 @@ class GlobalMenuButtonMiddleware(BaseMiddleware):
     ) -> Any:
         if isinstance(event, Message) and event.text:
             text_val = event.text.strip()
+            text_lower = text_val.lower()
+            if text_lower in ("/start", "start", "/menu", "menu", "menü", "/menü", "başlat", "baslat"):
+                state = data.get("state")
+                if state:
+                    await state.clear()
+                return await cmd_start(event, state)
+
             if is_universal_cancel_text(text_val) or text_val in ("/cancel", "/iptal", "/otmena", "/bekor"):
                 state = data.get("state")
                 if state:
@@ -284,15 +291,11 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
         try: await target.delete()
         except Exception: pass
 
-    # 1. Yerinde dönüştürülecek mesajı belirle (Asla klavye çapasına dokunma!)
+    # 1. Yerinde dönüştürülecek mesajı belirle (SADECE CallbackQuery için yerinde dönüştür!)
+    # Metin mesajları (/start, klavye tıklamaları vb.) her zaman kullanıcının göz hizasında (altta) taze kart basar.
     edit_mid = None
     if isinstance(target, CallbackQuery) and target.message and target.message.from_user and target.message.from_user.is_bot and not target.message.photo:
         edit_mid = target.message.message_id
-    elif LAST_MENU_MSG_ID.get(target_chat_id):
-        edit_mid = LAST_MENU_MSG_ID.get(target_chat_id)
-
-    if edit_mid and anchor_id and edit_mid == anchor_id and not is_reply_kb:
-        edit_mid = None
 
     # 2. Kartı yerinde dönüştür (edit_message_text) - Yeni mesaj üretme!
     if edit_mid and not is_reply_kb:
@@ -4836,10 +4839,14 @@ async def cb_relaunch_start(query: CallbackQuery, state: FSMContext):
             await cmd_start(query.message, state)
     await query.answer()
 
-@router.message(CommandStart())
-@router.message(Command("menu"))
+@router.message(any_state, CommandStart())
+@router.message(any_state, Command("start", "menu", "baslat", "başlat"))
+@router.message(any_state, F.text.lower().in_(["/start", "start", "/menu", "menu", "menü", "/menü", "başlat", "baslat"]))
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
+    user_id = message.from_user.id
+    for cache_dict in [PIN_PENDING_ACTIONS, PIN_CHANGE_SESSION, ADMIN_PIN_INPUT, ADMIN_PIN_FAILURES, ATTENDANCE_CACHE, GRADE_CACHE, HW_CACHE, REQ_CACHE, APP_CACHE, BEHAVIOR_CACHE, SUBMISSION_CACHE, EXAM_CACHE, BC_CACHE, PROP_CACHE, FORCE_ALERT_CACHE]:
+        cache_dict.pop(user_id, None)
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         is_admin_id = message.from_user.id in ADMIN_IDS
@@ -5076,12 +5083,25 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
 
     # Deliver single clean operational card equipped with role reply keyboard
     # Zero anchor messages, zero redundant bubbles!
-    sent_m = await bot_obj.send_message(
-        chat_id=target_chat_id,
-        text=text,
-        reply_markup=target_reply_kb,
-        parse_mode="HTML"
-    )
+    sent_m = None
+    try:
+        sent_m = await bot_obj.send_message(
+            chat_id=target_chat_id,
+            text=text,
+            reply_markup=target_reply_kb,
+            parse_mode="HTML"
+        )
+    except Exception:
+        try:
+            clean_text = clean_to_plain(text)
+            sent_m = await bot_obj.send_message(
+                chat_id=target_chat_id,
+                text=clean_text,
+                reply_markup=target_reply_kb,
+                parse_mode=None
+            )
+        except Exception:
+            pass
     if sent_m:
         new_mid = sent_m.message_id
         LAST_MENU_MSG_ID[target_chat_id] = new_mid
