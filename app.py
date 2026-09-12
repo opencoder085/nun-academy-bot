@@ -197,13 +197,9 @@ async def purge_previous_bot_messages(bot_obj: Bot, chat_id: int, keep_msg_id: i
     if last_id:
         all_ids.add(last_id)
 
-    anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(chat_id)
     remaining = set()
     for mid in list(all_ids):
         if keep_msg_id is not None and mid == keep_msg_id:
-            remaining.add(mid)
-            continue
-        if anchor_id is not None and mid == anchor_id:
             remaining.add(mid)
             continue
         try:
@@ -216,7 +212,6 @@ async def purge_previous_bot_messages(bot_obj: Bot, chat_id: int, keep_msg_id: i
         LAST_MENU_MSG_ID[chat_id] = keep_msg_id
     elif chat_id in LAST_MENU_MSG_ID:
         LAST_MENU_MSG_ID.pop(chat_id, None)
-
 async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_markup=None, parse_mode="HTML"):
     if text:
         text = format_telegram_html(text)
@@ -868,15 +863,15 @@ async def init_db():
 LOCALES = {
     'en': {
         'rk_digital_locker': '📁 Digital Locker',
-        'rk_my_credentials': '🔑 My Credentials',
+        'rk_my_credentials': '🔑 My Passwords',
         'btn_remind_voters': '📢 Remind Non-Voters',
         'btn_scan_bot_blocks': '🔍 Silent Connection Check (Health-Check)',
         'btn_rename_class': '✏️ Rename Class',
         'btn_graduates_archive': '🎓 Alumni Archive',
         'btn_bulletin_program': '📅 School Bulletin & Schedule',
-        'rk_cat_tools_reports': '🛠️ Reports & Tools',
-        'btn_force_audio_alert': '🚨 Force Audio Emergency Alert',
-        'btn_bot_block_monitor': '🚫 Bot Block Tracking Desk',
+        'rk_cat_tools_reports': '📊 Reports & Tools',
+        'btn_force_audio_alert': '🚨 Audio Alert',
+        'btn_bot_block_monitor': '🚫 Block Radar',
         'btn_proposals': '🗳️ Voting & Proposals',
         'acknowledged_toast': 'Confirmation recorded.',
         'action_cancelled': '❌ <b>Action cancelled.</b>',
@@ -953,20 +948,20 @@ LOCALES = {
         'btn_back': '⬅️ Back',
         'btn_ban_user': '🚫 Ban User',
         'btn_behavior': '⭐ Behavior & Badges',
-        'btn_blacklist': '🚫 Blocked Users',
+        'btn_blacklist': '🚫 Blacklist',
         'btn_briefing_off': '🔕 Evening Briefing (OFF)',
         'btn_briefing_on': '🔔 Evening Briefing (ON)',
-        'btn_broadcast': '📢 Broadcast Notice',
-        'btn_cafeteria_edit': '🍲 Update Cafeteria Menu',
+        'btn_broadcast': '📢 Broadcast',
+        'btn_cafeteria_edit': '🍲 Cafeteria Menu',
         'btn_cancel_action': '⬅️ Cancel',
         'btn_change_admin_pin': '🔐 Change Admin PIN',
         'btn_class_att_sheet': 'Attendance Sheet',
         'btn_class_grade_sheet': 'Grade Sheet',
         'btn_class_pdf_cards': 'Password Cards (PDF)',
-        'btn_class_promotion': '🎓 Class Promotion & Year-End',
+        'btn_class_promotion': '🎓 Class Promotion',
         'btn_class_sched': 'Timetable',
-        'btn_classes': '🏫 Classes & Students',
-        'btn_clean_logs': '🧹 Purge Old Logs (90+ Days)',
+        'btn_classes': '🏫 Classes',
+        'btn_clean_logs': '🧹 Clean Logs',
         'btn_clear_all_classes': '🗑️ Clear All Classes',
         'btn_cockpit': '📊 Morning Cockpit',
         'btn_cockpit_unified': '📊 Morning Cockpit & Attendance',
@@ -993,28 +988,28 @@ LOCALES = {
         'btn_enter_grade': '📝 Grade Book',
         'btn_exam_schedule': '📅 Exam Schedule',
         'btn_excel': '📥 Import via Excel',
-        'btn_excel_hub': '📥 Excel Center',
-        'btn_export_all_data': '📊 Export Full School Data (.xlsx)',
+        'btn_excel_hub': '📥 Excel Hub',
+        'btn_export_all_data': '📊 Export Data',
         'btn_gen_admin_code': '🔑 Generate One-Time Admin Code',
         'btn_gender_female': '👩 Female',
         'btn_gender_male': '👨 Male',
         'btn_homework_board': '📢 Homework Board',
         'btn_hw_approve': '✅ Approve Submission',
         'btn_hw_revision': '🔄 Request Revision',
-        'btn_lang': '🌐 Change Language',
+        'btn_lang': '🌐 Language',
         'btn_login_prompt': '🔑 Log In',
         'btn_main_menu': '🏠 Main Menu',
         'btn_maintenance_toggle': '🚨 Maintenance ({status})',
         'btn_make_perm_admin': '👑 Make Permanent Admin',
         'btn_make_temp_admin': '⏱️ Make Temporary Admin',
-        'btn_manage_schedule': '📅 Timetable Management',
+        'btn_manage_schedule': '📅 Schedule Desk',
         'btn_manage_tch_classes': '🏫 Manage Classes',
         'btn_medical': '🏥 Medicals ({count})',
         'btn_my_hws': '📚 My Homeworks',
         'btn_next': 'Next ➡️',
         'btn_not_available': '❌ Not Available',
         'btn_notices': '📢 School Announcements',
-        'btn_pdf': '📄 Password Cards (PDF)',
+        'btn_pdf': '📄 Code Cards PDF',
         'btn_prev': '⬅️ Previous',
         'btn_quick_recent': '🕒 Recent',
         'btn_recent_grades_menu': '🕒 Recent Grades & Edit',
@@ -1030,10 +1025,10 @@ LOCALES = {
         'btn_revoke_admin_perm': '❌ Revoke Admin Role',
         'btn_risk_radar': '⚠️ At-Risk Student Radar',
         'btn_save_att': '💾 Save Attendance',
-        'btn_school_admins': '👨‍💼 School Administrators',
+        'btn_school_admins': '👨‍💼 Leadership',
         'btn_search_again': '🔍 Search Again',
         'btn_search_student': '🔍 Search Student',
-        'btn_search_teacher': '🔍 Search Teachers',
+        'btn_search_teacher': '🔍 Search Teacher',
         'btn_search_user': '🔍 Search User',
         'btn_send_dm': '✉️ Send Direct Message',
         'btn_send_new_hw': 'Send Homework',
@@ -1053,7 +1048,7 @@ LOCALES = {
         'btn_upload_excel': '📥 Import Students (Excel)',
         'btn_upload_medical': '🏥 Submit Medical Note',
         'btn_upload_teacher_excel': '👨‍🏫 Bulk Import Teachers (Excel)',
-        'btn_users_hub': '👥 User Directory',
+        'btn_users_hub': '👥 Users Directory',
         'btn_users_list': '⬅️ Administrators List',
         'btn_view_cafeteria': '🍲 Daily Cafeteria Menu',
         'btn_view_photo': 'View Photo',
@@ -1255,7 +1250,7 @@ LOCALES = {
         'rk_cancel_action': '❌ Cancel Action',
         'rk_cat_reports': '📊 Reports & Audits',
         'rk_cat_requests': '🔔 Approval Center',
-        'rk_cat_settings': '⚙️ System & Settings',
+        'rk_cat_settings': '⚙️ System Settings',
         'rk_cat_staff': '👥 Staff & Students',
         'rk_cat_tools': '🛠️ Admin Tools',
         'rk_grade': '📝 Grade Book',
@@ -1315,7 +1310,7 @@ LOCALES = {
         'user_temp_banned_toast': 'User banned for {dur}.',
         'user_unbanned_toast': 'User unbanned.',
         'weekend_attendance_updated': 'Weekend attendance setting updated.',
-        'welcome_guest': '🎓 <b>School Management System</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nPlease enter your personal <b>access code</b> (e.g. <code>VELI-123456</code>, <code>HCA-123456</code>, <code>OGR-123456</code>) or select an action:',
+        'welcome_guest': '🎓 <b>Welcome</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nPlease enter your personal <b>access code</b> (e.g. <code>VELI-123456</code>, <code>HCA-123456</code>, <code>OGR-123456</code>) or select an action:',
     },
     'ru': {
         'rk_digital_locker': '📁 Мое дело',
@@ -1323,11 +1318,11 @@ LOCALES = {
         'btn_remind_voters': '📢 Напомнить не проголосовавшим',
         'btn_scan_bot_blocks': '🔍 Тихая проверка связи (Health-Check)',
         'btn_rename_class': '✏️ Переименовать класс',
-        'btn_graduates_archive': '🎓 Архив выпускников',
+        'btn_graduates_archive': '🎓 Архив выпуска',
         'btn_bulletin_program': '📅 Школьный вестник и расписание',
-        'rk_cat_tools_reports': '🛠️ Отчеты и инструменты',
-        'btn_force_audio_alert': '🚨 Срочное звуковое оповещение',
-        'btn_bot_block_monitor': '🚫 Контроль блокировок бота',
+        'rk_cat_tools_reports': '📊 Отчеты и тулы',
+        'btn_force_audio_alert': '🚨 Срочный алярм',
+        'btn_bot_block_monitor': '🚫 Блок-радар',
         'btn_proposals': '🗳️ Голосования и предложения',
         'acknowledged_toast': 'Подтверждение принято.',
         'action_cancelled': '❌ <b>Действие отменено.</b>',
@@ -1404,20 +1399,20 @@ LOCALES = {
         'btn_back': '⬅️ Назад',
         'btn_ban_user': '🚫 Заблокировать (Бан)',
         'btn_behavior': '⭐ Поведение и баллы',
-        'btn_blacklist': '🚫 Заблокированные',
+        'btn_blacklist': '🚫 Черный список',
         'btn_briefing_off': '🔕 Вечерняя сводка (ВЫКЛ)',
         'btn_briefing_on': '🔔 Вечерняя сводка (ВКЛ)',
-        'btn_broadcast': '📢 Рассылка объявления',
-        'btn_cafeteria_edit': '🍲 Обновить меню столовой',
+        'btn_broadcast': '📢 Рассылка',
+        'btn_cafeteria_edit': '🍲 Меню столовой',
         'btn_cancel_action': '⬅️ Отмена',
         'btn_change_admin_pin': '🔐 Изменить ПИН-код администратора',
         'btn_class_att_sheet': 'Ведомость посещаемости',
         'btn_class_grade_sheet': 'Ведомость оценок',
         'btn_class_pdf_cards': 'Карточки с кодами (PDF)',
-        'btn_class_promotion': '🎓 Перевод в следующий класс',
+        'btn_class_promotion': '🎓 Перевод классов',
         'btn_class_sched': 'Расписание',
-        'btn_classes': '🏫 Классы и ученики',
-        'btn_clean_logs': '🧹 Очистить старые логи (90+ дней)',
+        'btn_classes': '🏫 Классы',
+        'btn_clean_logs': '🧹 Очистить логи',
         'btn_clear_all_classes': '🗑️ Очистить все',
         'btn_cockpit': '📊 Утренний статус',
         'btn_cockpit_unified': '📊 Утренний статус и перекличка',
@@ -1445,7 +1440,7 @@ LOCALES = {
         'btn_exam_schedule': '📅 Расписание экзаменов',
         'btn_excel': '📥 Импорт из Excel',
         'btn_excel_hub': '📥 Центр Excel',
-        'btn_export_all_data': '📊 Выгрузить все данные (.xlsx)',
+        'btn_export_all_data': '📊 Экспорт базы',
         'btn_gen_admin_code': '🔑 Создать одноразовый код администратора',
         'btn_gender_female': '👩 Женский',
         'btn_gender_male': '👨 Мужской',
@@ -1458,14 +1453,14 @@ LOCALES = {
         'btn_maintenance_toggle': '🚨 Режим обслуживания ({status})',
         'btn_make_perm_admin': '👑 Сделать постоянным админом',
         'btn_make_temp_admin': '⏱️ Сделать временным админом',
-        'btn_manage_schedule': '📅 Расписание уроков',
+        'btn_manage_schedule': '📅 Расписание',
         'btn_manage_tch_classes': '🏫 Управление классами',
         'btn_medical': '🏥 Справки ({count})',
         'btn_my_hws': '📚 Мои задания',
         'btn_next': 'Вперед ➡️',
         'btn_not_available': '❌ Не могу',
         'btn_notices': '📢 Объявления школы',
-        'btn_pdf': '📄 Карточки с кодами (PDF)',
+        'btn_pdf': '📄 Карточки PDF',
         'btn_prev': '⬅️ Назад',
         'btn_quick_recent': '🕒 Недавние',
         'btn_recent_grades_menu': '🕒 Последние оценки',
@@ -1481,7 +1476,7 @@ LOCALES = {
         'btn_revoke_admin_perm': '❌ Отозвать права администратора',
         'btn_risk_radar': '⚠️ Радар успеваемости и рисков',
         'btn_save_att': '💾 Сохранить',
-        'btn_school_admins': '👨‍💼 Администрация школы',
+        'btn_school_admins': '👨‍💼 Администрация',
         'btn_search_again': '🔍 Искать снова',
         'btn_search_student': '🔍 Поиск ученика',
         'btn_search_teacher': '🔍 Поиск учителей',
@@ -1706,7 +1701,7 @@ LOCALES = {
         'rk_cancel_action': '❌ Отменить действие',
         'rk_cat_reports': '📊 Отчеты и контроль',
         'rk_cat_requests': '🔔 Центр одобрений',
-        'rk_cat_settings': '⚙️ Настройки системы',
+        'rk_cat_settings': '⚙️ Настройки',
         'rk_cat_staff': '👥 Ученики и учителя',
         'rk_cat_tools': '🛠️ Инструменты',
         'rk_grade': '📝 Выставить оценки',
@@ -1766,7 +1761,7 @@ LOCALES = {
         'user_temp_banned_toast': 'Пользователь заблокирован на {dur}.',
         'user_unbanned_toast': 'Пользователь разблокирован.',
         'weekend_attendance_updated': 'Настройка переклички в выходные обновлена.',
-        'welcome_guest': '🎓 <b>Система Управления Школой</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nВведите ваш <b>код доступа</b> (Напр: <code>VELI-123456</code>, <code>HCA-123456</code>, <code>OGR-123456</code>) или выберите действие:',
+        'welcome_guest': '🎓 <b>Добро пожаловать</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nВведите ваш <b>код доступа</b> (Напр: <code>VELI-123456</code>, <code>HCA-123456</code>, <code>OGR-123456</code>) или выберите действие:',
     },
     'tr': {
         'rk_digital_locker': '📁 Dijital Dosyam',
@@ -1776,9 +1771,9 @@ LOCALES = {
         'btn_rename_class': '✏️ Sınıf Adını Değiştir',
         'btn_graduates_archive': '🎓 Mezunlar Arşivi',
         'btn_bulletin_program': '📅 Okul Bülteni & Program',
-        'rk_cat_tools_reports': '🛠️ Raporlar & Araçlar',
-        'btn_force_audio_alert': '🚨 Zorla Sesli Acil Bildirim',
-        'btn_bot_block_monitor': '🚫 Bot İletişim Takip Masası',
+        'rk_cat_tools_reports': '📊 Rapor & Araçlar',
+        'btn_force_audio_alert': '🚨 Acil Alarm',
+        'btn_bot_block_monitor': '🚫 Blok Radarı',
         'btn_proposals': '🗳️ Teklif & Şikayet Masası',
         'acknowledged_toast': 'Bildirim onaylandı.',
         'action_cancelled': '❌ <b>İşlem iptal edildi.</b>',
@@ -1855,20 +1850,20 @@ LOCALES = {
         'btn_back': '⬅️ Geri',
         'btn_ban_user': '🚫 Kullanıcıyı Engelle (Ban)',
         'btn_behavior': '⭐ Davranış & Rozet',
-        'btn_blacklist': '🚫 Engellenenler',
+        'btn_blacklist': '🚫 Kara Liste',
         'btn_briefing_off': '🔕 Akşam Özeti (KAPALI)',
         'btn_briefing_on': '🔔 Akşam Özeti (AÇIK)',
         'btn_broadcast': '📢 Hedefli Duyuru',
-        'btn_cafeteria_edit': '🍲 Yemekhane Menüsü Güncelle',
+        'btn_cafeteria_edit': '🍲 Yemek Menüsü',
         'btn_cancel_action': '⬅️ İptal Et',
         'btn_change_admin_pin': '🔐 İdari PIN Değiştir',
         'btn_class_att_sheet': 'Yoklama Çizelgesi',
         'btn_class_grade_sheet': 'Not Çizelgesi',
         'btn_class_pdf_cards': 'Şifre Kartları (PDF)',
-        'btn_class_promotion': '🎓 Sınıf Terfi & Yıl Sonu',
+        'btn_class_promotion': '🎓 Sınıf Terfi',
         'btn_class_sched': 'Ders Programı',
-        'btn_classes': '🏫 Sınıflar & Öğrenciler',
-        'btn_clean_logs': '🧹 Eski Logları Temizle (90+ Gün)',
+        'btn_classes': '🏫 Sınıflar',
+        'btn_clean_logs': '🧹 Log Temizliği',
         'btn_clear_all_classes': '🗑️ Tümünü Kaldır',
         'btn_cockpit': '📊 Sabah Durumu',
         'btn_cockpit_unified': '📊 Sabah Kokpiti & Yoklama',
@@ -1896,27 +1891,27 @@ LOCALES = {
         'btn_exam_schedule': '📅 Sınav Takvimi',
         'btn_excel': '📥 Excel ile İçe Aktar',
         'btn_excel_hub': '📥 Excel Masası',
-        'btn_export_all_data': '📊 Tüm Verileri Dışa Aktar (.xlsx)',
+        'btn_export_all_data': '📊 Dışa Aktar',
         'btn_gen_admin_code': '🔑 Tek Seferlik Yönetici Kodu Üret',
         'btn_gender_female': '👩 Kız',
         'btn_gender_male': '👨 Erkek',
         'btn_homework_board': '📢 Ödev Panosu',
         'btn_hw_approve': '✅ Ödevi Onayla',
         'btn_hw_revision': '🔄 Düzeltme İste',
-        'btn_lang': '🌐 Dil Değiştir',
+        'btn_lang': '🌐 Dil Seçimi',
         'btn_login_prompt': '🔑 Giriş Yap',
         'btn_main_menu': '🏠 Ana Menü',
         'btn_maintenance_toggle': '🚨 Bakım Modu ({status})',
         'btn_make_perm_admin': '👑 Kalıcı Yönetici Yap',
         'btn_make_temp_admin': '⏱️ Geçici Yönetici Yap',
-        'btn_manage_schedule': '📅 Ders Programı Masası',
+        'btn_manage_schedule': '📅 Ders Programı',
         'btn_manage_tch_classes': '🏫 Sınıf Yönetimi',
         'btn_medical': '🏥 Raporlar ({count})',
         'btn_my_hws': '📚 Ödevlerim',
         'btn_next': 'İleri ➡️',
         'btn_not_available': '❌ Müsait Değilim',
         'btn_notices': '📢 Okul Duyuruları',
-        'btn_pdf': '📄 Şifre Kartları (PDF)',
+        'btn_pdf': '📄 Şifre Kartları',
         'btn_prev': '⬅️ Geri',
         'btn_quick_recent': '🕒 Son İşlemler',
         'btn_recent_grades_menu': '🕒 Son Notlar & Düzeltme',
@@ -1932,7 +1927,7 @@ LOCALES = {
         'btn_revoke_admin_perm': '❌ Yönetici Yetkisini Al',
         'btn_risk_radar': '⚠️ Devamsızlık & Risk Radarı',
         'btn_save_att': '💾 Yoklamayı Kaydet',
-        'btn_school_admins': '👨‍💼 Okul İdarecileri',
+        'btn_school_admins': '👨‍💼 İdareciler',
         'btn_search_again': '🔍 Yeniden Ara',
         'btn_search_student': '🔍 Öğrenci Ara',
         'btn_search_teacher': '🔍 Öğretmen Ara',
@@ -1955,7 +1950,7 @@ LOCALES = {
         'btn_upload_excel': '📥 Öğrenci Yükle (Excel)',
         'btn_upload_medical': '🏥 Rapor Gönder',
         'btn_upload_teacher_excel': '👨‍🏫 Toplu Öğretmen Yükle (Excel)',
-        'btn_users_hub': '👥 Kullanıcı Rehberi',
+        'btn_users_hub': '👥 Kullanıcılar',
         'btn_users_list': '⬅️ Yönetici Listesi',
         'btn_view_cafeteria': '🍲 Yemekhane Menüsü',
         'btn_view_photo': 'Fotoğrafı Gör',
@@ -2157,7 +2152,7 @@ LOCALES = {
         'rk_cancel_action': '❌ İşlemi İptal Et',
         'rk_cat_reports': '📊 Raporlar & Denetim',
         'rk_cat_requests': '🔔 Onay Masası',
-        'rk_cat_settings': '⚙️ Sistem & Ayarlar',
+        'rk_cat_settings': '⚙️ Sistem Ayarları',
         'rk_cat_staff': '👥 Kadro & Öğrenci',
         'rk_cat_tools': '🛠️ Yönetim Araçları',
         'rk_grade': '📝 Not Girişi',
@@ -2217,19 +2212,19 @@ LOCALES = {
         'user_temp_banned_toast': 'Kullanıcı {dur} süreyle engellendi.',
         'user_unbanned_toast': 'Kullanıcının engeli kaldırıldı.',
         'weekend_attendance_updated': 'Hafta sonu yoklama ayarı güncellendi.',
-        'welcome_guest': '🎓 <b>Okul Yönetim Sistemine Hoş Geldiniz</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nLütfen size verilen <b>erişim kodunu</b> (Örn: <code>VELI-123456</code>, <code>HCA-123456</code>, <code>OGR-123456</code>) yazınız veya işlem seçiniz:',
+        'welcome_guest': '🎓 <b>Hoş Geldiniz</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nLütfen size verilen <b>erişim kodunu</b> (Örn: <code>VELI-123456</code>, <code>HCA-123456</code>, <code>OGR-123456</code>) yazınız veya işlem seçiniz:',
     },
     'uz': {
-        'rk_digital_locker': '📁 Hujjatlarim',
-        'rk_my_credentials': '🔑 Mening parollarim',
+        'rk_digital_locker': '📁 Mening ishim',
+        'rk_my_credentials': '🔑 Parollarim',
         'btn_remind_voters': '📢 Ovoz bermaganlarga eslatish',
         'btn_scan_bot_blocks': '🔍 Tinch aloqa tekshiruvi (Health-Check)',
         'btn_rename_class': "✏️ Sinf nomini o'zgartirish",
-        'btn_graduates_archive': '🎓 Bitiruvchilar arxivi',
+        'btn_graduates_archive': '🎓 Bitiruvchilar',
         'btn_bulletin_program': '📅 Maktab xabarlari va jadval',
-        'rk_cat_tools_reports': '🛠️ Hisobotlar va asboblar',
-        'btn_force_audio_alert': '🚨 Shoshilinch ovozli ogohlantirish',
-        'btn_bot_block_monitor': '🚫 Bot bloklarini nazorat qilish',
+        'rk_cat_tools_reports': '📊 Hisobot & Vosita',
+        'btn_force_audio_alert': '🚨 Tezkor signal',
+        'btn_bot_block_monitor': '🚫 Blok nazorati',
         'btn_proposals': '🗳️ Taklif va shikoyatlar',
         'acknowledged_toast': 'Tasdiqlandi.',
         'action_cancelled': '❌ <b>Amal bekor qilindi.</b>',
@@ -2287,18 +2282,18 @@ LOCALES = {
         'broadcast_sent_report': '📢 E\'lon muvaffaqiyatli ravishda <b>{count}</b> ta foydalanuvchiga yetkazildi.',
         'broadcast_success': '📢 E\'lon <b>{count}</b> kishiga yetkazildi.',
         'btn_academic_report': '📈 Akademik reyting',
-        'btn_acknowledged': '✅ O\'qidim / Tasdiqlayman',
-        'btn_add_admin_id': '➕ Telegram ID orqali ma\'mur qo\'shish',
-        'btn_add_another': '➕ Yana qo\'shish',
-        'btn_add_co_teacher': '➕ Qo\'shimcha o\'qituvchi biriktirish',
-        'btn_add_exam': '➕ Imtihon sanasi qo\'shish',
+        'btn_acknowledged': "✅ O\'qidim / Tasdiqlayman",
+        'btn_add_admin_id': "➕ Telegram ID orqali ma\'mur qo\'shish",
+        'btn_add_another': "➕ Yana qo\'shish",
+        'btn_add_co_teacher': "➕ Qo\'shimcha o\'qituvchi biriktirish",
+        'btn_add_exam': "➕ Imtihon sanasi qo\'shish",
         'btn_add_negative_badge': '🔴 Ogohlantirish / Qoida buzilishi',
-        'btn_add_new_teacher': '➕ Yangi o\'qituvchi qo\'shish',
+        'btn_add_new_teacher': "➕ Yangi o\'qituvchi qo\'shish",
         'btn_add_positive_badge': '🟢 Maqtov / Muvaffaqiyat',
-        'btn_add_student': '➕ O\'quvchi qo\'shish',
-        'btn_add_teacher': '➕ O\'qituvchi qo\'shish',
+        'btn_add_student': "➕ O\'quvchi qo\'shish",
+        'btn_add_teacher': "➕ O\'qituvchi qo\'shish",
         'btn_appr_appointment': '✅ Tasdiqlash',
-        'btn_appr_medical': '✅ Ma\'lumotnomani tasdiqlash',
+        'btn_appr_medical': "✅ Ma\'lumotnomani tasdiqlash",
         'btn_appr_request': '✅ Tasdiqlash',
         'btn_assign_all_classes': '🌐 Barcha sinflarni biriktirish',
         'btn_attendance': '📋 Tezkor davomat',
@@ -2306,112 +2301,112 @@ LOCALES = {
         'btn_back': '⬅️ Orqaga',
         'btn_ban_user': '🚫 Bloklash (Ban)',
         'btn_behavior': '⭐ Xulq-atvor va nishonlar',
-        'btn_blacklist': '🚫 Bloklanganlar',
-        'btn_briefing_off': '🔕 Kechki hisobot (O\'CHIQ)',
+        'btn_blacklist': "🚫 Qora ro'yxat",
+        'btn_briefing_off': "🔕 Kechki hisobot (O\'CHIQ)",
         'btn_briefing_on': '🔔 Kechki hisobot (YONIQ)',
-        'btn_broadcast': '📢 Maqsadli e\'lon',
-        'btn_cafeteria_edit': '🍲 Oshxona menyusini yangilash',
+        'btn_broadcast': "📢 E'lon",
+        'btn_cafeteria_edit': '🍲 Oshxona menyusi',
         'btn_cancel_action': '⬅️ Bekor qilish',
-        'btn_change_admin_pin': '🔐 Ma\'muriy PIN kodni o\'zgartirish',
+        'btn_change_admin_pin': "🔐 Ma\'muriy PIN kodni o\'zgartirish",
         'btn_class_att_sheet': 'Davomat varaqasi',
         'btn_class_grade_sheet': 'Baholar qaydnomasi',
         'btn_class_pdf_cards': 'Parol kartalari (PDF)',
-        'btn_class_promotion': '🎓 Sinf ko\'chirish (Yil yakuni)',
+        'btn_class_promotion': '🎓 Sinf koʻchirish',
         'btn_class_sched': 'Dars jadvali',
-        'btn_classes': '🏫 Sinflar va o\'quvchilar',
-        'btn_clean_logs': '🧹 Eski loglarni tozalash (90+ kun)',
+        'btn_classes': '🏫 Sinflar',
+        'btn_clean_logs': '🧹 Log tozalash',
         'btn_clear_all_classes': '🗑️ Barchasini tozalash',
         'btn_cockpit': '📊 Ertalabki holat',
         'btn_cockpit_unified': '📊 Ertalabki holat va davomat',
-        'btn_confirm_delete': '✅ Ha, o\'chirilsin',
-        'btn_confirm_reset': '✅ Ha, qayta o\'rnatilsin',
-        'btn_del_grade': '❌ Bahoni o\'chirish',
-        'btn_del_student': '❌ O\'quvchini o\'chirish',
-        'btn_del_teacher': '❌ O\'qituvchini o\'chirish',
-        'btn_delete_action': '🗑️ O\'chirish',
+        'btn_confirm_delete': "✅ Ha, o\'chirilsin",
+        'btn_confirm_reset': "✅ Ha, qayta o\'rnatilsin",
+        'btn_del_grade': "❌ Bahoni o\'chirish",
+        'btn_del_student': "❌ O\'quvchini o\'chirish",
+        'btn_del_teacher': "❌ O\'qituvchini o\'chirish",
+        'btn_delete_action': "🗑️ O\'chirish",
         'btn_download_pdf_report': '📄 Rasmiy baholar tabelini yuklab olish (PDF)',
         'btn_dur_1h': '⏱️ 1 Soat',
         'btn_dur_24h': '⏱️ 24 Soat',
         'btn_dur_30d': '⏱️ 30 Kun',
         'btn_dur_7d': '⏱️ 7 Kun',
-        'btn_edit_class': '🏫 Sinfni o\'zgartirish',
+        'btn_edit_class': "🏫 Sinfni o\'zgartirish",
         'btn_edit_grade': '✏️ Bahoni tahrirlash',
-        'btn_edit_name': '👤 Ismni o\'zgartirish',
-        'btn_edit_no': '🔢 Raqamni o\'zgartirish',
+        'btn_edit_name': "👤 Ismni o\'zgartirish",
+        'btn_edit_no': "🔢 Raqamni o\'zgartirish",
         'btn_edit_student': '✏️ Tahrirlash',
         'btn_edit_tch_classes': '🏫 Sinf vakolatlari',
         'btn_emergency_ack': '✅ Holatni tasdiqlayman / Xavfsizdamiz',
         'btn_emergency_alert': '🚨 Favqulodda holat / Qizil signal',
         'btn_emergency_monitor': '🚨 Favqulodda nazorat markazi',
-        'btn_enter_grade': '📝 Baho qo\'yish',
+        'btn_enter_grade': "📝 Baho qo\'yish",
         'btn_exam_schedule': '📅 Imtihonlar jadvali',
         'btn_excel': '📥 Excel orqali yuklash',
         'btn_excel_hub': '📥 Excel markazi',
-        'btn_export_all_data': '📊 Barcha ma\'lumotlarni eksport qilish (.xlsx)',
-        'btn_gen_admin_code': '🔑 Bir martalik ma\'mur kodi yaratish',
+        'btn_export_all_data': "📊 Eksport (.xlsx)'lumotlarni eksport qilish (.xlsx)",
+        'btn_gen_admin_code': "🔑 Bir martalik ma\'mur kodi yaratish",
         'btn_gender_female': '👩 Qiz bola',
-        'btn_gender_male': '👨 O\'g\'il bola',
+        'btn_gender_male': "👨 O\'g\'il bola",
         'btn_homework_board': '📢 Vazifalar paneli',
         'btn_hw_approve': '✅ Vazifani qabul qilish',
         'btn_hw_revision': '🔄 Qayta ishlashga qaytarish',
-        'btn_lang': '🌐 Tilni o\'zgartirish',
+        'btn_lang': "🌐 Tilni tanlash'zgartirish",
         'btn_login_prompt': '🔑 Kirish',
         'btn_main_menu': '🏠 Asosiy Menyu',
         'btn_maintenance_toggle': '🚨 Texnik xizmat rejimi ({status})',
-        'btn_make_perm_admin': '👑 Doimiy ma\'mur qilish',
-        'btn_make_temp_admin': '⏱️ Vaqtinchalik ma\'mur qilish',
-        'btn_manage_schedule': '📅 Dars jadvali boshqaruvi',
+        'btn_make_perm_admin': "👑 Doimiy ma\'mur qilish",
+        'btn_make_temp_admin': "⏱️ Vaqtinchalik ma\'mur qilish",
+        'btn_manage_schedule': '📅 Dars jadvali',
         'btn_manage_tch_classes': '🏫 Sinflarni boshqarish',
-        'btn_medical': '🏥 Ma\'lumotnomalar ({count})',
+        'btn_medical': "🏥 Ma\'lumotnomalar ({count})",
         'btn_my_hws': '📚 Mening vazifalarim',
         'btn_next': 'Oldinga ➡️',
-        'btn_not_available': '❌ Vaqtim yo\'q',
-        'btn_notices': '📢 Maktab e\'lonlari',
-        'btn_pdf': '📄 Parol kartalari (PDF)',
+        'btn_not_available': "❌ Vaqtim yo\'q",
+        'btn_notices': "📢 Maktab e\'lonlari",
+        'btn_pdf': '📄 Parol kartalari',
         'btn_prev': '⬅️ Orqaga',
-        'btn_quick_recent': '🕒 So\'nggi amallar',
-        'btn_recent_grades_menu': '🕒 So\'nggi baholar',
-        'btn_refresh_data': '🔄 Ma\'lumotlarni yangilash',
+        'btn_quick_recent': "🕒 So\'nggi amallar",
+        'btn_recent_grades_menu': "🕒 So\'nggi baholar",
+        'btn_refresh_data': "🔄 Ma\'lumotlarni yangilash",
         'btn_reject': '❌ Rad etish',
         'btn_remind_att': '⚠️ Davomat olmaganlarga eslatish',
         'btn_report_card': '📊 Baholar tabeli',
-        'btn_req_access': '📩 Parol so\'rash',
-        'btn_req_chat': '📞 Bog\'lanish (1:1) so\'rash',
+        'btn_req_access': "📩 Parol so\'rash",
+        'btn_req_chat': "📞 Bog\'lanish (1:1) so\'rash",
         'btn_requests': '🛎️ Arizalar ({count})',
         'btn_reset_codes': '🔄 Kodlarni yangilash',
         'btn_restore_backup': '🔄 Arxivdan tiklash (Restore)',
-        'btn_revoke_admin_perm': '❌ Ma\'mur vakolatini olish',
+        'btn_revoke_admin_perm': "❌ Ma\'mur vakolatini olish",
         'btn_risk_radar': '⚠️ Davomat va xavf radari',
         'btn_save_att': '💾 Davomatni saqlash',
-        'btn_school_admins': '👨‍💼 Maktab rahbariyati',
+        'btn_school_admins': '👨‍💼 Rahbariyat',
         'btn_search_again': '🔍 Qayta qidirish',
-        'btn_search_student': '🔍 O\'quvchi qidirish',
-        'btn_search_teacher': '🔍 O\'qituvchi qidirish',
+        'btn_search_student': '🔍 Oʻquvchi izlash',
+        'btn_search_teacher': "🔍 Ustoz izlash'qituvchi qidirish",
         'btn_search_user': '🔍 Foydalanuvchi qidirish',
         'btn_send_dm': '✉️ Shaxsiy xabar yuborish',
         'btn_send_new_hw': 'Vazifa yuborish',
         'btn_share_contact': '📱 Telefon raqamimni ulashish',
         'btn_student_behavior_history': '⭐ Xulq-atvor tarixi',
         'btn_submit_hw': '📤 Vazifani topshirish',
-        'btn_switch_student': '🧑‍🎓 O\'quvchini almashtirish',
-        'btn_teachers': '👨‍🏫 O\'qituvchilar',
-        'btn_teachers_pdf': '👨‍🏫 O\'qituvchi kartalari (PDF)',
+        'btn_switch_student': "🧑‍🎓 O\'quvchini almashtirish",
+        'btn_teachers': '👨‍🏫 Ustozlar',
+        'btn_teachers_pdf': "👨‍🏫 O\'qituvchi kartalari (PDF)",
         'btn_temp_ban_user': '⏱️ Muddatli bloklash',
         'btn_timezone_setting': '🕒 Vaqt mintaqasi (UTC+{offset})',
-        'btn_toggle_readonly': '🔒 Faqat o\'qish rejimi ({status})',
-        'btn_transfer_class': '🔄 Sinfni boshqa o\'qituvchiga o\'tkazish',
-        'btn_unack_notifs': '⚠️ O\'qilmagan xabarnomalar',
+        'btn_toggle_readonly': "🔒 Faqat o\'qish rejimi ({status})",
+        'btn_transfer_class': "🔄 Sinfni boshqa o\'qituvchiga o\'tkazish",
+        'btn_unack_notifs': "⚠️ O\'qilmagan xabarnomalar",
         'btn_unban_user': '🟢 Blokdan chiqarish (Unban)',
         'btn_unlink_parent': '👨‍👩‍👧‍👦 Ota-onalarni uzish',
-        'btn_upload_excel': '📥 O\'quvchilarni yuklash (Excel)',
-        'btn_upload_medical': '🏥 Ma\'lumotnoma yuborish',
-        'btn_upload_teacher_excel': '👨‍🏫 O\'qituvchilarni yuklash (Excel)',
-        'btn_users_hub': '👥 Foydalanuvchilar ro\'yxati',
-        'btn_users_list': '⬅️ Ma\'murlar ro\'yxati',
+        'btn_upload_excel': "📥 O\'quvchilarni yuklash (Excel)",
+        'btn_upload_medical': "🏥 Ma\'lumotnoma yuborish",
+        'btn_upload_teacher_excel': "👨‍🏫 O\'qituvchilarni yuklash (Excel)",
+        'btn_users_hub': "👥 Foydalanuvchi'yxati",
+        'btn_users_list': "⬅️ Ma\'murlar ro\'yxati",
         'btn_view_cafeteria': '🍲 Oshxona menyusi',
-        'btn_view_photo': 'Rasmni ko\'rish',
+        'btn_view_photo': "Rasmni ko\'rish",
         'btn_view_schedule': '📅 Haftalik dars jadvali',
-        'btn_view_submissions': '📥 Topshiriqlarni ko\'rish',
+        'btn_view_submissions': "📥 Topshiriqlarni ko\'rish",
         'btn_weekend_attendance': '📅 Dam olish kunlari davomat ({status})',
         'btn_write_telegram': '💬 Telegram orqali yozish',
         'btn_write_to_admin': '💬 Rahbariyatga xabar yuborish',
@@ -2607,18 +2602,18 @@ LOCALES = {
         'rk_behavior': '⭐ Xulq-atvor va ball',
         'rk_cancel_action': '❌ Amalni bekor qilish',
         'rk_cat_reports': '📊 Hisobotlar va nazorat',
-        'rk_cat_requests': '🔔 Tasdiqlash markazi',
-        'rk_cat_settings': '⚙️ Tizim va sozlamalar',
-        'rk_cat_staff': '👥 Xodimlar va o\'quvchilar',
+        'rk_cat_requests': '🔔 Tasdiqlash',
+        'rk_cat_settings': '⚙️ Sozlamalar',
+        'rk_cat_staff': '👥 Xodim & Oʻquvchi',
         'rk_cat_tools': '🛠️ Boshqaruv vositalari',
-        'rk_grade': '📝 Baho qo\'yish',
+        'rk_grade': "📝 Baho qo\'yish",
         'rk_homework': '📢 Vazifalar paneli',
         'rk_logout': '🚪 Chiqish',
         'rk_parent_info': 'ℹ️ Maktab axborot paneli',
         'rk_report': '📊 Baholar tabeli',
         'rk_restart': '🔄 Qayta ishga tushirish',
-        'rk_switch_student': '🧑‍🎓 O\'quvchini almashtirish',
-        'rk_upload_medical': '🏥 Ma\'lumotnoma',
+        'rk_switch_student': "🧑‍🎓 O\'quvchini almashtirish",
+        'rk_upload_medical': "🏥 Ma\'lumotnoma",
         'role_parent_btn': '👨‍👩‍👧‍👦 Ota-ona',
         'role_student_btn': '🎓 O\'quvchi',
         'role_teacher_btn': '👨‍🏫 O\'qituvchi',
@@ -2668,7 +2663,7 @@ LOCALES = {
         'user_temp_banned_toast': 'Foydalanuvchi {dur} muddatga bloklandi.',
         'user_unbanned_toast': 'Foydalanuvchi blokdan chiqarildi.',
         'weekend_attendance_updated': 'Dam olish kunlari davomat sozlamasi yangilandi.',
-        'welcome_guest': '🎓 <b>Maktab Boshqaruv Tizimiga Xush Kelibsiz</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nIltimos, sizga berilgan <b>kirish kodini</b> (Masalan: <code>VELI-123456</code>, <code>HCA-123456</code>, <code>OGR-123456</code>) kiriting yoki kerakli amalni tanlang:',
+        'welcome_guest': '🎓 <b>Xush kelibsiz</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nIltimos, sizga berilgan <b>kirish kodini</b> (Masalan: <code>VELI-123456</code>, <code>HCA-123456</code>, <code>OGR-123456</code>) kiriting yoki kerakli amalni tanlang:',
     },
 }
 def get_text(key: str, lang: str = "tr", **kwargs) -> str:
@@ -3151,8 +3146,8 @@ async def generate_teachers_pdf_cards(lang: str = "tr") -> io.BytesIO:
     body_style = ParagraphStyle(name="TCardBody", parent=styles["Normal"], fontName=fn_reg, fontSize=8.5, leading=12, textColor=colors.HexColor("#2D3748"))
 
     header_text = {
-        "tr": "<b>OKUL YÖNETİM SİSTEMİ - ÖĞRETMEN GİRİŞ KARTLARI</b>",
-        "ru": "<b>СИСТЕМА УПРАВЛЕНИЯ ШКОЛОЙ - КАРТОЧКИ УЧИТЕЛЕЙ</b>",
+        "tr": "<b>ÖĞRETMEN GİRİŞ KARTLARI</b>",
+        "ru": "<b>КАРТОЧКИ УЧИТЕЛЕЙ</b>",
         "uz": "<b>MAKTAB BOSHQARUV TIZIMI - O'QITUVCHILAR PAROL KARTALARI</b>",
         "en": "<b>SCHOOL MANAGEMENT SYSTEM - TEACHER ACCESS CARDS</b>"
     }.get(lang, "<b>TEACHER ACCESS CARDS</b>")
@@ -3292,8 +3287,8 @@ async def generate_student_report_card_pdf(student_id: int, lang: str = "tr") ->
     c_center = ParagraphStyle('RCC', parent=styles['Normal'], fontName=fn_reg, fontSize=7.5, leading=9.5, textColor=colors.HexColor('#2D3748'), alignment=1)
 
     t_main = {
-        "tr": "<b>OKUL YÖNETİM SİSTEMİ - RESMİ ÖĞRENCİ GELİŞİM VE NOT KARNESİ</b>",
-        "ru": "<b>СИСТЕМА УПРАВЛЕНИЯ ШКОЛОЙ - ОФИЦИАЛЬНЫЙ ТАБЕЛЬ УСПЕВАЕМОСТИ</b>",
+        "tr": "<b>RESMİ ÖĞRENCİ GELİŞİM VE NOT KARNESİ</b>",
+        "ru": "<b>ОФИЦИАЛЬНЫЙ ТАБЕЛЬ УСПЕВАЕМОСТИ</b>",
         "uz": "<b>MAKTAB BOSHQARUV TIZIMI - RASMIY O'QUVCHI BAHOLAR VA RIVOJLANISH KUNDALIGI</b>",
         "en": "<b>SCHOOL MANAGEMENT SYSTEM - OFFICIAL STUDENT REPORT CARD</b>"
     }.get(lang, "<b>OFFICIAL STUDENT REPORT CARD</b>")
@@ -3899,7 +3894,8 @@ async def get_dashboard_card_text(user: User) -> str:
     lang = user.language
     async with AsyncSessionLocal() as session:
         sn_obj = await session.get(SystemSetting, "school_name")
-        school_name = sn_obj.value if (sn_obj and sn_obj.value) else {"tr": "Okul Yönetim Sistemi", "ru": "Система управления школой", "uz": "Maktab boshqaruv tizimi", "en": "School Management System"}.get(lang, "School Management System")
+        school_name = (sn_obj.value or "").strip() if sn_obj else ""
+        s_header = f"🏛️ <b>{escape_html(school_name.upper())}</b>\n" if school_name else ""
         c_cnt, s_cnt, t_cnt, med_cnt, req_cnt = 0, 0, 0, 0, 0
         name, cls_name, num_val, subj = "-", "-", "-", "Ders"
 
@@ -3927,7 +3923,7 @@ async def get_dashboard_card_text(user: User) -> str:
     w_greet = f"👋 <i>{escape_html(user.full_name or 'Kullanıcı')}</i>\n" if user.full_name else ""
 
     if user.role == "admin":
-        t_adm_title = f"🏛️ <b>{escape_html(school_name.upper())}</b>\n" + {"tr": "⚡ <b>OKUL YÖNETİM KOKPİTİ (ADMİN)</b>", "ru": "⚡ <b>ПАНЕЛЬ УПРАВЛЕНИЯ ШКОЛОЙ (АДМИН)</b>", "uz": "⚡ <b>MAKTAB BOSHQARUV MARKAZI (ADMIN)</b>", "en": "⚡ <b>SCHOOL ADMINISTRATION COCKPIT (ADMIN)</b>"}.get(lang, "⚡ <b>SCHOOL ADMINISTRATION COCKPIT (ADMIN)</b>")
+        t_adm_title = s_header + {"tr": "⚡ <b>OKUL YÖNETİM KOKPİTİ (ADMİN)</b>", "ru": "⚡ <b>ПАНЕЛЬ УПРАВЛЕНИЯ ШКОЛОЙ (АДМИН)</b>", "uz": "⚡ <b>MAKTAB BOSHQARUV MARKAZI (ADMIN)</b>", "en": "⚡ <b>SCHOOL ADMINISTRATION COCKPIT (ADMIN)</b>"}.get(lang, "⚡ <b>SCHOOL ADMINISTRATION COCKPIT (ADMIN)</b>")
         t_adm_sec1 = {"tr": "📊 <b>GENEL OKUL DURUMU</b>", "ru": "📊 <b>ОБЩИЙ СТАТУС ШКОЛЫ</b>", "uz": "📊 <b>UMUMIY MAKTAB HOLATI</b>", "en": "📊 <b>GENERAL SCHOOL STATUS</b>"}.get(lang, "📊 <b>GENERAL SCHOOL STATUS</b>")
         t_adm_sec2 = {"tr": "🛎️ <b>BEKLEYEN İŞLEMLER</b>", "ru": "🛎️ <b>ОЖИДАЮЩИЕ ЗАЯВКИ</b>", "uz": "🛎️ <b>KUTILAYOTGAN AMALLAR</b>", "en": "🛎️ <b>PENDING ACTIONS</b>"}.get(lang, "🛎️ <b>PENDING ACTIONS</b>")
         lbl_c = {"tr": "Sınıflar", "ru": "Классы", "uz": "Sinflar", "en": "Classes"}.get(lang, "Classes")
@@ -4014,77 +4010,24 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
         try: await target.delete()
         except Exception: pass
 
-    async with AsyncSessionLocal() as session:
-        sn_obj = await session.get(SystemSetting, "school_name")
-        school_name = sn_obj.value if (sn_obj and sn_obj.value) else {
-            "tr": "Okul Yönetim Sistemi",
-            "ru": "Система управления школой",
-            "uz": "Maktab boshqaruv tizimi",
-            "en": "School Management System"
-        }.get(lang, "School Management System")
+    # Deliver single clean operational card equipped with role reply keyboard
+    # Zero anchor messages, zero redundant bubbles!
+    sent_m = await bot_obj.send_message(
+        chat_id=target_chat_id,
+        text=text,
+        reply_markup=target_reply_kb,
+        parse_mode="HTML"
+    )
+    if sent_m:
+        new_mid = sent_m.message_id
+        LAST_MENU_MSG_ID[target_chat_id] = new_mid
+        chat_msgs = ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set())
+        chat_msgs.add(new_mid)
+        if len(chat_msgs) > 100:
+            ACTIVE_CHAT_MESSAGES[target_chat_id] = set(sorted(list(chat_msgs))[-30:])
+        await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
 
-    # 1. Klavye Çapası (Anchor): ReplyKeyboardMarkup taşır, ASLA silinmez veya inline yapılmaz.
-    # Bu sayede Telegram'daki [::] dörtgen simge KESİNTİSİZ ve SABİT kalır!
-    anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)
-    anchor_text = f"🏛️ <b>{escape_html(school_name)}</b>"
-
-    if not anchor_id:
-        try:
-            anc = await bot_obj.send_message(
-                chat_id=target_chat_id,
-                text=anchor_text,
-                reply_markup=target_reply_kb,
-                parse_mode="HTML"
-            )
-            if anc:
-                KEYBOARD_ANCHOR_MSG_ID[target_chat_id] = anc.message_id
-                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(anc.message_id)
-        except Exception:
-            pass
-    else:
-        try:
-            await bot_obj.edit_message_text(
-                chat_id=target_chat_id,
-                message_id=anchor_id,
-                text=anchor_text,
-                parse_mode="HTML"
-            )
-        except Exception:
-            pass
-
-    # 2. Aktif Çalışma Kartı (LAST_MENU_MSG_ID): Yerinde güncellenen operasyon kartı
-    old_card_id = LAST_MENU_MSG_ID.get(target_chat_id)
-    card_edited = False
-    if old_card_id and old_card_id != KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id):
-        try:
-            await bot_obj.edit_message_text(
-                chat_id=target_chat_id,
-                message_id=old_card_id,
-                text=text,
-                reply_markup=None,
-                parse_mode="HTML"
-            )
-            card_edited = True
-        except Exception:
-            pass
-
-    if not card_edited:
-        sent_m = await bot_obj.send_message(
-            chat_id=target_chat_id,
-            text=text,
-            reply_markup=None,
-            parse_mode="HTML"
-        )
-        if sent_m:
-            new_mid = sent_m.message_id
-            LAST_MENU_MSG_ID[target_chat_id] = new_mid
-            chat_msgs = ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set())
-            chat_msgs.add(new_mid)
-            if len(chat_msgs) > 100:
-                ACTIVE_CHAT_MESSAGES[target_chat_id] = set(sorted(list(chat_msgs))[-30:])
-            await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
-
-    if isinstance(target, CallbackQuery) and target.message and target.message.message_id not in (LAST_MENU_MSG_ID.get(target_chat_id), KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)):
+    if isinstance(target, CallbackQuery) and target.message and target.message.message_id != LAST_MENU_MSG_ID.get(target_chat_id):
         try: await target.message.delete()
         except Exception: pass
 async def process_auth_code_string(code: str, user_id: int, message: Message, state: FSMContext):
@@ -7831,7 +7774,8 @@ async def cb_cat_settings(event: Message | CallbackQuery, state: FSMContext | No
         lang = user.language if user else "tr"
 
         sn_obj = await session.get(SystemSetting, "school_name")
-        school_name = sn_obj.value if (sn_obj and sn_obj.value) else {"tr": "Okul Yönetim Sistemi", "ru": "Система управления школой", "uz": "Maktab boshqaruv tizimi", "en": "School Management System"}.get(lang, "School Management System")
+        school_name = (sn_obj.value or "").strip() if sn_obj else ""
+        display_sn = school_name if school_name else {"tr": "Belirlenmedi", "ru": "Не задано", "uz": "Kiritilmagan", "en": "Not Set"}.get(lang, "Not Set")
         maint = await session.get(SystemSetting, "maintenance_mode")
         is_maint = maint.value == "true" if maint else False
 
@@ -7863,7 +7807,7 @@ async def cb_cat_settings(event: Message | CallbackQuery, state: FSMContext | No
             [InlineKeyboardButton(text=maint_txt, callback_data="adm:toggle_maint"), InlineKeyboardButton(text=ro_btn_txt, callback_data="adm:toggle_readonly")],
             [InlineKeyboardButton(text=wk_btn_txt, callback_data="adm:toggle_weekend_att"), InlineKeyboardButton(text=get_text("btn_blacklist", lang), callback_data="adm:blacklist")],
             [InlineKeyboardButton(text=get_text("btn_clean_logs", lang), callback_data="adm:clean_old_logs"), InlineKeyboardButton(text=get_text("btn_export_all_data", lang), callback_data="adm:export_all_excel")],
-            [InlineKeyboardButton(text="🏛️ " + {"tr": f"Okul Adı: {school_name[:14]}", "ru": f"Школа: {school_name[:14]}", "uz": f"Maktab: {school_name[:14]}", "en": f"School: {school_name[:14]}"}.get(lang, f"School: {school_name[:14]}"), callback_data="adm:edit_school_name"), InlineKeyboardButton(text="💾 " + {"tr": "Veritabanı Yedeği", "ru": "Бэкап базы", "uz": "Baza nusxasi", "en": "DB Backup"}.get(lang, "DB Backup"), callback_data="adm:backup_db_now")],
+            [InlineKeyboardButton(text="🏛️ " + {"tr": f"Okul Adı: {display_sn[:12]}", "ru": f"Школа: {display_sn[:12]}", "uz": f"Maktab: {display_sn[:12]}", "en": f"School: {display_sn[:12]}"}.get(lang, f"School: {display_sn[:12]}"), callback_data="adm:edit_school_name"), InlineKeyboardButton(text="💾 " + {"tr": "Veritabanı Yedeği", "ru": "Бэкап базы", "uz": "Baza nusxasi", "en": "DB Backup"}.get(lang, "DB Backup"), callback_data="adm:backup_db_now")],
             [InlineKeyboardButton(text=get_text("btn_timezone_setting", lang, offset=TIMEZONE_OFFSET), callback_data="adm:timezone_menu"), InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")],
         ]
         buttons.append(get_nav_buttons(lang, back_callback="adm:dashboard"))
@@ -11609,7 +11553,25 @@ def match_reply_button(text: str) -> str | None:
             if btn_txt and btn_txt == clean_text:
                 return action
 
-    clean_norm = clean_text.lower().replace("🏠", "").replace("⚡", "").replace("•", "").strip()
+    clean_norm = clean_text.lower().replace("🏠", "").replace("⚡", "").replace("•", "").replace("📊", "").replace("🛠️", "").replace("👥", "").replace("🔔", "").replace("⚙️", "").replace("📁", "").replace("🔑", "").replace("🌐", "").replace("🚪", "").strip()
+    
+    # Fuzzy & Normalized matches for all languages & historical button labels
+    if any(m in clean_norm for m in ["kadro", "ogrenci", "öğrenci", "ученики", "учителя", "staff", "students", "xodim"]):
+        return "act_cat_staff"
+    if any(m in clean_norm for m in ["rapor", "arac", "araç", "отчеты", "инструменты", "тулы", "reports", "tools", "hisobot"]):
+        return "act_cat_tools_reports"
+    if any(m in clean_norm for m in ["onay", "одобрений", "approval", "tasdiqlash"]):
+        return "act_cat_requests"
+    if any(m in clean_norm for m in ["ayar", "настройки", "settings", "sozlamalar"]):
+        return "act_cat_settings"
+    if any(m in clean_norm for m in ["dijital", "dosyam", "дело", "locker", "ishim"]):
+        return "act_digital_locker"
+    if any(m in clean_norm for m in ["sifre", "şifre", "пароли", "credentials", "passwords", "parol"]):
+        return "act_my_credentials"
+    if any(m in clean_norm for m in ["dil", "язык", "language", "til"]):
+        return "act_lang"
+    if any(m in clean_norm for m in ["cikis", "çıkış", "выйти", "logout", "chiqish"]):
+        return "act_logout"
     if clean_norm in [
         "ana menu", "ana menü", "baş menü", "bas menu", "главное меню", "главное",
         "glavnoe menu", "glavnoye menyu", "asosiy menyu", "main menu", "menu", "меню"
@@ -13228,8 +13190,8 @@ async def cb_cat_tools_reports(event: Message | CallbackQuery, state: FSMContext
         btn_cafe = get_text("btn_cafeteria_edit", lang)
         btn_bc = get_text("btn_broadcast", lang)
         btn_force = get_text("btn_force_audio_alert", lang)
-        btn_prop = "🗳️ " + {"tr": "Oylama & İstişare Masası", "ru": "Голосования и предложения", "uz": "Ovoz berish va takliflar", "en": "Voting & Proposals"}.get(lang, "Voting & Proposals")
-        btn_stats = "📈 " + {"tr": "Sistem İstatistikleri", "ru": "Статистика системы", "uz": "Tizim statistikasi", "en": "System Statistics"}.get(lang, "Statistics")
+        btn_prop = "🗳️ " + {"tr": "Oylamalar", "ru": "Голосования", "uz": "Ovoz berish", "en": "Proposals"}.get(lang, "Proposals")
+        btn_stats = "📈 " + {"tr": "İstatistikler", "ru": "Статистика", "uz": "Statistika", "en": "Statistics"}.get(lang, "Statistics")
 
         buttons = [
             [InlineKeyboardButton(text=btn_excel, callback_data="adm:excel_hub"), InlineKeyboardButton(text=btn_pdf, callback_data="adm:pdf_menu")],
