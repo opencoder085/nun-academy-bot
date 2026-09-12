@@ -69,28 +69,7 @@ class GlobalMenuButtonMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any]
     ) -> Any:
-        if isinstance(event, Message) and event.text:
-            text_val = event.text.strip()
-            text_lower = text_val.lower()
-            if text_lower in ("/start", "start", "/menu", "menu", "menü", "/menü", "başlat", "baslat"):
-                state = data.get("state")
-                if state:
-                    await state.clear()
-                return await cmd_start(event, state)
-
-            if is_universal_cancel_text(text_val) or text_val in ("/cancel", "/iptal", "/otmena", "/bekor"):
-                state = data.get("state")
-                if state:
-                    await state.clear()
-                return await cmd_cancel(event, state)
-
-            action = match_reply_button(text_val)
-            if action:
-                state = data.get("state")
-                if state:
-                    await state.clear()
-                return await global_reply_keyboard_router(event, state)
-
+        # Native passthrough: FSM and routing are handled cleanly by top-level any_state handlers
         return await handler(event, data)
 
 
@@ -4392,8 +4371,10 @@ def is_universal_cancel_text(text: str | None) -> bool:
 
 @router.message(any_state, Command("cancel", "iptal", "bekor", "otmena"))
 @router.message(any_state, F.text.func(is_universal_cancel_text))
-async def cmd_cancel(message: Message, state: FSMContext):
-    await state.clear()
+async def cmd_cancel(message: Message, state: FSMContext | None = None):
+    if state is not None:
+        try: await state.clear()
+        except Exception: pass
     user_id = message.from_user.id
     for cache_dict in [ATTENDANCE_CACHE, GRADE_CACHE, HW_CACHE, REQ_CACHE, APP_CACHE, BEHAVIOR_CACHE, SUBMISSION_CACHE, EXAM_CACHE, BC_CACHE, PIN_PENDING_ACTIONS, PIN_CHANGE_SESSION, ADMIN_PIN_INPUT, ADMIN_PIN_FAILURES]:
         cache_dict.pop(user_id, None)
@@ -4521,7 +4502,10 @@ async def handle_bot_logout_cmd(message: Message, state: FSMContext):
         await safe_edit_or_answer(message, combined_lgt, reply_markup=guest_kb, parse_mode="HTML")
 
 @router.message(any_state, F.text.func(lambda text: match_reply_button(text) is not None))
-async def global_reply_keyboard_router(message: Message, state: FSMContext):
+async def global_reply_keyboard_router(message: Message, state: FSMContext | None = None):
+    if state is not None:
+        try: await state.clear()
+        except Exception: pass
     action = match_reply_button(message.text)
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -4530,7 +4514,6 @@ async def global_reply_keyboard_router(message: Message, state: FSMContext):
         await message.delete()
     except Exception:
         pass
-
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
@@ -4553,7 +4536,9 @@ async def global_reply_keyboard_router(message: Message, state: FSMContext):
         pass
 
     if action:
-        await state.clear()
+        if state is not None:
+            try: await state.clear()
+            except Exception: pass
         if action == "act_cancel_action":
             dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="cancel_action")
             await cb_cancel_action(dummy_q, state)
@@ -4842,8 +4827,10 @@ async def cb_relaunch_start(query: CallbackQuery, state: FSMContext):
 @router.message(any_state, CommandStart())
 @router.message(any_state, Command("start", "menu", "baslat", "başlat"))
 @router.message(any_state, F.text.lower().in_(["/start", "start", "/menu", "menu", "menü", "/menü", "başlat", "baslat"]))
-async def cmd_start(message: Message, state: FSMContext):
-    await state.clear()
+async def cmd_start(message: Message, state: FSMContext | None = None):
+    if state is not None:
+        try: await state.clear()
+        except Exception: pass
     user_id = message.from_user.id
     for cache_dict in [PIN_PENDING_ACTIONS, PIN_CHANGE_SESSION, ADMIN_PIN_INPUT, ADMIN_PIN_FAILURES, ATTENDANCE_CACHE, GRADE_CACHE, HW_CACHE, REQ_CACHE, APP_CACHE, BEHAVIOR_CACHE, SUBMISSION_CACHE, EXAM_CACHE, BC_CACHE, PROP_CACHE, FORCE_ALERT_CACHE]:
         cache_dict.pop(user_id, None)
@@ -5121,7 +5108,9 @@ async def process_auth_code_string(code: str, user_id: int, message: Message, st
     # If this is a menu button or cancel, never treat it as an auth code attempt
     action = match_reply_button(code)
     if action:
-        await state.clear()
+        if state is not None:
+            try: await state.clear()
+            except Exception: pass
         await global_reply_keyboard_router(message, state)
         return
     if is_universal_cancel_text(code) or str(code).startswith("/"):
@@ -14630,20 +14619,33 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"--> [HATA 2/6] BOT_TOKEN ile Telegram'a bağlanılamadı: {e}")
 
-    if bot_info and WEBHOOK_URL:
-        try:
-            print(f"--> [3/6] Webhook Telegram'a kaydediliyor: {WEBHOOK_URL}")
-            await bot.delete_webhook(drop_pending_updates=False)
-            await bot.set_webhook(
-                url=WEBHOOK_URL,
-                secret_token=WEBHOOK_SECRET,
-                drop_pending_updates=False,
-                allowed_updates=["message", "callback_query"]
-            )
-            wh = await bot.get_webhook_info()
-            print(f"--> [3/6] Webhook Başarıyla Kuruldu! Aktif URL: {wh.url}")
-        except Exception as e:
-            print(f"--> [HATA 3/6] Webhook kurulum hatası: {e}")
+    polling_task = None
+    if bot_info:
+        if WEBHOOK_URL:
+            try:
+                print(f"--> [3/6] Webhook Telegram'a kaydediliyor: {WEBHOOK_URL}")
+                await bot.delete_webhook(drop_pending_updates=False)
+                await bot.set_webhook(
+                    url=WEBHOOK_URL,
+                    secret_token=WEBHOOK_SECRET,
+                    drop_pending_updates=False,
+                    allowed_updates=["message", "callback_query"]
+                )
+                wh = await bot.get_webhook_info()
+                print(f"--> [3/6] Webhook Başarıyla Kuruldu! Aktif URL: {wh.url}")
+            except Exception as e:
+                print(f"--> [HATA 3/6] Webhook kurulum hatası: {e}. Otomatik POLLING moduna geçiliyor...")
+                try: await bot.delete_webhook(drop_pending_updates=False)
+                except Exception: pass
+                polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=["message", "callback_query"]))
+        else:
+            print("--> [3/6] WEBHOOK_URL bulunamadı! Telegram Webhook silinip otomatik POLLING moduna geçiliyor...")
+            try:
+                await bot.delete_webhook(drop_pending_updates=False)
+            except Exception:
+                pass
+            polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=["message", "callback_query"]))
+            print("--> [3/6] Otomatik POLLING modu arka planda başarıyla başlatıldı!")
 
     t1 = asyncio.create_task(background_attendance_loop())
     t2 = asyncio.create_task(background_keep_alive_pinger())
@@ -14656,6 +14658,8 @@ async def lifespan(app: FastAPI):
     print("--> [6/6] SİSTEM CANLI VE TÜM GÜVENLİK KALKANLARI HAZIR.")
     print("=" * 60)
     yield
+    if polling_task:
+        polling_task.cancel()
     t1.cancel()
     t2.cancel()
     t3.cancel()
@@ -14701,7 +14705,8 @@ async def health_check():
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
+    if WEBHOOK_SECRET and secret and secret != WEBHOOK_SECRET:
+        print(f"--> [WEBHOOK UYARI] Secret token uyuşmazlığı: gelen={secret}")
         return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"error": "Invalid secret"})
 
     try:
