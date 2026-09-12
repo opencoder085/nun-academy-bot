@@ -59,6 +59,32 @@ class AutoCallbackAnswerMiddleware(BaseMiddleware):
 
 
 
+
+class GlobalMenuButtonMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: Dict[str, Any]
+    ) -> Any:
+        if isinstance(event, Message) and event.text:
+            text_val = event.text.strip()
+            if is_universal_cancel_text(text_val) or text_val in ("/cancel", "/iptal", "/otmena", "/bekor"):
+                state = data.get("state")
+                if state:
+                    await state.clear()
+                return await cmd_cancel(event, state)
+
+            action = match_reply_button(text_val)
+            if action:
+                state = data.get("state")
+                if state:
+                    await state.clear()
+                return await global_reply_keyboard_router(event, state)
+
+        return await handler(event, data)
+
+
 from sqlalchemy import (
     BigInteger, Integer, String, Boolean, DateTime, Date, ForeignKey, Float, Text, select, func, delete, desc, or_, update
 )
@@ -202,6 +228,17 @@ def normalize_code(code_str: str) -> str:
     cleaned = cleaned.replace("_", "-")
     cleaned = cleaned.replace("ı", "I").replace("i", "I").replace("İ", "I")
     cleaned = cleaned.upper()
+
+    # Cyrillic prefix words & homoglyph transliteration
+    cleaned = cleaned.replace("НСА", "HCA").replace("ВЕЛИ", "VELI").replace("ОГР", "OGR").replace("АДМ", "ADM")
+    cyrillic_homoglyphs = {
+        "А": "A", "В": "V", "Е": "E", "К": "K", "М": "M", "Н": "H",
+        "О": "O", "Р": "R", "С": "C", "Т": "T", "У": "Y", "Х": "X",
+        "Г": "G", "Л": "L", "И": "I", "Д": "D"
+    }
+    for cyr, lat in cyrillic_homoglyphs.items():
+        cleaned = cleaned.replace(cyr, lat)
+
     cleaned = re.sub(r'[\s\-]+', '-', cleaned)
     m = re.match(r'^(VELI|OGR|HCA|ADM)(\d{4,8})$', cleaned)
     if m:
@@ -4214,6 +4251,21 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
 async def process_auth_code_string(code: str, user_id: int, message: Message, state: FSMContext):
     try: await message.delete()
     except Exception: pass
+
+    # If this is a menu button or cancel, never treat it as an auth code attempt
+    action = match_reply_button(code)
+    if action:
+        await state.clear()
+        await global_reply_keyboard_router(message, state)
+        return
+    if is_universal_cancel_text(code) or str(code).startswith("/"):
+        await state.clear()
+        if str(code).startswith("/start"):
+            await cmd_start(message, state)
+        else:
+            await cmd_cancel(message, state)
+        return
+
     clean_code = normalize_code(code)
     auth_result = None
 
@@ -14032,6 +14084,7 @@ async def cb_admin_remind_votes(query: CallbackQuery):
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 dp.callback_query.outer_middleware(AutoCallbackAnswerMiddleware())
+dp.message.outer_middleware(GlobalMenuButtonMiddleware())
 dp.include_router(router)
 
 @dp.error()
