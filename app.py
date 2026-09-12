@@ -41,7 +41,12 @@ async def _safe_cb_answer(self, text: str | None = None, show_alert: bool | None
         return True
 CallbackQuery.answer = _safe_cb_answer
 
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip().strip('"').strip("'")
+POLLING_MODE = os.getenv("POLLING_MODE", "false").strip().lower() in ("true", "1", "yes")
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
 router = Router()
+dp.include_router(router)
 
 class AutoCallbackAnswerMiddleware(BaseMiddleware):
     async def __call__(
@@ -91,15 +96,16 @@ from reportlab.pdfbase.ttfonts import TTFont
 # 1. ORTAM DEĞİŞKENLERİ VE TEMEL YARDIMCILAR
 # ======================================================================
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip().strip('"').strip("'")
+POLLING_MODE = os.getenv("POLLING_MODE", "false").strip().lower() in ("true", "1", "yes")
 
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").strip()
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").strip().strip('"').strip("'")
 if not WEBHOOK_URL:
-    render_url = os.getenv("RENDER_EXTERNAL_URL", "").strip()
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "").strip().strip('"').strip("'")
     if render_url:
         WEBHOOK_URL = f"{render_url.rstrip('/')}/webhook"
     else:
-        render_host = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+        render_host = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip().strip('"').strip("'")
         if render_host:
             WEBHOOK_URL = f"https://{render_host}/webhook"
 
@@ -260,7 +266,7 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
     if text:
         text = format_telegram_html(text)
     
-    bot_obj = target.bot if isinstance(target, Message) else (target.message.bot if target.message else bot)
+    bot_obj = (getattr(target, "bot", None) or getattr(getattr(target, "message", None), "bot", None)) or bot
     target_chat_id = target.chat.id if isinstance(target, Message) else (target.message.chat.id if target.message else target.from_user.id)
     is_reply_kb = isinstance(reply_markup, ReplyKeyboardMarkup)
     anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)
@@ -4921,7 +4927,7 @@ async def cb_set_lang(query: CallbackQuery, state: FSMContext):
     toast_msg = get_text("lang_changed", user.language)
     await query.answer(toast_msg, show_alert=False)
 
-    bot_obj = query.bot if getattr(query, 'bot', None) else (query.message.bot if query.message else bot)
+    bot_obj = (getattr(query, "bot", None) or getattr(getattr(query, "message", None), "bot", None)) or bot
     target_chat_id = query.message.chat.id if query.message else query.from_user.id
 
     reply_kb = get_role_reply_kb(user.role, user.language)
@@ -5061,7 +5067,7 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
     text = await get_dashboard_card_text(user)
     target_reply_kb = reply_kb or get_role_reply_kb(user.role, lang)
 
-    bot_obj = target if isinstance(target, Bot) else (target.bot if isinstance(target, Message) else (target.message.bot if target.message else bot))
+    bot_obj = (target if isinstance(target, Bot) else (getattr(target, "bot", None) or getattr(getattr(target, "message", None), "bot", None))) or bot
     target_chat_id = chat_id or (target.chat.id if isinstance(target, Message) else (target.message.chat.id if isinstance(target, CallbackQuery) and target.message else user.telegram_id))
 
     if isinstance(target, Message):
@@ -8376,7 +8382,7 @@ async def cb_nav_to_main_menu(query: CallbackQuery, state: FSMContext | None = N
         except Exception: pass
     user_id = query.from_user.id
     chat_id = query.message.chat.id if (query and query.message) else user_id
-    bot_obj = query.bot if getattr(query, 'bot', None) else (query.message.bot if query.message else bot)
+    bot_obj = (getattr(query, "bot", None) or getattr(getattr(query, "message", None), "bot", None)) or bot
 
     for cache_dict in [PIN_PENDING_ACTIONS, PIN_CHANGE_SESSION, ADMIN_PIN_INPUT, ADMIN_PIN_FAILURES, ATTENDANCE_CACHE, GRADE_CACHE, HW_CACHE, REQ_CACHE, APP_CACHE, BEHAVIOR_CACHE, SUBMISSION_CACHE, EXAM_CACHE, BC_CACHE, PROP_CACHE]:
         cache_dict.pop(user_id, None)
@@ -10082,7 +10088,7 @@ async def cb_admin_class_promotion_confirm(query: CallbackQuery):
             return
 
         target_chat_id = query.message.chat.id if query.message else query.from_user.id
-        bot_obj = query.bot if getattr(query, 'bot', None) else (query.message.bot if query.message else bot)
+        bot_obj = (getattr(query, "bot", None) or getattr(getattr(query, "message", None), "bot", None)) or bot
         try:
             buf = await export_all_school_data_excel()
             today_str = datetime.utcnow().strftime("%d_%m_%Y")
@@ -14441,11 +14447,9 @@ async def cb_admin_remind_votes(query: CallbackQuery):
 # 16. FASTAPI, HATA KALKANI VE ARKA PLAN DÖNGÜLERİ (LIFESPAN & PINGER)
 # ======================================================================
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+# bot, dp, and router are initialized at top of module
 dp.callback_query.outer_middleware(AutoCallbackAnswerMiddleware())
-dp.message.outer_middleware(GlobalMenuButtonMiddleware())
-dp.include_router(router)
+dp.message.middleware(GlobalMenuButtonMiddleware())
 
 @dp.error()
 async def global_error_shield(event, exception):
@@ -14620,32 +14624,37 @@ async def lifespan(app: FastAPI):
         print(f"--> [HATA 2/6] BOT_TOKEN ile Telegram'a bağlanılamadı: {e}")
 
     polling_task = None
-    if bot_info:
-        if WEBHOOK_URL:
-            try:
-                print(f"--> [3/6] Webhook Telegram'a kaydediliyor: {WEBHOOK_URL}")
-                await bot.delete_webhook(drop_pending_updates=False)
-                await bot.set_webhook(
-                    url=WEBHOOK_URL,
-                    secret_token=WEBHOOK_SECRET,
-                    drop_pending_updates=False,
-                    allowed_updates=["message", "callback_query"]
-                )
-                wh = await bot.get_webhook_info()
-                print(f"--> [3/6] Webhook Başarıyla Kuruldu! Aktif URL: {wh.url}")
-            except Exception as e:
-                print(f"--> [HATA 3/6] Webhook kurulum hatası: {e}. Otomatik POLLING moduna geçiliyor...")
-                try: await bot.delete_webhook(drop_pending_updates=False)
-                except Exception: pass
-                polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=["message", "callback_query"]))
-        else:
-            print("--> [3/6] WEBHOOK_URL bulunamadı! Telegram Webhook silinip otomatik POLLING moduna geçiliyor...")
-            try:
-                await bot.delete_webhook(drop_pending_updates=False)
-            except Exception:
-                pass
+    if POLLING_MODE:
+        print("--> [3/6] POLLING_MODE=true aktif! Webhook silinip doğrudan POLLING başlatılıyor...")
+        try: await bot.delete_webhook(drop_pending_updates=True)
+        except Exception: pass
+        polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=["message", "callback_query"]))
+        print("--> [3/6] Arka plan POLLING modu aktif!")
+    elif WEBHOOK_URL:
+        try:
+            print(f"--> [3/6] Webhook Telegram'a kaydediliyor: {WEBHOOK_URL}")
+            await bot.delete_webhook(drop_pending_updates=True)
+            await bot.set_webhook(
+                url=WEBHOOK_URL,
+                secret_token=WEBHOOK_SECRET,
+                drop_pending_updates=True,
+                allowed_updates=["message", "callback_query"]
+            )
+            wh = await bot.get_webhook_info()
+            print(f"--> [3/6] Webhook Başarıyla Kuruldu! Aktif URL: {wh.url} (Bekleyen Update: {wh.pending_update_count})")
+        except Exception as e:
+            print(f"--> [HATA 3/6] Webhook kurulum hatası: {e}. Otomatik POLLING moduna geçiliyor...")
+            try: await bot.delete_webhook(drop_pending_updates=True)
+            except Exception: pass
             polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=["message", "callback_query"]))
-            print("--> [3/6] Otomatik POLLING modu arka planda başarıyla başlatıldı!")
+    else:
+        print("--> [3/6] WEBHOOK_URL bulunamadı! Telegram Webhook silinip otomatik POLLING moduna geçiliyor...")
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+        except Exception:
+            pass
+        polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=["message", "callback_query"]))
+        print("--> [3/6] Otomatik POLLING modu arka planda başarıyla başlatıldı!")
 
     t1 = asyncio.create_task(background_attendance_loop())
     t2 = asyncio.create_task(background_keep_alive_pinger())
@@ -14689,70 +14698,92 @@ async def health_check():
         db_ok = False
 
     uptime_sec = int((datetime.utcnow() - BOT_START_TIME).total_seconds())
-    st_code = status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE
     return JSONResponse(
-        status_code=st_code,
+        status_code=status.HTTP_200_OK,
         content={
-            "status": "healthy" if db_ok else "unhealthy",
-            "database": "connected" if db_ok else "disconnected",
+            "status": "healthy" if db_ok else "initializing",
+            "database": "connected" if db_ok else "connecting",
             "uptime_seconds": uptime_sec,
             "service": "OkulYonetimBot",
             "timezone_offset": TIMEZONE_OFFSET,
-            "version": "PROD_V30_ENTERPRISE"
+            "version": "PROD_V33_ENTERPRISE"
         }
     )
 
 @app.post("/webhook")
+@app.post("/webhook/")
 async def telegram_webhook(request: Request):
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
     if WEBHOOK_SECRET and secret and secret != WEBHOOK_SECRET:
-        print(f"--> [WEBHOOK UYARI] Secret token uyuşmazlığı: gelen={secret}")
+        print(f"--> [WEBHOOK UYARI] Secret token uyuşmazlığı: gelen={secret}, beklenen={WEBHOOK_SECRET}")
         return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"error": "Invalid secret"})
 
     try:
         data = await request.json()
-    except Exception:
+    except Exception as e:
+        print(f"--> [WEBHOOK HATA] Geçersiz JSON içeriği: {e}")
         return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Bad JSON"})
 
     try:
         telegram_update = Update.model_validate(data, context={"bot": bot})
-        u_id = None
-        if telegram_update.message and telegram_update.message.from_user:
-            u_id = telegram_update.message.from_user.id
-        elif telegram_update.callback_query and telegram_update.callback_query.from_user:
-            u_id = telegram_update.callback_query.from_user.id
-        if u_id:
+        
+        # Real-time console trace for incoming messages
+        m_txt = getattr(telegram_update.message, "text", None) if telegram_update.message else None
+        c_dat = getattr(telegram_update.callback_query, "data", None) if telegram_update.callback_query else None
+        s_uid = (telegram_update.message.from_user.id if telegram_update.message and telegram_update.message.from_user else (telegram_update.callback_query.from_user.id if telegram_update.callback_query and telegram_update.callback_query.from_user else None))
+        print(f"--> [WEBHOOK UPDATE #{telegram_update.update_id}] Gönderen: {s_uid} | Metin: '{m_txt}' | Buton: '{c_dat}'")
+
+        if s_uid:
             import time
             now_t = time.time()
-            if u_id in USER_COOLDOWN:
-                if now_t < USER_COOLDOWN[u_id]:
+            if s_uid in USER_COOLDOWN:
+                if now_t < USER_COOLDOWN[s_uid]:
                     return {"ok": True}
                 else:
-                    del USER_COOLDOWN[u_id]
-                    USER_REQUEST_LOG[u_id] = []
+                    del USER_COOLDOWN[s_uid]
+                    USER_REQUEST_LOG[s_uid] = []
+
             # Debounce duplicate click on the exact same button within 0.35s
-            cb_data = telegram_update.callback_query.data if telegram_update.callback_query else None
-            last_data, last_time = USER_LAST_CLICK.get(u_id, (None, 0.0))
-            if cb_data and last_data == cb_data and (now_t - last_time < 0.35):
+            last_data, last_time = USER_LAST_CLICK.get(s_uid, (None, 0.0))
+            if c_dat and last_data == c_dat and (now_t - last_time < 0.35):
                 if telegram_update.callback_query:
                     try: await telegram_update.callback_query.answer()
                     except Exception: pass
                 return {"ok": True}
-            if cb_data:
-                USER_LAST_CLICK[u_id] = (cb_data, now_t)
+            if c_dat:
+                USER_LAST_CLICK[s_uid] = (c_dat, now_t)
 
-            # High-capacity burst rate limit: allow up to 25 requests in 5s
-            reqs = [t for t in USER_REQUEST_LOG.get(u_id, []) if now_t - t < 5.0]
+            reqs = [t for t in USER_REQUEST_LOG.get(s_uid, []) if now_t - t < 5.0]
             if len(reqs) >= 25:
                 return {"ok": True}
             reqs.append(now_t)
-            USER_REQUEST_LOG[u_id] = reqs
-        await asyncio.wait_for(dp.feed_update(bot, telegram_update), timeout=15.0)
+            USER_REQUEST_LOG[s_uid] = reqs
+
+        await dp.feed_update(bot, telegram_update)
     except Exception as e:
         import traceback
+        print(f"--> [WEBHOOK İŞLEME HATASI]: {e}")
         traceback.print_exc()
 
     return {"ok": True}
+
+@app.get("/bot-status")
+async def bot_status_view():
+    try:
+        me = await bot.get_me()
+        wh = await bot.get_webhook_info()
+        return {
+            "status": "online",
+            "bot_username": f"@{me.username}",
+            "bot_id": me.id,
+            "webhook_url": wh.url,
+            "pending_update_count": wh.pending_update_count,
+            "last_error_message": wh.last_error_message,
+            "last_error_date": str(wh.last_error_date) if wh.last_error_date else None,
+            "allowed_updates": wh.allowed_updates
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
