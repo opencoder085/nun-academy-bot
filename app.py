@@ -2722,12 +2722,12 @@ def get_role_reply_kb(role: str, lang: str = "tr") -> ReplyKeyboardMarkup:
             [KeyboardButton(text=get_text("btn_login_prompt", lang)), KeyboardButton(text=get_text("btn_req_access", lang))],
             [KeyboardButton(text=get_text("btn_lang", lang))]
         ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, is_persistent=True)
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, one_time_keyboard=True, is_persistent=False)
 def get_cancel_reply_kb(lang: str = "tr") -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=get_text("rk_cancel_action", lang))]],
         resize_keyboard=True,
-        is_persistent=True
+        is_persistent=False
     )
 
 def get_language_inline_kb() -> InlineKeyboardMarkup:
@@ -3473,6 +3473,7 @@ async def run_friday_backup_worker(bot: Bot):
 # ======================================================================
 
 class Form(StatesGroup):
+    waiting_school_name = State()
     waiting_auth_code = State()
     waiting_admin_tg_id = State()
     waiting_admin_name = State()
@@ -3897,6 +3898,8 @@ async def cb_set_lang(query: CallbackQuery, state: FSMContext):
 async def get_dashboard_card_text(user: User) -> str:
     lang = user.language
     async with AsyncSessionLocal() as session:
+        sn_obj = await session.get(SystemSetting, "school_name")
+        school_name = sn_obj.value if (sn_obj and sn_obj.value) else {"tr": "Okul Yönetim Sistemi", "ru": "Система управления школой", "uz": "Maktab boshqaruv tizimi", "en": "School Management System"}.get(lang, "School Management System")
         c_cnt, s_cnt, t_cnt, med_cnt, req_cnt = 0, 0, 0, 0, 0
         name, cls_name, num_val, subj = "-", "-", "-", "Ders"
 
@@ -3924,7 +3927,7 @@ async def get_dashboard_card_text(user: User) -> str:
     w_greet = f"👋 <i>{escape_html(user.full_name or 'Kullanıcı')}</i>\n" if user.full_name else ""
 
     if user.role == "admin":
-        t_adm_title = {"tr": "⚡ <b>OKUL YÖNETİM KOKPİTİ (ADMİN)</b>", "ru": "⚡ <b>ПАНЕЛЬ УПРАВЛЕНИЯ ШКОЛОЙ (АДМИН)</b>", "uz": "⚡ <b>MAKTAB BOSHQARUV MARKAZI (ADMIN)</b>", "en": "⚡ <b>SCHOOL ADMINISTRATION COCKPIT (ADMIN)</b>"}.get(lang, "⚡ <b>SCHOOL ADMINISTRATION COCKPIT (ADMIN)</b>")
+        t_adm_title = f"🏛️ <b>{escape_html(school_name.upper())}</b>\n" + {"tr": "⚡ <b>OKUL YÖNETİM KOKPİTİ (ADMİN)</b>", "ru": "⚡ <b>ПАНЕЛЬ УПРАВЛЕНИЯ ШКОЛОЙ (АДМИН)</b>", "uz": "⚡ <b>MAKTAB BOSHQARUV MARKAZI (ADMIN)</b>", "en": "⚡ <b>SCHOOL ADMINISTRATION COCKPIT (ADMIN)</b>"}.get(lang, "⚡ <b>SCHOOL ADMINISTRATION COCKPIT (ADMIN)</b>")
         t_adm_sec1 = {"tr": "📊 <b>GENEL OKUL DURUMU</b>", "ru": "📊 <b>ОБЩИЙ СТАТУС ШКОЛЫ</b>", "uz": "📊 <b>UMUMIY MAKTAB HOLATI</b>", "en": "📊 <b>GENERAL SCHOOL STATUS</b>"}.get(lang, "📊 <b>GENERAL SCHOOL STATUS</b>")
         t_adm_sec2 = {"tr": "🛎️ <b>BEKLEYEN İŞLEMLER</b>", "ru": "🛎️ <b>ОЖИДАЮЩИЕ ЗАЯВКИ</b>", "uz": "🛎️ <b>KUTILAYOTGAN AMALLAR</b>", "en": "🛎️ <b>PENDING ACTIONS</b>"}.get(lang, "🛎️ <b>PENDING ACTIONS</b>")
         lbl_c = {"tr": "Sınıflar", "ru": "Классы", "uz": "Sinflar", "en": "Classes"}.get(lang, "Classes")
@@ -4011,56 +4014,21 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
         try: await target.delete()
         except Exception: pass
 
-    # 1. Klavye Çapası (Anchor): ReplyKeyboardMarkup taşıyan ve ASLA silinmeyen sabit üst çapa
-    anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)
-    if not anchor_id:
-        anchor_hdr = {
-            "tr": "🏫 <b>Haliç Okul Yönetim Sistemi</b>",
-            "ru": "🏫 <b>Система управления школой Haliç</b>",
-            "uz": "🏫 <b>Haliç maktab boshqaruv tizimi</b>",
-            "en": "🏫 <b>Haliç School Management System</b>"
-        }.get(lang, "🏫 <b>Haliç Okul Yönetim Sistemi</b>")
-        try:
-            anc = await bot_obj.send_message(
-                chat_id=target_chat_id,
-                text=anchor_hdr,
-                reply_markup=target_reply_kb,
-                parse_mode="HTML"
-            )
-            if anc:
-                KEYBOARD_ANCHOR_MSG_ID[target_chat_id] = anc.message_id
-                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(anc.message_id)
-        except Exception:
-            pass
-
-    # 2. Aktif Operasyon Kartı (LAST_MENU_MSG_ID): Yerinde güncellenen tek çalışma kartı
-    old_card_id = LAST_MENU_MSG_ID.get(target_chat_id)
-    card_edited = False
-    if old_card_id and old_card_id != KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id):
-        try:
-            await bot_obj.edit_message_text(
-                chat_id=target_chat_id,
-                message_id=old_card_id,
-                text=text,
-                reply_markup=None,
-                parse_mode="HTML"
-            )
-            card_edited = True
-        except Exception:
-            pass
-
-    if not card_edited:
-        sent_m = await bot_obj.send_message(
-            chat_id=target_chat_id,
-            text=text,
-            reply_markup=None,
-            parse_mode="HTML"
-        )
-        if sent_m:
-            new_mid = sent_m.message_id
-            LAST_MENU_MSG_ID[target_chat_id] = new_mid
-            ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(new_mid)
-            await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
+    # Always deliver a clean single operational card equipped with the collapsible role reply keyboard (pulls down to [::] icon on click)
+    sent_m = await bot_obj.send_message(
+        chat_id=target_chat_id,
+        text=text,
+        reply_markup=target_reply_kb,
+        parse_mode="HTML"
+    )
+    if sent_m:
+        new_mid = sent_m.message_id
+        LAST_MENU_MSG_ID[target_chat_id] = new_mid
+        chat_msgs = ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set())
+        chat_msgs.add(new_mid)
+        if len(chat_msgs) > 100:
+            ACTIVE_CHAT_MESSAGES[target_chat_id] = set(sorted(list(chat_msgs))[-30:])
+        await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
 
     if isinstance(target, CallbackQuery) and target.message and target.message.message_id != LAST_MENU_MSG_ID.get(target_chat_id):
         try: await target.message.delete()
@@ -7659,6 +7627,129 @@ async def cb_cat_tools(event: Message | CallbackQuery, state: FSMContext | None 
     if isinstance(event, CallbackQuery):
         await event.answer()
 
+
+# --- DİNAMİK OKUL ADI YÖNETİMİ & VERİTABANI YEDEKLEME HANDLERLARI ---
+@router.callback_query(F.data == "adm:edit_school_name")
+async def cb_admin_edit_school_name(query: CallbackQuery, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        if not is_admin_user(user, query.from_user.id):
+            await query.answer(get_text("unauthorized_action", "tr"), show_alert=True)
+            return
+        lang = user.language if user else "tr"
+        sn_obj = await session.get(SystemSetting, "school_name")
+        cur_name = sn_obj.value if (sn_obj and sn_obj.value) else "-"
+
+    prompt_txt = {
+        "tr": (
+            "🏛️ <b>OKUL / KURUM ADI DÜZENLEME</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📌 <b>Mevcut Tanım:</b> <code>{escape_html(cur_name)}</code>\n\n"
+            "Lütfen sistem panolarında ve raporlarda görüntülenecek yeni okul adını yazınız:\n"
+            "<i>(Varsayılana döndürmek için <b>-</b> veya <b>varsayılan</b> yazabilirsiniz)</i>"
+        ),
+        "ru": (
+            "🏛️ <b>ИЗМЕНЕНИЕ НАЗВАНИЯ ШКОЛЫ</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📌 <b>Текущее:</b> <code>{escape_html(cur_name)}</code>\n\n"
+            "Введите новое название школы для отображения в отчетах и панелях:\n"
+            "<i>(Для сброса введите <b>-</b>)</i>"
+        ),
+        "uz": (
+            "🏛️ <b>MAKTAB NOMINI O'ZGARTIRISH</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📌 <b>Joriy nom:</b> <code>{escape_html(cur_name)}</code>\n\n"
+            "Hisobotlar va panellarda ko'rinadigan yangi maktab nomini kiriting:\n"
+            "<i>(Birlamchi holatga qaytarish uchun <b>-</b> deb yozing)</i>"
+        ),
+        "en": (
+            "🏛️ <b>EDIT SCHOOL NAME</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📌 <b>Current Name:</b> <code>{escape_html(cur_name)}</code>\n\n"
+            "Please enter the new school/institution name:\n"
+            "<i>(Type <b>-</b> to reset to default)</i>"
+        )
+    }.get(lang, "Please enter new school name:")
+
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data="adm:cat_settings")
+    ]])
+    await safe_edit_or_answer(query, prompt_txt, reply_markup=cancel_kb, parse_mode="HTML")
+    await state.set_state(Form.waiting_school_name)
+    await query.answer()
+
+@router.message(Form.waiting_school_name)
+async def process_waiting_school_name(message: Message, state: FSMContext):
+    new_val = (message.text or "").strip()
+    await state.clear()
+    try: await message.delete()
+    except Exception: pass
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        if not is_admin_user(user, message.from_user.id):
+            return
+        lang = user.language if user else "tr"
+
+        sn_obj = await session.get(SystemSetting, "school_name")
+        if not sn_obj:
+            sn_obj = SystemSetting(key="school_name", value="")
+            session.add(sn_obj)
+
+        if new_val in ["-", "varsayılan", "default", "sbros"]:
+            sn_obj.value = ""
+            display_saved = {"tr": "Varsayılan", "ru": "По умолчанию", "uz": "Standart", "en": "Default"}.get(lang, "Default")
+        else:
+            sn_obj.value = new_val[:64]
+            display_saved = sn_obj.value
+
+        await session.commit()
+        await log_audit(session, message.from_user.id, (user.full_name if user else "Admin"), "AYAR GÜNCELLEME", f"Okul Adı Güncellendi: {display_saved}")
+        await session.commit()
+
+    done_msg = {
+        "tr": f"✅ Okul adı başarıyla güncellendi: <b>{escape_html(display_saved)}</b>",
+        "ru": f"✅ Название школы успешно обновлено: <b>{escape_html(display_saved)}</b>",
+        "uz": f"✅ Maktab nomi muvaffaqiyatli saqlandi: <b>{escape_html(display_saved)}</b>",
+        "en": f"✅ School name successfully updated: <b>{escape_html(display_saved)}</b>"
+    }.get(lang, "School name updated successfully.")
+
+    await message.answer(done_msg, parse_mode="HTML")
+    await cb_cat_settings(message)
+
+@router.callback_query(F.data == "adm:backup_db_now")
+async def cb_admin_backup_db_now(query: CallbackQuery):
+    user_id = query.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not is_admin_user(user, user_id):
+            await query.answer(get_text("unauthorized_action", "tr"), show_alert=True)
+            return
+        lang = user.language if user else "tr"
+
+    db_path = "/working_dir/c_aa37f5c5f27a7602/school.db"
+    import os
+    from aiogram.types import FSInputFile
+    if not os.path.exists(db_path):
+        await query.answer("❌ school.db bulunamadı!", show_alert=True)
+        return
+
+    now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    doc = FSInputFile(db_path, filename=f"school_backup_{now_str}.db")
+    cap = {
+        "tr": f"💾 <b>GÜNCEL VERİTABANI YEDEĞİ</b>\n📅 Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}\n📂 Dosya: <code>school.db</code>",
+        "ru": f"💾 <b>АКТУАЛЬНЫЙ БЭКАП БАЗЫ ДАННЫХ</b>\n📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}\n📂 Файл: <code>school.db</code>",
+        "uz": f"💾 <b>MA'LUMOTLAR BAZASI ZAXIRASI</b>\n📅 Sana: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}\n📂 Fayl: <code>school.db</code>",
+        "en": f"💾 <b>DATABASE BACKUP FILE</b>\n📅 Date: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}\n📂 File: <code>school.db</code>"
+    }.get(lang, "Database Backup File")
+
+    try:
+        await query.message.bot.send_document(chat_id=query.message.chat.id, document=doc, caption=cap, parse_mode="HTML")
+        await query.answer("✅ Veritabanı yedeği sohbete gönderildi.", show_alert=False)
+    except Exception as e:
+        await query.answer(f"Hata: {e}", show_alert=True)
+
 @router.callback_query(F.data == "adm:cat_settings")
 @router.message(any_state, F.text.in_(["⚙️ Sistem & Ayarlar", "⚙️ Настройки системы", "⚙️ Tizim va sozlamalar", "⚙️ System & Settings"]))
 async def cb_cat_settings(event: Message | CallbackQuery, state: FSMContext | None = None):
@@ -7673,6 +7764,8 @@ async def cb_cat_settings(event: Message | CallbackQuery, state: FSMContext | No
             return
         lang = user.language if user else "tr"
 
+        sn_obj = await session.get(SystemSetting, "school_name")
+        school_name = sn_obj.value if (sn_obj and sn_obj.value) else {"tr": "Okul Yönetim Sistemi", "ru": "Система управления школой", "uz": "Maktab boshqaruv tizimi", "en": "School Management System"}.get(lang, "School Management System")
         maint = await session.get(SystemSetting, "maintenance_mode")
         is_maint = maint.value == "true" if maint else False
 
@@ -7704,6 +7797,7 @@ async def cb_cat_settings(event: Message | CallbackQuery, state: FSMContext | No
             [InlineKeyboardButton(text=maint_txt, callback_data="adm:toggle_maint"), InlineKeyboardButton(text=ro_btn_txt, callback_data="adm:toggle_readonly")],
             [InlineKeyboardButton(text=wk_btn_txt, callback_data="adm:toggle_weekend_att"), InlineKeyboardButton(text=get_text("btn_blacklist", lang), callback_data="adm:blacklist")],
             [InlineKeyboardButton(text=get_text("btn_clean_logs", lang), callback_data="adm:clean_old_logs"), InlineKeyboardButton(text=get_text("btn_export_all_data", lang), callback_data="adm:export_all_excel")],
+            [InlineKeyboardButton(text="🏛️ " + {"tr": f"Okul Adı: {school_name[:14]}", "ru": f"Школа: {school_name[:14]}", "uz": f"Maktab: {school_name[:14]}", "en": f"School: {school_name[:14]}"}.get(lang, f"School: {school_name[:14]}"), callback_data="adm:edit_school_name"), InlineKeyboardButton(text="💾 " + {"tr": "Veritabanı Yedeği", "ru": "Бэкап базы", "uz": "Baza nusxasi", "en": "DB Backup"}.get(lang, "DB Backup"), callback_data="adm:backup_db_now")],
             [InlineKeyboardButton(text=get_text("btn_timezone_setting", lang, offset=TIMEZONE_OFFSET), callback_data="adm:timezone_menu"), InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")],
         ]
         buttons.append(get_nav_buttons(lang, back_callback="adm:dashboard"))
@@ -8624,7 +8718,46 @@ async def process_broadcast_text(message: Message, state: FSMContext):
             except Exception:
                 pass
 
-        await message.answer(get_text("broadcast_sent_report", lang, count=sent_cnt), reply_markup=get_role_reply_kb("admin", lang), parse_mode="HTML")
+                blocked_cnt = max(0, total_recipients - sent_cnt)
+        report_card = {
+            "tr": (
+                "📢 <b>DUYURU İLETİM RAPORU</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"✅ <b>Başarıyla İletilen:</b> {sent_cnt} kullanıcı\n"
+                f"🚫 <b>Ulaşılamayan / Engelleyen:</b> {blocked_cnt} kullanıcı\n"
+                f"👥 <b>Toplam Hedef Kitle:</b> {total_recipients} kullanıcı\n"
+                f"📅 <b>Tarih:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ),
+            "ru": (
+                "📢 <b>ОТЧЕТ О ДОСТАВКЕ ОБЪЯВЛЕНИЯ</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"✅ <b>Успешно доставлено:</b> {sent_cnt}\n"
+                f"🚫 <b>Не доставлено (блок):</b> {blocked_cnt}\n"
+                f"👥 <b>Всего получателей:</b> {total_recipients}\n"
+                f"📅 <b>Дата:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ),
+            "uz": (
+                "📢 <b>E'LON YUBORISH HISOBOTI</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"✅ <b>Yetkazildi:</b> {sent_cnt}\n"
+                f"🚫 <b>Yetkazilmadi (bloklangan):</b> {blocked_cnt}\n"
+                f"👥 <b>Jami qabul qiluvchilar:</b> {total_recipients}\n"
+                f"📅 <b>Sana:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ),
+            "en": (
+                "📢 <b>BROADCAST DELIVERY REPORT</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"✅ <b>Successfully Delivered:</b> {sent_cnt} users\n"
+                f"🚫 <b>Unreachable / Blocked:</b> {blocked_cnt} users\n"
+                f"👥 <b>Total Target Audience:</b> {total_recipients} users\n"
+                f"📅 <b>Date:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
+        }.get(lang, f"Dispatched: {sent_cnt}/{total_recipients}")
+        await message.answer(report_card, parse_mode="HTML")
         await render_clean_dashboard(message, user)
 
 # --- SINIF ATLATMA (DÖNEM SONU TERFİ) - PIN KORUMALI & OTOMATİK EXCEL YEDEKLEMELİ ---
