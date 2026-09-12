@@ -773,20 +773,7 @@ async def init_db():
                 pass
                 # Otomatik Tablo ve Endeks Kontrolleri
         try:
-            # Yüksek Performanslı SQLite WAL ve Bellek Optimizasyonu
-            try:
-                await conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
-                await conn.exec_driver_sql("PRAGMA synchronous=NORMAL;")
-                await conn.exec_driver_sql("PRAGMA cache_size=-64000;")
-                await conn.exec_driver_sql("PRAGMA temp_store=MEMORY;")
-            except Exception:
-                pass
-
             await conn.run_sync(Base.metadata.create_all)
-            try: await conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
-            except Exception: pass
-            try: await conn.exec_driver_sql("PRAGMA busy_timeout=5000;")
-            except Exception: pass
             await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS digital_records (id INTEGER PRIMARY KEY AUTOINCREMENT, user_telegram_id BIGINT, category VARCHAR(40), title VARCHAR(150), summary TEXT, full_content TEXT, file_id VARCHAR(200), file_type VARCHAR(30), tg_message_id BIGINT, is_archived_from_chat BOOLEAN DEFAULT 0, expires_at DATETIME, created_at DATETIME);")
             await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS classes (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(20) UNIQUE, created_at DATETIME);")
             await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS graduates (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name VARCHAR(100), student_number VARCHAR(20), graduated_class VARCHAR(20), graduation_year INTEGER, parent_phone VARCHAR(30), created_at DATETIME);")
@@ -3685,9 +3672,13 @@ async def handle_bot_logout_cmd(message: Message, state: FSMContext):
 
     try: await message.delete()
     except Exception: pass
-    guest_kb = get_role_reply_kb("guest", lang)
-    combined_lgt = f"{get_text('logout_success_msg', lang)}\n──────────────\n{get_text('welcome_guest', lang)}"
-    await safe_edit_or_answer(message, combined_lgt, reply_markup=guest_kb, parse_mode="HTML")
+    KEYBOARD_ANCHOR_MSG_ID.pop(message.chat.id, None)
+    if user:
+        await render_clean_dashboard(message, user)
+    else:
+        guest_kb = get_role_reply_kb("guest", lang)
+        combined_lgt = f"{get_text('logout_success_msg', lang)}\n──────────────\n{get_text('welcome_guest', lang)}"
+        await safe_edit_or_answer(message, combined_lgt, reply_markup=guest_kb, parse_mode="HTML")
 
 @router.my_chat_member()
 async def on_my_chat_member_updated(event: ChatMemberUpdated, bot: Bot | None = None):
@@ -3854,15 +3845,8 @@ async def cmd_start(message: Message, state: FSMContext):
             await prompt_guest_screen(message, user, state)
             return
 
-        reply_kb = get_role_reply_kb(user.role, user.language)
-        dash_text = await get_dashboard_card_text(user)
-        sent_dash = await message.bot.send_message(chat_id=message.chat.id, text=dash_text, reply_markup=reply_kb, parse_mode="HTML")
-        if sent_dash:
-            LAST_MENU_MSG_ID[message.chat.id] = sent_dash.message_id
-            ACTIVE_CHAT_MESSAGES.setdefault(message.chat.id, set()).add(sent_dash.message_id)
-            await purge_previous_bot_messages(message.bot, message.chat.id, keep_msg_id=sent_dash.message_id)
-        try: await message.delete()
-        except Exception: pass
+        # Render clean dashboard with permanent keyboard anchor and single active card
+        await render_clean_dashboard(message, user)
 
 async def prompt_guest_screen(target: Message | CallbackQuery, user: User, state: FSMContext):
     lang = user.language
@@ -7253,14 +7237,7 @@ async def cb_admin_dashboard(query: CallbackQuery, state: FSMContext | None = No
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         if user:
-            dash_text = await get_dashboard_card_text(user)
-            if query.message:
-                try:
-                    await query.message.edit_text(dash_text, reply_markup=None, parse_mode="HTML")
-                    await query.answer()
-                    return
-                except Exception:
-                    pass
+            # Geri tıklandığında alt menüyü (ReplyKeyboardMarkup) Telegram'a kesin olarak geri yükle!
             await render_clean_dashboard(query, user)
     await query.answer()
 
@@ -10384,8 +10361,8 @@ async def cb_act_logout(query: CallbackQuery, state: FSMContext):
     except Exception: pass
     await safe_edit_or_answer(query, "🌍 Iltimos, tilni tanlang / Пожалуйста, выберите язык / Lütfen bir dil seçiniz / Select language:", reply_markup=get_language_inline_kb())
 
-@router.message(any_state, Command("restart", "reset", "cikis", "logout"))
-@router.message(any_state, F.text.in_(["🔄 Yeniden Başlat", "🔄 Перезапуск", "🔄 Qayta ishga tushirish", "🔄 Restart Bot", "🚪 Çıkış Yap", "🚪 Выйти", "🚪 Chiqish", "🚪 Log Out", "/restart", "/reset", "/cikis", "/logout"]))
+@router.message(any_state, Command("restart", "reset"))
+@router.message(any_state, F.text.in_(["🔄 Yeniden Başlat", "🔄 Перезапуск", "🔄 Qayta ishga tushirish", "🔄 Restart Bot", "/restart", "/reset"]))
 async def handle_bot_restart_cmd(message: Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
@@ -10457,21 +10434,6 @@ PIN_CHANGE_SESSION = {}
 
 PIN_MSG_ID = {}
 PIN_CHAT_ID = {}
-ACTIVE_CHAT_MESSAGES = {}
-
-async def cleanup_chat_history(bot: Bot, chat_id: int, keep_msg_id: int | None = None):
-    msg_ids = ACTIVE_CHAT_MESSAGES.get(chat_id, set())
-    last_mid = LAST_MENU_MSG_ID.pop(chat_id, None)
-    if last_mid:
-        msg_ids.add(last_mid)
-    for mid in list(msg_ids):
-        if keep_msg_id and mid == keep_msg_id:
-            continue
-        try:
-            await bot.delete_message(chat_id=chat_id, message_id=mid)
-        except Exception:
-            pass
-    ACTIVE_CHAT_MESSAGES[chat_id] = {keep_msg_id} if keep_msg_id else set()
 
 def render_pin_screen(cur_pin: str, error_msg: str = "", is_success: bool = False, is_locked: bool = False, is_error: bool = False, lang: str = "tr", custom_title: str = "", custom_prompt: str = "") -> str:
     if is_success:
@@ -11397,7 +11359,7 @@ async def cb_class_attendance_sheet(query: CallbackQuery):
 REPLY_BUTTON_ACTIONS = {
     "rk_digital_locker": "act_digital_locker",
     "rk_my_credentials": "act_my_credentials",
-    "rk_logout": "act_restart",
+    "rk_logout": "act_logout",
     "rk_restart": "act_restart",
     "rk_main_menu": "act_main_menu",
     "rk_admin_dash": "act_main_menu",
@@ -11981,7 +11943,10 @@ async def global_reply_keyboard_router(message: Message, state: FSMContext):
         elif action == "act_my_credentials":
             await cb_show_my_credentials(message, state)
             return
-        elif action in ("act_logout", "act_restart"):
+        elif action == "act_logout":
+            await handle_bot_logout_cmd(message, state)
+            return
+        elif action == "act_restart":
             await handle_bot_restart_cmd(message, state)
             return
         elif action == "act_cat_staff" and user.role == "admin":
