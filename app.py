@@ -94,6 +94,7 @@ for x in os.getenv("ADMIN_IDS", "").split(","):
 
 USER_LAST_MESSAGE_TIME = {}
 LAST_MENU_MSG_ID = {}
+KEYBOARD_ANCHOR_MSG_ID: dict[int, int] = {}
 RECENT_SEARCH_CACHE = {}
 
 def render_progress_bar(val: int, max_val: int = 10) -> str:
@@ -196,9 +197,13 @@ async def purge_previous_bot_messages(bot_obj: Bot, chat_id: int, keep_msg_id: i
     if last_id:
         all_ids.add(last_id)
 
+    anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(chat_id)
     remaining = set()
     for mid in list(all_ids):
         if keep_msg_id is not None and mid == keep_msg_id:
+            remaining.add(mid)
+            continue
+        if anchor_id is not None and mid == anchor_id:
             remaining.add(mid)
             continue
         try:
@@ -219,87 +224,57 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
     bot_obj = target.bot if isinstance(target, Message) else (target.message.bot if target.message else bot)
     target_chat_id = target.chat.id if isinstance(target, Message) else (target.message.chat.id if target.message else target.from_user.id)
     is_reply_kb = isinstance(reply_markup, ReplyKeyboardMarkup)
+    anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)
 
-    if isinstance(target, CallbackQuery):
-        msg = target.message
-        if not is_reply_kb and msg and msg.from_user and msg.from_user.is_bot and not msg.photo:
-            try:
-                await msg.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
-                return
-            except Exception as e:
-                err_s = str(e).lower()
-                if "message is not modified" in err_s:
-                    return
-                try:
-                    clean_txt = clean_to_plain(text)
-                    await msg.edit_text(clean_txt, reply_markup=reply_markup, parse_mode=None)
-                    return
-                except Exception as e2:
-                    if "message is not modified" in str(e2).lower():
-                        return
-                    pass
-        
-        old_mid = LAST_MENU_MSG_ID.get(target_chat_id) or (msg.message_id if msg else None)
+    # 1. Determine message ID to edit in-place
+    edit_mid = None
+    if isinstance(target, CallbackQuery) and target.message and target.message.from_user and target.message.from_user.is_bot and not target.message.photo:
+        edit_mid = target.message.message_id
+    elif LAST_MENU_MSG_ID.get(target_chat_id):
+        edit_mid = LAST_MENU_MSG_ID.get(target_chat_id)
+
+    # Never overwrite the keyboard anchor with an inline card
+    if edit_mid and anchor_id and edit_mid == anchor_id and not is_reply_kb:
+        edit_mid = None
+
+    # 2. Attempt in-place edit
+    if edit_mid and not is_reply_kb:
         try:
-            s_m = await bot_obj.send_message(chat_id=target_chat_id, text=text, reply_markup=reply_markup, parse_mode="HTML")
-            if s_m:
-                LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
-                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
-                if old_mid and old_mid != s_m.message_id:
-                    try: await bot_obj.delete_message(chat_id=target_chat_id, message_id=old_mid)
-                    except Exception: pass
+            await bot_obj.edit_message_text(chat_id=target_chat_id, message_id=edit_mid, text=text, reply_markup=reply_markup, parse_mode="HTML")
             return
-        except Exception:
-            clean_txt = clean_to_plain(text)
-            s_m = await bot_obj.send_message(chat_id=target_chat_id, text=clean_txt, reply_markup=reply_markup, parse_mode=None)
-            if s_m:
-                LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
-                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
-                if old_mid and old_mid != s_m.message_id:
-                    try: await bot_obj.delete_message(chat_id=target_chat_id, message_id=old_mid)
-                    except Exception: pass
-            return
-
-    elif isinstance(target, Message):
-        try:
-            await target.delete()
-        except Exception:
-            pass
-        
-        last_mid = LAST_MENU_MSG_ID.get(target_chat_id)
-        if not is_reply_kb and last_mid:
-            try:
-                await bot_obj.edit_message_text(chat_id=target_chat_id, message_id=last_mid, text=text, reply_markup=reply_markup, parse_mode="HTML")
+        except Exception as e:
+            err_s = str(e).lower()
+            if "message is not modified" in err_s:
                 return
-            except Exception as e:
-                err_s = str(e).lower()
-                if "message is not modified" in err_s:
+            try:
+                clean_txt = clean_to_plain(text)
+                await bot_obj.edit_message_text(chat_id=target_chat_id, message_id=edit_mid, text=clean_txt, reply_markup=reply_markup, parse_mode=None)
+                return
+            except Exception as e2:
+                if "message is not modified" in str(e2).lower():
                     return
-                try:
-                    clean_txt = clean_to_plain(text)
-                    await bot_obj.edit_message_text(chat_id=target_chat_id, message_id=last_mid, text=clean_txt, reply_markup=reply_markup, parse_mode=None)
-                    return
-                except Exception:
-                    pass
+                pass
 
-        try:
-            s_m = await bot_obj.send_message(chat_id=target_chat_id, text=text, reply_markup=reply_markup, parse_mode="HTML")
-            if s_m:
-                LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
-                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
-                if last_mid and last_mid != s_m.message_id:
-                    try: await bot_obj.delete_message(chat_id=target_chat_id, message_id=last_mid)
-                    except Exception: pass
-        except Exception:
-            clean_txt = clean_to_plain(text)
-            s_m = await bot_obj.send_message(chat_id=target_chat_id, text=clean_txt, reply_markup=reply_markup, parse_mode=None)
-            if s_m:
-                LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
-                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
-                if last_mid and last_mid != s_m.message_id:
-                    try: await bot_obj.delete_message(chat_id=target_chat_id, message_id=last_mid)
-                    except Exception: pass
-
+    # 3. Fallback: send message and clean up old card (NEVER delete keyboard anchor!)
+    old_card_id = LAST_MENU_MSG_ID.get(target_chat_id)
+    try:
+        s_m = await bot_obj.send_message(chat_id=target_chat_id, text=text, reply_markup=reply_markup, parse_mode="HTML")
+        if s_m:
+            LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
+            ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
+            if old_card_id and old_card_id != s_m.message_id and old_card_id != anchor_id:
+                try: await bot_obj.delete_message(chat_id=target_chat_id, message_id=old_card_id)
+                except Exception: pass
+        return
+    except Exception:
+        clean_txt = clean_to_plain(text)
+        s_m = await bot_obj.send_message(chat_id=target_chat_id, text=clean_txt, reply_markup=reply_markup, parse_mode=None)
+        if s_m:
+            LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
+            ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
+            if old_card_id and old_card_id != s_m.message_id and old_card_id != anchor_id:
+                try: await bot_obj.delete_message(chat_id=target_chat_id, message_id=old_card_id)
+                except Exception: pass
 
 def split_message_chunks(text: str, max_length: int = 4000) -> list[str]:
     """Telegram 4096 karakter sınırını aşmamak için metni satır bazlı güvenle böler."""
@@ -3754,6 +3729,62 @@ async def on_my_chat_member_updated(event: ChatMemberUpdated, bot: Bot | None = 
             await log_audit(session, user_id, u_name, "BOT ENGELİ KALKTI", f"Kullanıcı bot engelini kaldırdı (Rol: {u_role}).")
             await session.commit()
 
+
+@router.message(Command("temizle", "clear", "sil"))
+async def cmd_clear_chat(message: Message, state: FSMContext):
+    await state.clear()
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+
+    # 1. Purge all bot messages
+    await purge_previous_bot_messages(message.bot, chat_id)
+    KEYBOARD_ANCHOR_MSG_ID.pop(chat_id, None)
+    LAST_MENU_MSG_ID.pop(chat_id, None)
+
+    # 2. Delete user's command message
+    try: await message.delete()
+    except Exception: pass
+
+    # 3. Get user language
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        lang = user.language if user else "tr"
+
+    reset_txt = {
+        "tr": "🧹 <b>Sohbet Temizlendi</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSistemi ve menüyü yeniden başlatmak için aşağıdaki butona tıklayabilir veya <code>/start</code> yazabilirsiniz:",
+        "ru": "🧹 <b>Чат очищен</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nНажмите кнопку ниже или введите <code>/start</code> для запуска меню:",
+        "uz": "🧹 <b>Chat tozalandi</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nMenyuni ishga tushirish uchun quyidagi tugmani bosing yoki <code>/start</code> yozing:",
+        "en": "🧹 <b>Chat Cleared</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nClick the button below or type <code>/start</code> to launch the menu:"
+    }.get(lang, "🧹 <b>Sohbet Temizlendi</b>")
+
+    start_btn_txt = {
+        "tr": "🚀 Botu Başlat (START)",
+        "ru": "🚀 Запустить бота (СТАРТ)",
+        "uz": "🚀 Botni ishga tushirish (BOSHLASH)",
+        "en": "🚀 Launch Bot (START)"
+    }.get(lang, "🚀 Botu Başlat")
+
+    ikb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=start_btn_txt, callback_data="act_relaunch_start")]
+    ])
+
+    sent = await message.answer(reset_txt, reply_markup=ikb, parse_mode="HTML")
+    if sent:
+        LAST_MENU_MSG_ID[chat_id] = sent.message_id
+        ACTIVE_CHAT_MESSAGES.setdefault(chat_id, set()).add(sent.message_id)
+
+
+@router.callback_query(F.data == "act_relaunch_start")
+async def cb_relaunch_start(query: CallbackQuery, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        if user:
+            await render_clean_dashboard(query, user)
+        else:
+            await cmd_start(query.message, state)
+    await query.answer()
+
 @router.message(CommandStart())
 @router.message(Command("menu"))
 async def cmd_start(message: Message, state: FSMContext):
@@ -3988,22 +4019,61 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
     bot_obj = target if isinstance(target, Bot) else (target.bot if isinstance(target, Message) else (target.message.bot if target.message else bot))
     target_chat_id = chat_id or (target.chat.id if isinstance(target, Message) else (target.message.chat.id if isinstance(target, CallbackQuery) and target.message else user.telegram_id))
 
-    sent_m = await bot_obj.send_message(
-        chat_id=target_chat_id,
-        text=text,
-        reply_markup=target_reply_kb,
-        parse_mode="HTML"
-    )
-    if sent_m:
-        new_mid = sent_m.message_id
-        LAST_MENU_MSG_ID[target_chat_id] = new_mid
-        ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(new_mid)
-        await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
+    # 1. Ensure Keyboard Anchor Message is permanently present with ReplyKeyboardMarkup
+    anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)
+    if not anchor_id:
+        anchor_text = {
+            "tr": "🏫 <b>Haliç Okul Yönetim Paneli</b>\n<i>Kalıcı alt menü ve operasyon masası devrede.</i>",
+            "ru": "🏫 <b>Панель управления Haliç</b>\n<i>Нижнее меню и рабочий стол активны.</i>",
+            "uz": "🏫 <b>Haliç boshqaruv paneli</b>\n<i>Pastki menyu va ish stoli faol.</i>",
+            "en": "🏫 <b>Haliç School Desk</b>\n<i>Bottom menu and operational desk active.</i>"
+        }.get(lang, "🏫 <b>Haliç Okul Yönetim Paneli</b>")
+        try:
+            anc = await bot_obj.send_message(
+                chat_id=target_chat_id,
+                text=anchor_text,
+                reply_markup=target_reply_kb,
+                parse_mode="HTML"
+            )
+            if anc:
+                KEYBOARD_ANCHOR_MSG_ID[target_chat_id] = anc.message_id
+                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(anc.message_id)
+        except Exception:
+            pass
+
+    # 2. In-place edit or render the active operational card
+    old_card_id = LAST_MENU_MSG_ID.get(target_chat_id)
+    card_edited = False
+    if old_card_id and old_card_id != KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id):
+        try:
+            await bot_obj.edit_message_text(
+                chat_id=target_chat_id,
+                message_id=old_card_id,
+                text=text,
+                reply_markup=None,
+                parse_mode="HTML"
+            )
+            card_edited = True
+        except Exception:
+            pass
+
+    if not card_edited:
+        sent_m = await bot_obj.send_message(
+            chat_id=target_chat_id,
+            text=text,
+            reply_markup=None,
+            parse_mode="HTML"
+        )
+        if sent_m:
+            new_mid = sent_m.message_id
+            LAST_MENU_MSG_ID[target_chat_id] = new_mid
+            ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(new_mid)
+            await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
 
     if isinstance(target, Message):
         try: await target.delete()
         except Exception: pass
-    elif isinstance(target, CallbackQuery) and target.message:
+    elif isinstance(target, CallbackQuery) and target.message and target.message.message_id != LAST_MENU_MSG_ID.get(target_chat_id):
         try: await target.message.delete()
         except Exception: pass
 
@@ -7572,6 +7642,7 @@ async def cb_cat_requests(event: Message | CallbackQuery, state: FSMContext | No
             btn_app_all_txt = {"tr": f"🟢 Tüm Bekleyenleri Onayla ({req_cnt})", "ru": f"🟢 Одобрить все ({req_cnt})", "uz": f"🟢 Barchasini tasdiqlash ({req_cnt})", "en": f"🟢 Approve All ({req_cnt})"}.get(lang, "🟢 Approve All")
             buttons.append([InlineKeyboardButton(text=btn_app_all_txt, callback_data="adm:approve_all_requests")])
         buttons.append([InlineKeyboardButton(text=get_text("btn_audit_logs", lang), callback_data="adm:audit_logs")])
+        buttons.append(get_nav_buttons(lang, back_callback="adm:dashboard"))
         await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     if isinstance(event, CallbackQuery):
         await event.answer()
@@ -12064,8 +12135,7 @@ async def global_reply_keyboard_router(message: Message, state: FSMContext):
             await cb_admin_bot_block_monitor(dummy_q)
             return
         elif action == "act_cat_tools_reports" and user.role == "admin":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:cat_tools_reports")
-            await cb_cat_tools_reports(dummy_q)
+            await cb_cat_tools_reports(message, state)
             return
         elif action == "act_parent_bulletin" and user.role in ("parent", "student"):
             dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="parent:tab_bulletin:notices")
@@ -12958,11 +13028,13 @@ async def cb_teacher_active_proposals_list(query: CallbackQuery):
 # ======================================================================
 
 @router.callback_query(F.data == "adm:cat_tools_reports")
-async def cb_cat_tools_reports(query: CallbackQuery):
+async def cb_cat_tools_reports(event: Message | CallbackQuery, state: FSMContext | None = None):
+    if state: await state.clear()
+    user_id = event.from_user.id
     async with AsyncSessionLocal() as session:
-        user = await session.get(User, query.from_user.id)
+        user = await session.get(User, user_id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, user_id): return
 
         title = get_text("rk_cat_tools_reports", lang)
         desc = {
@@ -12987,8 +13059,10 @@ async def cb_cat_tools_reports(query: CallbackQuery):
             [InlineKeyboardButton(text=btn_bc, callback_data="adm:broadcast_hub"), InlineKeyboardButton(text=btn_force, callback_data="adm:force_audio_alert_init")],
             [InlineKeyboardButton(text=btn_prop, callback_data="adm:proposals_hub"), InlineKeyboardButton(text=btn_stats, callback_data="adm:academic_report")],
         ]
-        await safe_edit_or_answer(query, desc, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
-    await query.answer()
+        buttons.append(get_nav_buttons(lang, back_callback="adm:dashboard"))
+        await safe_edit_or_answer(event, desc, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+    if isinstance(event, CallbackQuery):
+        await event.answer()
 
 @router.callback_query(F.data.startswith("parent:tab_bulletin:"))
 async def cb_parent_tab_bulletin(query: CallbackQuery):
@@ -13437,6 +13511,17 @@ async def lifespan(app: FastAPI):
     try:
         bot_info = await bot.get_me()
         print(f"--> [2/6] Telegram Bot Bilgisi: @{bot_info.username} (ID: {bot_info.id})")
+        try:
+            from aiogram.types import BotCommand
+            await bot.set_my_commands([
+                BotCommand(command="start", description="🚀 Botu Başlat / Ana Menü"),
+                BotCommand(command="menu", description="📋 Kontrol Masası"),
+                BotCommand(command="temizle", description="🧹 Sohbeti Temizle & Sıfırla"),
+                BotCommand(command="yardim", description="ℹ️ Yardım ve Destek")
+            ])
+            print("--> [2.5/6] Mavi Menü Butonu komutları Telegrama başarıyla kaydedildi.")
+        except Exception as e:
+            print(f"--> [UYARI 2.5/6] Bot komutları kaydedilemedi: {e}")
     except Exception as e:
         print(f"--> [HATA 2/6] BOT_TOKEN ile Telegram'a bağlanılamadı: {e}")
 
