@@ -41,13 +41,6 @@ async def _safe_cb_answer(self, text: str | None = None, show_alert: bool | None
         return True
 CallbackQuery.answer = _safe_cb_answer
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip().strip('"').strip("'")
-POLLING_MODE = os.getenv("POLLING_MODE", "false").strip().lower() in ("true", "1", "yes")
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-router = Router()
-dp.include_router(router)
-
 class AutoCallbackAnswerMiddleware(BaseMiddleware):
     async def __call__(
         self,
@@ -74,7 +67,21 @@ class GlobalMenuButtonMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any]
     ) -> Any:
-        # Native passthrough: FSM and routing are handled cleanly by top-level any_state handlers
+        if isinstance(event, Message) and event.text:
+            text_val = event.text.strip()
+            if is_universal_cancel_text(text_val) or text_val in ("/cancel", "/iptal", "/otmena", "/bekor"):
+                state = data.get("state")
+                if state:
+                    await state.clear()
+                return await cmd_cancel(event, state)
+
+            action = match_reply_button(text_val)
+            if action:
+                state = data.get("state")
+                if state:
+                    await state.clear()
+                return await global_reply_keyboard_router(event, state)
+
         return await handler(event, data)
 
 
@@ -96,16 +103,15 @@ from reportlab.pdfbase.ttfonts import TTFont
 # 1. ORTAM DEĞİŞKENLERİ VE TEMEL YARDIMCILAR
 # ======================================================================
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip().strip('"').strip("'")
-POLLING_MODE = os.getenv("POLLING_MODE", "false").strip().lower() in ("true", "1", "yes")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").strip().strip('"').strip("'")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").strip()
 if not WEBHOOK_URL:
-    render_url = os.getenv("RENDER_EXTERNAL_URL", "").strip().strip('"').strip("'")
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "").strip()
     if render_url:
         WEBHOOK_URL = f"{render_url.rstrip('/')}/webhook"
     else:
-        render_host = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip().strip('"').strip("'")
+        render_host = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
         if render_host:
             WEBHOOK_URL = f"https://{render_host}/webhook"
 
@@ -266,7 +272,7 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
     if text:
         text = format_telegram_html(text)
     
-    bot_obj = (getattr(target, "bot", None) or getattr(getattr(target, "message", None), "bot", None)) or bot
+    bot_obj = target.bot if isinstance(target, Message) else (target.message.bot if target.message else bot)
     target_chat_id = target.chat.id if isinstance(target, Message) else (target.message.chat.id if target.message else target.from_user.id)
     is_reply_kb = isinstance(reply_markup, ReplyKeyboardMarkup)
     anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)
@@ -276,11 +282,15 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
         try: await target.delete()
         except Exception: pass
 
-    # 1. Yerinde dönüştürülecek mesajı belirle (SADECE CallbackQuery için yerinde dönüştür!)
-    # Metin mesajları (/start, klavye tıklamaları vb.) her zaman kullanıcının göz hizasında (altta) taze kart basar.
+    # 1. Yerinde dönüştürülecek mesajı belirle (Asla klavye çapasına dokunma!)
     edit_mid = None
     if isinstance(target, CallbackQuery) and target.message and target.message.from_user and target.message.from_user.is_bot and not target.message.photo:
         edit_mid = target.message.message_id
+    elif LAST_MENU_MSG_ID.get(target_chat_id):
+        edit_mid = LAST_MENU_MSG_ID.get(target_chat_id)
+
+    if edit_mid and anchor_id and edit_mid == anchor_id and not is_reply_kb:
+        edit_mid = None
 
     # 2. Kartı yerinde dönüştür (edit_message_text) - Yeni mesaj üretme!
     if edit_mid and not is_reply_kb:
@@ -2807,622 +2817,6 @@ def get_nav_buttons(lang: str = "tr", back_callback: str = "adm:dashboard") -> l
     if not back_callback:
         return []
     return [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=back_callback)]
-
-REPLY_BUTTON_ACTIONS = {
-    "rk_cancel_action": "act_cancel_action",
-    "btn_cancel_action": "act_cancel_action",
-    "rk_digital_locker": "act_digital_locker",
-    "rk_my_credentials": "act_my_credentials",
-    "rk_logout": "act_logout",
-    "rk_restart": "act_restart",
-    "rk_main_menu": "act_main_menu",
-    "rk_admin_dash": "act_main_menu",
-    "btn_main_menu": "act_main_menu",
-    "btn_proposals": "act_proposals",
-    "btn_bot_block_monitor": "act_bot_block_monitor",
-    "bc_home": "act_main_menu",
-    "rk_lang": "act_lang",
-    "btn_lang": "act_lang",
-    "btn_login_prompt": "act_enter_code",
-    "btn_req_access": "act_req_access",
-    "rk_enter_code": "act_enter_code",
-    "rk_req_access": "act_req_access",
-    "rk_cat_staff": "act_cat_staff",
-    "rk_cat_reports": "act_cat_reports",
-    "rk_cat_requests": "act_cat_requests",
-    "rk_cat_tools": "act_cat_tools",
-    "rk_cat_tools_reports": "act_cat_tools_reports",
-    "btn_bulletin_program": "act_parent_bulletin",
-    "rk_cat_settings": "act_cat_settings",
-    "rk_cockpit": "act_cockpit",
-    "rk_classes": "act_classes",
-    "rk_teachers": "act_teachers",
-    "rk_requests": "act_requests",
-    "rk_attendance": "act_attendance",
-    "rk_grade": "act_grade",
-    "rk_homework": "act_homework",
-    "rk_behavior": "act_behavior",
-    "btn_student_behavior_history": "act_behavior_hist",
-    "btn_exam_schedule": "act_view_exams",
-    "rk_parent_info": "act_parent_info",
-    "rk_parent_settings": "act_parent_settings",
-    "rk_report": "act_report",
-    "rk_appointments": "act_appointments",
-    "rk_schedule": "act_schedule",
-    "rk_notices": "act_notices",
-    "rk_cafeteria": "act_cafeteria",
-    "rk_switch_student": "act_switch_student",
-    "rk_upload_medical": "act_upload_medical"
-}
-
-def match_reply_button(text: str) -> str | None:
-    if not text: return None
-    clean_text = text.strip()
-    for key, action in REPLY_BUTTON_ACTIONS.items():
-        for lang_code in LOCALES:
-            btn_txt = LOCALES[lang_code].get(key, "")
-            if btn_txt and btn_txt == clean_text:
-                return action
-
-    clean_norm = clean_text.lower().replace("🏠", "").replace("⚡", "").replace("•", "").replace("📊", "").replace("🛠️", "").replace("👥", "").replace("🔔", "").replace("⚙️", "").replace("📁", "").replace("🔑", "").replace("🌐", "").replace("🚪", "").replace("🗳️", "").replace("🗳", "").replace("📅", "").replace("🧑‍🎓", "").replace("ℹ️", "").replace("⭐", "").replace("📋", "").replace("📝", "").replace("📢", "").replace("🤝", "").replace("🏥", "").strip()
-    
-    # Fuzzy & Normalized matches for all languages & historical button labels
-    if any(m in clean_norm for m in ["kadro", "ogrenci", "öğrenci", "ученики", "учителя", "staff", "students", "xodim", "персонал"]):
-        return "act_cat_staff"
-    if any(m in clean_norm for m in ["rapor", "arac", "araç", "отчеты", "инструменты", "тулы", "reports", "tools", "hisobot"]):
-        return "act_cat_tools_reports"
-    if any(m in clean_norm for m in ["onay", "одобрений", "approval", "tasdiqlash"]):
-        return "act_cat_requests"
-    if any(m in clean_norm for m in ["ayar", "настройки", "settings", "sozlamalar"]):
-        return "act_cat_settings"
-    if any(m in clean_norm for m in ["dijital", "dosyam", "дело", "locker", "ishim"]):
-        return "act_digital_locker"
-    if any(m in clean_norm for m in ["sifre", "şifre", "пароли", "credentials", "passwords", "parol"]):
-        return "act_my_credentials"
-    if any(m in clean_norm for m in ["dil", "язык", "language", "til"]):
-        return "act_lang"
-    if any(m in clean_norm for m in ["cikis", "çıkış", "выйти", "logout", "chiqish"]):
-        return "act_logout"
-    if any(m in clean_norm for m in ["teklif", "oylama", "голосован", "предложен", "taklif", "ovoz", "proposal", "voting", "ballot", "oylar"]):
-        return "act_proposals"
-    if any(m in clean_norm for m in ["yoklama", "перекличка", "davomat", "attendance"]):
-        return "act_attendance"
-    if any(m in clean_norm for m in ["not gir", "оценки", "baho", "grade"]):
-        return "act_grade"
-    if any(m in clean_norm for m in ["davranış", "davranis", "поведение", "xulq", "behavior"]):
-        return "act_behavior"
-    if any(m in clean_norm for kw in ["iptal", "otmen", "bekor", "cancel"]):
-        return "act_cancel_action"
-    if any(m in clean_norm for m in ["ödev", "odev", "задани", "vazifa", "homework"]):
-        return "act_homework"
-    if any(m in clean_norm for m in ["görüşme", "gorusme", "записи", "uchrashuv", "meeting"]):
-        return "act_appointments"
-    if any(m in clean_norm for m in ["karne", "табель", "tabel", "report"]):
-        return "act_report"
-    if any(m in clean_norm for m in ["tarix", "история", "geçmiş", "gecmis", "history"]):
-        return "act_behavior_hist"
-    if any(m in clean_norm for m in ["rapor", "справка", "медсправка", "ma'lumotnoma", "medical"]):
-        return "act_upload_medical"
-    if any(m in clean_norm for m in ["bülten", "bulten", "программ", "вестник", "график", "jadval", "bulletin", "plan"]):
-        return "act_parent_bulletin"
-    if any(m in clean_norm for m in ["öğrenci seç", "ogrenci sec", "смена", "almashtir", "tanlash", "switch"]):
-        return "act_switch_student"
-    if any(m in clean_norm for m in ["sınav", "sinav", "экзамен", "imtihon", "exam"]):
-        return "act_view_exams"
-    if any(m in clean_norm for m in ["bilgi", "инфо", "axborot", "info"]):
-        return "act_parent_info"
-    if any(m in clean_norm for m in ["giriş yap", "giris yap", "войти", "kirish", "log in"]):
-        return "act_enter_code"
-    if any(m in clean_norm for m in ["başvuru", "basvuru", "запрос", "talep", "ariza", "parol so", "request"]):
-        return "act_req_access"
-    if clean_norm in [
-        "ana menu", "ana menü", "baş menü", "bas menu", "главное меню", "главное",
-        "glavnoe menu", "glavnoye menyu", "asosiy menyu", "main menu", "menu", "меню"
-    ]:
-        return "act_main_menu"
-    return None
-@router.callback_query(F.data.startswith("rec_dismiss:"))
-async def cb_rec_dismiss(query: CallbackQuery):
-    try:
-        rec_id = int(query.data.split(":")[1])
-        async with AsyncSessionLocal() as session:
-            rec = await session.get(DigitalRecord, rec_id)
-            if rec:
-                rec.is_archived_from_chat = True
-                await session.commit()
-    except Exception:
-        pass
-
-    user_lang = "tr"
-    try:
-        async with AsyncSessionLocal() as session:
-            u = await session.get(User, query.from_user.id)
-            if u and u.language:
-                user_lang = u.language
-    except Exception:
-        pass
-
-    toast_msg = {
-        "tr": "📁 Evrak 'Dijital Dosyam' bölümüne kaldırıldı.",
-        "ru": "📁 Документ перемещен в раздел 'Мое цифровое дело'.",
-        "uz": "📁 Hujjat 'Raqamli hujjatlarim' bo'limiga olindi.",
-        "en": "📁 Document moved to 'Digital Locker'."
-    }.get(user_lang, "📁 Belge arşivlendi.")
-
-    try:
-        await query.answer(toast_msg, show_alert=False)
-    except Exception:
-        pass
-    try:
-        await query.message.delete()
-    except Exception:
-        pass
-
-
-@router.callback_query(F.data == "cb_digital_locker")
-async def cb_digital_locker(event: Message | CallbackQuery, state: FSMContext | None = None):
-    if state: await state.clear()
-    user_id = event.from_user.id
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, user_id)
-        lang = user.language if user else "tr"
-
-        categories = ["receipt", "exam", "homework", "attendance", "appointment", "medical", "notice"]
-        counts = {}
-        for cat in categories:
-            cnt = (await session.execute(
-                select(func.count(DigitalRecord.id)).where(
-                    DigitalRecord.user_telegram_id == user_id,
-                    DigitalRecord.category == cat
-                )
-            )).scalar() or 0
-            counts[cat] = cnt
-
-        total_records = sum(counts.values())
-
-        title = {
-            "tr": "📁 <b>DİJİTAL DOSYAM & EVRAK ARŞİVİ</b>",
-            "ru": "📁 <b>МОЕ ЦИФРОВОЕ ДЕЛО И АРХИВ</b>",
-            "uz": "📁 <b>RAQAMLI HUJJATLARIM VA ARXIV</b>",
-            "en": "📁 <b>DIGITAL LOCKER & ARCHIVE</b>"
-        }.get(lang, "📁 <b>DİJİTAL DOSYAM</b>")
-
-        desc = {
-            "tr": (
-                f"{title}\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"Adınıza kayıtlı toplam <b>{total_records}</b> adet resmi evrak ve makbuz bulunmaktadır.\n\n"
-                f"İncelemek istediğiniz evrak kategorisini seçiniz:"
-            ),
-            "ru": (
-                f"{title}\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"В вашем деле <b>{total_records}</b> официальных документов и квитанций.\n\n"
-                f"Выберите категорию документов для просмотра:"
-            ),
-            "uz": (
-                f"{title}\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"Sizning nomingizda <b>{total_records}</b> ta rasmiy hujjat va kvitansiya mavjud.\n\n"
-                f"Ko'rmoqchi bo'lgan hujjat toifasini tanlang:"
-            ),
-            "en": (
-                f"{title}\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"You have <b>{total_records}</b> official documents and receipts in your file.\n\n"
-                f"Select a category to view:"
-            )
-        }.get(lang, f"{title}\nSeçim yapınız:")
-
-        cat_labels = {
-            "exam": {"tr": f"📑 Sınav Takvimleri ({counts['exam']})", "ru": f"📑 Расписание экзаменов ({counts['exam']})", "uz": f"📑 Imtihon jadvallari ({counts['exam']})", "en": f"📑 Exam Schedules ({counts['exam']})"},
-            "homework": {"tr": f"📝 Ödev Makbuzları ({counts['homework']})", "ru": f"📝 Квитанции ДЗ ({counts['homework']})", "uz": f"📝 Vazifa kvitansiyalari ({counts['homework']})", "en": f"📝 Homework Receipts ({counts['homework']})"},
-            "attendance": {"tr": f"⚠️ Devamsızlık Bildirimleri ({counts['attendance']})", "ru": f"⚠️ Пропуски ({counts['attendance']})", "uz": f"⚠️ Davomat xabarlari ({counts['attendance']})", "en": f"⚠️ Attendance Notices ({counts['attendance']})"},
-            "appointment": {"tr": f"🗓️ Randevu Fişleri ({counts['appointment']})", "ru": f"🗓️ Талоны встреч ({counts['appointment']})", "uz": f"🗓️ Uchrashuv talonlari ({counts['appointment']})", "en": f"🗓️ Appointments ({counts['appointment']})"},
-            "medical": {"tr": f"🏥 Sağlık & İzin Belgeleri ({counts['medical']})", "ru": f"🏥 Мед. справки ({counts['medical']})", "uz": f"🏥 Tibbiy ma'lumotnomalar ({counts['medical']})", "en": f"🏥 Medical Reports ({counts['medical']})"},
-            "notice": {"tr": f"📢 Okul Duyuruları ({counts['notice']})", "ru": f"📢 Объявления школы ({counts['notice']})", "uz": f"📢 Maktab e'lonlari ({counts['notice']})", "en": f"📢 School Notices ({counts['notice']})"},
-            "receipt": {"tr": f"📜 Kimlik & Giriş Makbuzları ({counts['receipt']})", "ru": f"📜 Учетные данные ({counts['receipt']})", "uz": f"📜 Kirish ma'lumotlari ({counts['receipt']})", "en": f"📜 Credentials & Receipts ({counts['receipt']})"}
-        }
-
-        buttons = [
-            [InlineKeyboardButton(text=cat_labels["exam"][lang], callback_data="dl_cat:exam:1"), InlineKeyboardButton(text=cat_labels["homework"][lang], callback_data="dl_cat:homework:1")],
-            [InlineKeyboardButton(text=cat_labels["attendance"][lang], callback_data="dl_cat:attendance:1"), InlineKeyboardButton(text=cat_labels["appointment"][lang], callback_data="dl_cat:appointment:1")],
-            [InlineKeyboardButton(text=cat_labels["medical"][lang], callback_data="dl_cat:medical:1"), InlineKeyboardButton(text=cat_labels["notice"][lang], callback_data="dl_cat:notice:1")],
-            [InlineKeyboardButton(text=cat_labels["receipt"][lang], callback_data="dl_cat:receipt:1")],
-            [get_nav_buttons(lang)]
-        ]
-
-        await safe_edit_or_answer(event, desc, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
-
-
-@router.callback_query(F.data.startswith("dl_cat:"))
-async def cb_dl_cat(query: CallbackQuery):
-    parts = query.data.split(":")
-    cat = parts[1]
-    page = int(parts[2]) if len(parts) > 2 else 1
-
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, query.from_user.id)
-        lang = user.language if user else "tr"
-
-        per_page = 5
-        offset = (page - 1) * per_page
-
-        total_cnt = (await session.execute(
-            select(func.count(DigitalRecord.id)).where(
-                DigitalRecord.user_telegram_id == query.from_user.id,
-                DigitalRecord.category == cat
-            )
-        )).scalar() or 0
-
-        total_pages = max(1, (total_cnt + per_page - 1) // per_page)
-
-        records = (await session.execute(
-            select(DigitalRecord).where(
-                DigitalRecord.user_telegram_id == query.from_user.id,
-                DigitalRecord.category == cat
-            ).order_by(desc(DigitalRecord.created_at)).limit(per_page).offset(offset)
-        )).scalars().all()
-
-        cat_names = {
-            "exam": {"tr": "Sınav Takvimleri", "ru": "Расписание экзаменов", "uz": "Imtihon jadvallari", "en": "Exam Schedules"},
-            "homework": {"tr": "Ödev Makbuzları", "ru": "Квитанции ДЗ", "uz": "Vazifa kvitansiyalari", "en": "Homework Receipts"},
-            "attendance": {"tr": "Devamsızlık Bildirimleri", "ru": "Пропуски", "uz": "Davomat xabarlari", "en": "Attendance Notices"},
-            "appointment": {"tr": "Randevu Fişleri", "ru": "Талоны встреч", "uz": "Uchrashuv talonlari", "en": "Appointments"},
-            "medical": {"tr": "Sağlık Belgeleri", "ru": "Мед. справки", "uz": "Tibbiy ma'lumotnomalar", "en": "Medical Reports"},
-            "notice": {"tr": "Duyurular", "ru": "Объявления", "uz": "E'lonlar", "en": "Notices"},
-            "receipt": {"tr": "Giriş & Makbuzlar", "ru": "Квитанции", "uz": "Kvitansiyalar", "en": "Receipts"}
-        }
-        c_title = cat_names.get(cat, {}).get(lang, cat)
-
-        if not records:
-            empty_txt = {
-                "tr": f"📁 <b>{c_title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBu kategoride henüz kayıtlı bir evrak bulunmamaktadır.",
-                "ru": f"📁 <b>{c_title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nВ этой категории пока нет документов.",
-                "uz": f"📁 <b>{c_title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nUshbu toifada hozircha hujjat mavjud emas.",
-                "en": f"📁 <b>{c_title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nNo records found in this category yet."
-            }.get(lang, "Kayıt yok.")
-            buttons = [[InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="cb_digital_locker")]]
-            await safe_edit_or_answer(query, empty_txt, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
-            return
-
-        txt = (
-            f"📁 <b>{c_title}</b> (Sayfa {page}/{total_pages})\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"Detayını incelemek istediğiniz evraka tıklayınız:\n"
-        )
-
-        buttons = []
-        for r in records:
-            d_str = r.created_at.strftime("%d.%m.%Y %H:%M")
-            btn_txt = f"📄 {r.title[:24]} ({d_str[:10]})"
-            buttons.append([InlineKeyboardButton(text=btn_txt, callback_data=f"dl_view:{r.id}:{cat}:{page}")])
-
-        nav_row = []
-        if page > 1:
-            nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"dl_cat:{cat}:{page-1}"))
-        nav_row.append(InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="noop"))
-        if page < total_pages:
-            nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"dl_cat:{cat}:{page+1}"))
-        
-        if nav_row:
-            buttons.append(nav_row)
-
-        buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="cb_digital_locker")])
-
-        await safe_edit_or_answer(query, txt, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
-
-
-@router.callback_query(F.data.startswith("dl_view:"))
-async def cb_dl_view(query: CallbackQuery):
-    parts = query.data.split(":")
-    rec_id = int(parts[1])
-    cat = parts[2]
-    page = int(parts[3])
-
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, query.from_user.id)
-        lang = user.language if user else "tr"
-
-        rec = await session.get(DigitalRecord, rec_id)
-        if not rec:
-            await query.answer({"tr": "⚠️ Kayıt bulunamadı.", "ru": "⚠️ Запись не найдена.", "uz": "⚠️ Yozuv topilmadi.", "en": "⚠️ Record not found."}.get(lang, "⚠️ Record not found."), show_alert=True)
-            return
-
-        d_str = rec.created_at.strftime("%d.%m.%Y %H:%M")
-        detail_html = (
-            f"📁 <b>DİJİTAL EVRAK DETAYI</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📄 <b>Evrak:</b> {escape_html(rec.title)}\n"
-            f"📅 <b>Kayıt Tarihi:</b> <code>{d_str}</code>\n"
-            f"🆔 <b>Kayıt No:</b> <code>#EVR-{rec.id:04d}</code>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"{rec.full_content}"
-        )
-
-        buttons = []
-        if rec.file_id:
-            dl_file_label = {
-                "tr": "📥 Dosyayı Tekrar İndir",
-                "ru": "📥 Скачать файл снова",
-                "uz": "📥 Faylni qayta yuklash",
-                "en": "📥 Download File Again"
-            }.get(lang, "📥 Dosyayı İndir")
-            buttons.append([InlineKeyboardButton(text=dl_file_label, callback_data=f"dl_file:{rec.id}")])
-
-        buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=f"dl_cat:{cat}:{page}")])
-
-        await safe_edit_or_answer(query, detail_html, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
-
-
-@router.callback_query(F.data.startswith("dl_file:"))
-async def cb_dl_file(query: CallbackQuery):
-    rec_id = int(query.data.split(":")[1])
-    async with AsyncSessionLocal() as session:
-        rec = await session.get(DigitalRecord, rec_id)
-        if not rec or not rec.file_id:
-            await query.answer({"tr": "⚠️ Dosya bulunamadı.", "ru": "⚠️ Файл не найден.", "uz": "⚠️ Fayl topilmadi.", "en": "⚠️ File not found."}.get(lang, "⚠️ File not found."), show_alert=True)
-            return
-        
-        try:
-            if rec.file_type == "photo":
-                await query.message.bot.send_photo(chat_id=query.from_user.id, photo=rec.file_id, caption=f"📄 {rec.title}")
-            else:
-                await query.message.bot.send_document(chat_id=query.from_user.id, document=rec.file_id, caption=f"📄 {rec.title}")
-            await query.answer("Dosya iletildi.")
-        except Exception as e:
-            await query.answer("Dosya gönderilemedi.", show_alert=True)
-
-async def cb_show_my_credentials(event: Message | CallbackQuery, state: FSMContext | None = None):
-    if state: await state.clear()
-    user_id = event.from_user.id
-    chat_id = event.chat.id if isinstance(event, Message) else (event.message.chat.id if event.message else user_id)
-    
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, user_id)
-        if not user:
-            role = "admin" if user_id in ADMIN_IDS else "guest"
-            user = User(telegram_id=user_id, language="tr", role=role, full_name=event.from_user.full_name)
-            session.add(user)
-            await session.commit()
-        lang = user.language or "tr"
-
-        if user.role == "guest":
-            guest_txt = {
-                "tr": "⚠️ <b>Henüz Giriş Yapmadınız</b>\n──────────────\nŞifrelerinizi ve yetkilerinizi görebilmek için lütfen okul idaresinden aldığınız giriş kodunu giriniz veya <b>📩 Başvuru Yap</b> butonuna basarak kayıt talebinde bulununuz.",
-                "ru": "⚠️ <b>Вы еще не вошли в систему</b>\n──────────────\nЧтобы увидеть ваши данные доступа, пожалуйста, введите код доступа или нажмите кнопку <b>📩 Запросить пароль</b> для подачи заявки.",
-                "uz": "⚠️ <b>Siz hali tizimga kirmagansiz</b>\n──────────────\nKirish ma'lumotlaringizni ko'rish uchun maktab ma'muriyatidan berilgan kodni kiriting yoki <b>📩 Ariza berish</b> tugmasini bosing.",
-                "en": "⚠️ <b>You are not logged in</b>\n──────────────\nPlease enter your access code or tap <b>📩 Request Access</b> to submit a registration request."
-            }.get(lang, "Please log in.")
-            await safe_edit_or_answer(event, guest_txt, parse_mode="HTML")
-            if isinstance(event, CallbackQuery):
-                try: await event.answer()
-                except Exception: pass
-            return
-
-        title = {
-            "tr": "🔑 <b>GİRİŞ VE KOD BİLGİLERİM</b>",
-            "ru": "🔑 <b>МОИ ДАННЫЕ ДЛЯ ВХОДА И ПАРОЛИ</b>",
-            "uz": "🔑 <b>KIRISH VA PAROL MA'LUMOTLARIM</b>",
-            "en": "🔑 <b>MY ACCESS CREDENTIALS & CODES</b>"
-        }.get(lang, "🔑 <b>MY ACCESS CREDENTIALS</b>")
-
-        details_txt = ""
-        if user.role == "teacher":
-            tch = (await session.execute(select(Teacher).where(Teacher.telegram_id == user_id))).scalar_one_or_none()
-            if not tch and user.full_name:
-                tch = (await session.execute(select(Teacher).where(Teacher.full_name == user.full_name))).scalar_one_or_none()
-            code = tch.auth_code if tch else "-"
-            
-            raw_subj = tch.subject if (tch and tch.subject and tch.subject.strip()) else ""
-            if not raw_subj or raw_subj.lower() in ("genel", "nothing", "none", "-"):
-                subj = {"tr": "Genel", "ru": "Общий", "uz": "Umumiy", "en": "General"}.get(lang, "General")
-            else:
-                subj = raw_subj
-
-            raw_classes = tch.assigned_classes if (tch and tch.assigned_classes and tch.assigned_classes.strip()) else "ALL"
-            if raw_classes.upper() == "ALL":
-                cls_assigned = {"tr": "Tüm Sınıflar", "ru": "Все классы", "uz": "Barcha sinflar", "en": "All Classes"}.get(lang, "All Classes")
-            else:
-                cls_assigned = raw_classes
-            
-            details_txt = {
-                "tr": (
-                    f"📋 <b>Rolünüz:</b> 👨‍🏫 Öğretmen\n"
-                    f"👤 <b>Adınız:</b> <b>{escape_html(user.full_name or 'Öğretmen')}</b>\n"
-                    f"📚 <b>Branşınız:</b> <code>{escape_html(subj)}</code>\n"
-                    f"🏫 <b>Atanan Sınıflar:</b> <code>{escape_html(cls_assigned)}</code>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    f"🔑 <b>Özel Öğretmen Şifreniz / Kodunuz:</b> <code>{code}</code>\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Bu kod sisteme kayıtlı size özel erişim kodunuzdur.</i>"
-                ),
-                "ru": (
-                    f"📋 <b>Роль:</b> 👨‍🏫 Учитель\n"
-                    f"👤 <b>ФИО:</b> <b>{escape_html(user.full_name or 'Учитель')}</b>\n"
-                    f"📚 <b>Предмет:</b> <code>{escape_html(subj)}</code>\n"
-                    f"🏫 <b>Классы:</b> <code>{escape_html(cls_assigned)}</code>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    f"🔑 <b>Ваш код доступа (пароль):</b> <code>{code}</code>\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Этот код привязан к вашей учетной записи учителя.</i>"
-                ),
-                "uz": (
-                    f"📋 <b>Lavozimingiz:</b> 👨‍🏫 O'qituvchi\n"
-                    f"👤 <b>F.I.O:</b> <b>{escape_html(user.full_name or 'O`qituvchi')}</b>\n"
-                    f"📚 <b>Faningiz:</b> <code>{escape_html(subj)}</code>\n"
-                    f"🏫 <b>Sinflar:</b> <code>{escape_html(cls_assigned)}</code>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    f"🔑 <b>Maxsus o'qituvchi kodingiz (parol):</b> <code>{code}</code>\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Ushbu kod sizning shaxsiy kirish kodingizdir.</i>"
-                ),
-                "en": (
-                    f"📋 <b>Role:</b> 👨‍🏫 Teacher\n"
-                    f"👤 <b>Name:</b> <b>{escape_html(user.full_name or 'Teacher')}</b>\n"
-                    f"📚 <b>Subject:</b> <code>{escape_html(subj)}</code>\n"
-                    f"🏫 <b>Assigned Classes:</b> <code>{escape_html(cls_assigned)}</code>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    f"🔑 <b>Teacher Access Code:</b> <code>{code}</code>\n"
-                    "──────────────\n"
-                    "ℹ️ <i>This access code is linked to your teacher profile.</i>"
-                )
-            }.get(lang, "")
-
-        elif user.role == "student":
-            st = (await session.execute(select(Student).where(Student.student_telegram_id == user_id))).scalar_one_or_none()
-            if not st and user.full_name:
-                st = (await session.execute(select(Student).where(Student.full_name == user.full_name))).scalar_one_or_none()
-            st_name = st.full_name if st else (user.full_name or "Öğrenci")
-            cls_name = st.class_name if st else "-"
-            st_no = st.student_number if st else "-"
-            st_code = st.student_code if st else "-"
-            pr_code = st.parent_code if st else "-"
-
-            details_txt = {
-                "tr": (
-                    f"📋 <b>Rolünüz:</b> 🎓 Öğrenci\n"
-                    f"👤 <b>Adınız:</b> <b>{escape_html(st_name)}</b>\n"
-                    f"🏫 <b>Sınıfınız:</b> <code>{escape_html(cls_name)}</code>\n"
-                    f"🔢 <b>Okul Numaranız:</b> <code>{escape_html(st_no)}</code>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    f"🔑 <b>Öğrenci Giriş Kodunuz:</b> <code>{st_code}</code>\n"
-                    f"👨‍👩‍👧 <b>Veli Bağlantı Kodunuz:</b> <code>{pr_code}</code>\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Veliniz bu Veli Kodunu kullanarak bota kaydolabilir ve durumunuzu takip edebilir.</i>"
-                ),
-                "ru": (
-                    f"📋 <b>Роль:</b> 🎓 Ученик\n"
-                    f"👤 <b>ФИО:</b> <b>{escape_html(st_name)}</b>\n"
-                    f"🏫 <b>Класс:</b> <code>{escape_html(cls_name)}</code>\n"
-                    f"🔢 <b>Номер в школе:</b> <code>{escape_html(st_no)}</code>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    f"🔑 <b>Код ученика:</b> <code>{st_code}</code>\n"
-                    f"👨‍👩‍👧 <b>Код для родителя:</b> <code>{pr_code}</code>\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Родитель может использовать данный код для подключения к боту.</i>"
-                ),
-                "uz": (
-                    f"📋 <b>Lavozim:</b> 🎓 O'quvchi\n"
-                    f"👤 <b>F.I.O:</b> <b>{escape_html(st_name)}</b>\n"
-                    f"🏫 <b>Sinfingiz:</b> <code>{escape_html(cls_name)}</code>\n"
-                    f"🔢 <b>Maktab raqamingiz:</b> <code>{escape_html(st_no)}</code>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    f"🔑 <b>O'quvchi kodingiz:</b> <code>{st_code}</code>\n"
-                    f"👨‍👩‍👧 <b>Ota-ona ulanish kodi:</b> <code>{pr_code}</code>\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Ota-onangiz ushbu kod orqali botga ulanishi mumkin.</i>"
-                ),
-                "en": (
-                    f"📋 <b>Role:</b> 🎓 Student\n"
-                    f"👤 <b>Name:</b> <b>{escape_html(st_name)}</b>\n"
-                    f"🏫 <b>Class:</b> <code>{escape_html(cls_name)}</code>\n"
-                    f"🔢 <b>Roll Number:</b> <code>{escape_html(st_no)}</code>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    f"🔑 <b>Student Code:</b> <code>{st_code}</code>\n"
-                    f"👨‍👩‍👧 <b>Parent Code:</b> <code>{pr_code}</code>\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Your parent can use this Parent Code to link their account.</i>"
-                )
-            }.get(lang, "")
-
-        elif user.role == "parent":
-            st_list = []
-            rels = (await session.execute(select(ParentStudent).where(ParentStudent.parent_telegram_id == user_id))).scalars().all()
-            for r in rels:
-                s = await session.get(Student, r.student_id)
-                if s: st_list.append(s)
-            
-            lbl_pr_code = {"tr": "Veli Kodu", "ru": "Код родителя", "uz": "Ota-ona kodi", "en": "Parent Code"}.get(lang, "Parent Code")
-            children_str = ""
-            if st_list:
-                for s in st_list:
-                    children_str += f"\n• <b>{escape_html(s.full_name)}</b> (<code>{escape_html(s.class_name)}</code> - No: <code>{escape_html(s.student_number)}</code>)\n  └ 🔑 {lbl_pr_code}: <code>{s.parent_code}</code>"
-            else:
-                children_str = {
-                    "tr": "\n• <i>Henüz bağlı öğrenci bulunmuyor.</i>",
-                    "ru": "\n• <i>Нет привязанных учеников.</i>",
-                    "uz": "\n• <i>Hozircha biriktirilgan o'quvchi yo'q.</i>",
-                    "en": "\n• <i>No linked students yet.</i>"
-                }.get(lang, "\n• <i>No linked students.</i>")
-
-            details_txt = {
-                "tr": (
-                    f"📋 <b>Rolünüz:</b> 👨‍👩‍👧 Veli\n"
-                    f"👤 <b>Adınız:</b> <b>{escape_html(user.full_name or 'Veli')}</b>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    f"🧑‍🎓 <b>Bağlı Öğrenciler:</b>{children_str}\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Yeni bir öğrenci bağlamak için okul idaresinden aldığınız Veli Kodunu giriniz.</i>"
-                ),
-                "ru": (
-                    f"📋 <b>Роль:</b> 👨‍👩‍👧 Родитель\n"
-                    f"👤 <b>ФИО:</b> <b>{escape_html(user.full_name or 'Родитель')}</b>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    f"🧑‍🎓 <b>Привязанные ученики:</b>{children_str}\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Используйте код родителя для привязки новых учеников.</i>"
-                ),
-                "uz": (
-                    f"📋 <b>Lavozim:</b> 👨‍👩‍👧 Ota-ona\n"
-                    f"👤 <b>F.I.O:</b> <b>{escape_html(user.full_name or 'Ota-ona')}</b>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    f"🧑‍🎓 <b>Biriktirilgan o'quvchilar:</b>{children_str}\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Yangi o'quvchi qo'shish uchun maktab ma'muriyatiga murojaat qiling.</i>"
-                ),
-                "en": (
-                    f"📋 <b>Role:</b> 👨‍👩‍👧 Parent\n"
-                    f"👤 <b>Name:</b> <b>{escape_html(user.full_name or 'Parent')}</b>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    f"🧑‍🎓 <b>Linked Students:</b>{children_str}\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Use the parent codes to link additional children.</i>"
-                )
-            }.get(lang, "")
-
-        else: # admin
-            admin_title = get_text("permanent_admin_title", lang) if (user_id in ADMIN_IDS or user.admin_type == "permanent") else get_text("temporary_admin_title", lang)
-            details_txt = {
-                "tr": (
-                    f"📋 <b>Rolünüz:</b> ⚡ {admin_title}\n"
-                    f"👤 <b>Adınız:</b> <b>{escape_html(user.full_name or 'Yönetici')}</b>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Tüm okul yönetim paneline ve yetkilerine doğrudan erişiminiz bulunmaktadır.</i>"
-                ),
-                "ru": (
-                    f"📋 <b>Роль:</b> ⚡ {admin_title}\n"
-                    f"👤 <b>ФИО:</b> <b>{escape_html(user.full_name or 'Администратор')}</b>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    "──────────────\n"
-                    "ℹ️ <i>У вас есть полный доступ ко всем функциям управления школой.</i>"
-                ),
-                "uz": (
-                    f"📋 <b>Lavozim:</b> ⚡ {admin_title}\n"
-                    f"👤 <b>F.I.O:</b> <b>{escape_html(user.full_name or 'Ma`mur')}</b>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    "──────────────\n"
-                    "ℹ️ <i>Barcha maktab boshqaruv vositalariga to'liq ruxsatingiz mavjud.</i>"
-                ),
-                "en": (
-                    f"📋 <b>Role:</b> ⚡ {admin_title}\n"
-                    f"👤 <b>Name:</b> <b>{escape_html(user.full_name or 'Admin')}</b>\n"
-                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
-                    "──────────────\n"
-                    "ℹ️ <i>You have full administrative access to all school management tools.</i>"
-                )
-            }.get(lang, "Admin access active.")
-
-        back_cb = "adm:dashboard" if user.role == "admin" else ("tch:menu" if user.role == "teacher" else ("pr:menu" if user.role == "parent" else "st:menu"))
-        creds_kb = InlineKeyboardMarkup(inline_keyboard=[
-            get_nav_buttons(lang, back_callback=back_cb)
-        ])
-        full_card = f"{title}\n──────────────\n{details_txt}"
-        await safe_edit_or_answer(event, full_card, reply_markup=creds_kb, parse_mode="HTML")
-    if isinstance(event, CallbackQuery):
-        try: await event.answer()
-        except Exception: pass
 def get_attendance_grid_kb(students: list, attendance_state: dict, class_name: str, lang: str = "tr") -> InlineKeyboardMarkup:
     inline_keyboard = []
     
@@ -4203,8 +3597,7 @@ class Form(StatesGroup):
     appr_st_class = State()
     appr_st_no = State()
 
-# router already defined at top of module
-
+router = Router()
 ATTENDANCE_CACHE = {}
 GRADE_CACHE = {}
 HW_CACHE = {}
@@ -4377,10 +3770,8 @@ def is_universal_cancel_text(text: str | None) -> bool:
 
 @router.message(any_state, Command("cancel", "iptal", "bekor", "otmena"))
 @router.message(any_state, F.text.func(is_universal_cancel_text))
-async def cmd_cancel(message: Message, state: FSMContext | None = None):
-    if state is not None:
-        try: await state.clear()
-        except Exception: pass
+async def cmd_cancel(message: Message, state: FSMContext):
+    await state.clear()
     user_id = message.from_user.id
     for cache_dict in [ATTENDANCE_CACHE, GRADE_CACHE, HW_CACHE, REQ_CACHE, APP_CACHE, BEHAVIOR_CACHE, SUBMISSION_CACHE, EXAM_CACHE, BC_CACHE, PIN_PENDING_ACTIONS, PIN_CHANGE_SESSION, ADMIN_PIN_INPUT, ADMIN_PIN_FAILURES]:
         cache_dict.pop(user_id, None)
@@ -4507,229 +3898,6 @@ async def handle_bot_logout_cmd(message: Message, state: FSMContext):
         combined_lgt = f"{get_text('logout_success_msg', lang)}\n──────────────\n{get_text('welcome_guest', lang)}"
         await safe_edit_or_answer(message, combined_lgt, reply_markup=guest_kb, parse_mode="HTML")
 
-@router.message(any_state, F.text.func(lambda text: match_reply_button(text) is not None))
-async def global_reply_keyboard_router(message: Message, state: FSMContext | None = None):
-    if state is not None:
-        try: await state.clear()
-        except Exception: pass
-    action = match_reply_button(message.text)
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, user_id)
-        if not user:
-            role = "admin" if user_id in ADMIN_IDS else "guest"
-            user = User(telegram_id=user_id, language="tr", role=role, full_name=message.from_user.full_name)
-            session.add(user)
-            await session.commit()
-        elif user_id in ADMIN_IDS and user.role != "admin":
-            user.role = "admin"
-            await session.commit()
-        if message.from_user.full_name and user.full_name != message.from_user.full_name:
-            user.full_name = message.from_user.full_name
-            await session.commit()
-        lang = user.language
-
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
-    if action:
-        if state is not None:
-            try: await state.clear()
-            except Exception: pass
-        if action == "act_cancel_action":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="cancel_action")
-            await cb_cancel_action(dummy_q, state)
-            return
-        elif action == "act_digital_locker":
-            await cb_digital_locker(message, state)
-            return
-        elif action == "act_my_credentials":
-            await cb_show_my_credentials(message, state)
-            return
-        elif action == "act_logout":
-            await handle_bot_logout_cmd(message, state)
-            return
-        elif action == "act_restart":
-            await handle_bot_restart_cmd(message, state)
-            return
-        elif action == "act_cat_staff" and user.role == "admin":
-            await cb_cat_staff(message, state)
-            return
-        elif action == "act_cat_reports" and user.role == "admin":
-            await cb_cat_reports(message, state)
-            return
-        elif action == "act_cat_requests" and user.role == "admin":
-            await cb_cat_requests(message, state)
-            return
-        elif action == "act_cat_tools" and user.role == "admin":
-            await cb_cat_tools(message, state)
-            return
-        elif action == "act_cat_settings" and user.role == "admin":
-            await cb_cat_settings(message, state)
-            return
-        elif action == "act_main_menu":
-            await render_clean_dashboard(message, user)
-            return
-        elif action == "act_lang":
-            await safe_edit_or_answer(message, get_text("lang_select", lang), reply_markup=get_language_inline_kb())
-            return
-        elif action == "act_enter_code":
-            await message.answer(get_text("prompt_enter_code_direct", lang), parse_mode="HTML")
-            await state.set_state(Form.waiting_auth_code)
-            return
-        elif action == "act_req_access":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_req_access")
-            await cb_act_req_access(dummy_q, state)
-            return
-        elif action == "act_cockpit" and user.role == "admin":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:cockpit")
-            await cb_cockpit(dummy_q)
-            return
-        elif action == "act_classes" and user.role == "admin":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:classes")
-            await cb_classes_list(dummy_q, state)
-            return
-        elif action == "act_teachers" and user.role == "admin":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:teachers")
-            await cb_admin_teachers_list(dummy_q)
-            return
-        elif action == "act_requests" and user.role == "admin":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:requests_list")
-            await cb_admin_requests_list(dummy_q)
-            return
-        elif action == "act_attendance" and user.role == "teacher":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:classes")
-            await cb_teacher_classes(dummy_q, state)
-            return
-        elif action == "act_grade" and user.role == "teacher":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:grade_classes")
-            await cb_grade_classes(dummy_q, state)
-            return
-        elif action == "act_behavior" and user.role == "teacher":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:behavior_classes")
-            await cb_teacher_behavior_classes(dummy_q)
-            return
-        elif action == "act_behavior_hist" and user.role in ("parent", "student"):
-            st_id = user.current_child_id
-            if user.role == "student":
-                async with AsyncSessionLocal() as session:
-                    st = (await session.execute(select(Student).where(Student.student_telegram_id == user_id))).scalar_one_or_none()
-                    st_id = st.id if st else None
-            if st_id:
-                dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data=f"bh_hist:{st_id}")
-                await cb_student_behavior_history(dummy_q)
-            return
-        elif action == "act_view_exams":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_exams")
-            await cb_view_exams_list(dummy_q)
-            return
-        elif action == "act_homework":
-            if user.role == "teacher":
-                dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:hw_classes")
-                await cb_hw_classes(dummy_q, state)
-                return
-            elif user.role in ("student", "parent"):
-                dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_hw")
-                await cb_view_homeworks_list(dummy_q)
-                return
-        elif action == "act_appointments" and user.role == "teacher":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:appointments")
-            await cb_teacher_appointments_list(dummy_q)
-            return
-        elif action == "act_report" and user.role in ["parent", "student"]:
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_report")
-            await cb_view_report_card(dummy_q, state)
-            return
-        elif action == "act_appointments" and user.role == "parent":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_book_app")
-            await cb_parent_book_app_init(dummy_q, state)
-            return
-        elif action == "act_schedule" and user.role in ["teacher", "parent", "student"]:
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_sched")
-            await cb_view_schedule(dummy_q)
-            return
-        elif action == "act_notices" and user.role in ["parent", "student"]:
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_notices")
-            await cb_view_notices(dummy_q)
-            return
-        elif action == "act_cafeteria" and user.role in ["parent", "student"]:
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_cafe")
-            await cb_view_cafeteria(dummy_q)
-            return
-        elif action == "act_switch_student" and user.role == "parent":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="parent:switch_student")
-            await cb_parent_switch_student(dummy_q, state)
-            return
-        elif action == "act_upload_medical" and user.role == "parent":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="upload_medical_init")
-            await cb_upload_med_init(dummy_q, state)
-            return
-        elif action == "act_parent_info":
-            buttons = [
-                [InlineKeyboardButton(text=get_text("btn_notices", lang), callback_data="act_view_notices"), InlineKeyboardButton(text=get_text("btn_view_schedule", lang), callback_data="act_view_sched")],
-                [InlineKeyboardButton(text=get_text("btn_view_cafeteria", lang), callback_data="act_view_cafe"), InlineKeyboardButton(text=get_text("btn_exam_schedule", lang), callback_data="act_view_exams")]
-            ]
-            if user.role == "parent":
-                buttons.append([InlineKeyboardButton(text=get_text("rk_appointments", lang), callback_data="act_book_app"), InlineKeyboardButton(text=get_text("rk_upload_medical", lang), callback_data="upload_medical_init")])
-
-            title = get_text("parent_info_title", lang)
-            info_desc = {
-                "tr": f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nOkul duyurularını, haftalık ders programını, yemekhane menüsünü veya sınav takvimini görüntülemek için bir işlem seçiniz:",
-                "ru": f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nВыберите раздел для просмотра объявлений школы, расписания уроков, меню или экзаменов:",
-                "uz": f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nMaktab e'lonlari, dars jadvali, oshxona menyusi yoki imtihonlar jadvalini ko'rish uchun tanlang:",
-                "en": f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSelect an option to view school announcements, timetable, cafeteria menu, or exams:"
-            }.get(lang, f"<b>{title}</b>\nSelect an option:")
-
-            sent_m = await message.bot.send_message(chat_id=message.chat.id, text=info_desc, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
-            if sent_m:
-                LAST_MENU_MSG_ID[message.chat.id] = sent_m.message_id
-                ACTIVE_CHAT_MESSAGES.setdefault(message.chat.id, set()).add(sent_m.message_id)
-            return
-        elif action == "act_parent_settings":
-            btn_brief = get_text("btn_briefing_on", lang) if user.evening_briefing else get_text("btn_briefing_off", lang)
-            buttons = [
-                [InlineKeyboardButton(text=btn_brief, callback_data="parent:toggle_briefing")],
-                [InlineKeyboardButton(text="➕ " + {"tr": "Başka Çocuk Ekle", "ru": "Привязать ребенка", "uz": "Boshqa farzandni ulash", "en": "Link Child"}.get(lang, "Link Child"), callback_data="parent:add_child_code")],
-                [InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")]
-            ]
-            title = get_text("parent_settings_title", lang)
-            p_desc = f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + {"tr": "Ayarlarınızı yapılandırabilirsiniz:", "ru": "Настройки аккаунта:", "uz": "Sozlamalarni boshqarish:", "en": "Configure your settings:"}.get(lang, "Settings:")
-            sent_m = await message.bot.send_message(chat_id=message.chat.id, text=p_desc, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
-            if sent_m:
-                LAST_MENU_MSG_ID[message.chat.id] = sent_m.message_id
-                ACTIVE_CHAT_MESSAGES.setdefault(message.chat.id, set()).add(sent_m.message_id)
-            return
-        elif action == "act_proposals":
-            if user.role == "teacher":
-                dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:prop_hub")
-                await cb_teacher_proposal_hub(dummy_q)
-                return
-            elif user.role == "admin":
-                dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:proposals_hub")
-                await cb_admin_proposals_hub(dummy_q)
-                return
-        elif action == "act_bot_block_monitor" and user.role == "admin":
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:bot_block_monitor:0")
-            await cb_admin_bot_block_monitor(dummy_q)
-            return
-        elif action == "act_cat_tools_reports" and user.role == "admin":
-            await cb_cat_tools_reports(message, state)
-            return
-        elif action == "act_parent_bulletin" and user.role in ("parent", "student"):
-            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="parent:tab_bulletin:notices")
-            await cb_parent_tab_bulletin(dummy_q)
-            return
-
-
 @router.my_chat_member()
 async def on_my_chat_member_updated(event: ChatMemberUpdated, bot: Bot | None = None):
     user_id = event.from_user.id
@@ -4830,16 +3998,10 @@ async def cb_relaunch_start(query: CallbackQuery, state: FSMContext):
             await cmd_start(query.message, state)
     await query.answer()
 
-@router.message(any_state, CommandStart())
-@router.message(any_state, Command("start", "menu", "baslat", "başlat"))
-@router.message(any_state, F.text.lower().in_(["/start", "start", "/menu", "menu", "menü", "/menü", "başlat", "baslat"]))
-async def cmd_start(message: Message, state: FSMContext | None = None):
-    if state is not None:
-        try: await state.clear()
-        except Exception: pass
-    user_id = message.from_user.id
-    for cache_dict in [PIN_PENDING_ACTIONS, PIN_CHANGE_SESSION, ADMIN_PIN_INPUT, ADMIN_PIN_FAILURES, ATTENDANCE_CACHE, GRADE_CACHE, HW_CACHE, REQ_CACHE, APP_CACHE, BEHAVIOR_CACHE, SUBMISSION_CACHE, EXAM_CACHE, BC_CACHE, PROP_CACHE, FORCE_ALERT_CACHE]:
-        cache_dict.pop(user_id, None)
+@router.message(CommandStart())
+@router.message(Command("menu"))
+async def cmd_start(message: Message, state: FSMContext):
+    await state.clear()
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         is_admin_id = message.from_user.id in ADMIN_IDS
@@ -4927,7 +4089,7 @@ async def cb_set_lang(query: CallbackQuery, state: FSMContext):
     toast_msg = get_text("lang_changed", user.language)
     await query.answer(toast_msg, show_alert=False)
 
-    bot_obj = (getattr(query, "bot", None) or getattr(getattr(query, "message", None), "bot", None)) or bot
+    bot_obj = query.bot if getattr(query, 'bot', None) else (query.message.bot if query.message else bot)
     target_chat_id = query.message.chat.id if query.message else query.from_user.id
 
     reply_kb = get_role_reply_kb(user.role, user.language)
@@ -5067,7 +4229,7 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
     text = await get_dashboard_card_text(user)
     target_reply_kb = reply_kb or get_role_reply_kb(user.role, lang)
 
-    bot_obj = (target if isinstance(target, Bot) else (getattr(target, "bot", None) or getattr(getattr(target, "message", None), "bot", None))) or bot
+    bot_obj = target if isinstance(target, Bot) else (target.bot if isinstance(target, Message) else (target.message.bot if target.message else bot))
     target_chat_id = chat_id or (target.chat.id if isinstance(target, Message) else (target.message.chat.id if isinstance(target, CallbackQuery) and target.message else user.telegram_id))
 
     if isinstance(target, Message):
@@ -5076,25 +4238,12 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
 
     # Deliver single clean operational card equipped with role reply keyboard
     # Zero anchor messages, zero redundant bubbles!
-    sent_m = None
-    try:
-        sent_m = await bot_obj.send_message(
-            chat_id=target_chat_id,
-            text=text,
-            reply_markup=target_reply_kb,
-            parse_mode="HTML"
-        )
-    except Exception:
-        try:
-            clean_text = clean_to_plain(text)
-            sent_m = await bot_obj.send_message(
-                chat_id=target_chat_id,
-                text=clean_text,
-                reply_markup=target_reply_kb,
-                parse_mode=None
-            )
-        except Exception:
-            pass
+    sent_m = await bot_obj.send_message(
+        chat_id=target_chat_id,
+        text=text,
+        reply_markup=target_reply_kb,
+        parse_mode="HTML"
+    )
     if sent_m:
         new_mid = sent_m.message_id
         LAST_MENU_MSG_ID[target_chat_id] = new_mid
@@ -5114,9 +4263,7 @@ async def process_auth_code_string(code: str, user_id: int, message: Message, st
     # If this is a menu button or cancel, never treat it as an auth code attempt
     action = match_reply_button(code)
     if action:
-        if state is not None:
-            try: await state.clear()
-            except Exception: pass
+        await state.clear()
         await global_reply_keyboard_router(message, state)
         return
     if is_universal_cancel_text(code) or str(code).startswith("/"):
@@ -8375,28 +7522,16 @@ async def cb_delete_student_confirmed(query: CallbackQuery):
             return
     await query.answer()
 
-@router.callback_query(F.data.in_(["adm:dashboard", "tch:menu", "pr:menu", "st:menu", "nav:main_menu", "admin:dashboard", "bc_home"]))
+@router.callback_query(F.data.in_(["adm:dashboard", "tch:menu", "pr:menu", "st:menu", "nav:main_menu"]))
 async def cb_nav_to_main_menu(query: CallbackQuery, state: FSMContext | None = None):
     if state:
         try: await state.clear()
         except Exception: pass
-    user_id = query.from_user.id
-    chat_id = query.message.chat.id if (query and query.message) else user_id
-    bot_obj = (getattr(query, "bot", None) or getattr(getattr(query, "message", None), "bot", None)) or bot
-
-    for cache_dict in [PIN_PENDING_ACTIONS, PIN_CHANGE_SESSION, ADMIN_PIN_INPUT, ADMIN_PIN_FAILURES, ATTENDANCE_CACHE, GRADE_CACHE, HW_CACHE, REQ_CACHE, APP_CACHE, BEHAVIOR_CACHE, SUBMISSION_CACHE, EXAM_CACHE, BC_CACHE, PROP_CACHE]:
-        cache_dict.pop(user_id, None)
-
-    sub_id = PIN_SUB_MSG_ID.pop(user_id, None)
-    if sub_id:
-        try: await bot_obj.delete_message(chat_id=chat_id, message_id=sub_id)
-        except Exception: pass
-
     async with AsyncSessionLocal() as session:
-        user = await session.get(User, user_id)
+        user = await session.get(User, query.from_user.id)
         if not user:
-            role = "admin" if user_id in ADMIN_IDS else "guest"
-            user = User(telegram_id=user_id, language="tr", role=role, full_name=query.from_user.full_name)
+            role = "admin" if query.from_user.id in ADMIN_IDS else "guest"
+            user = User(telegram_id=query.from_user.id, language="tr", role=role, full_name=query.from_user.full_name)
             session.add(user)
             await session.commit()
         await render_clean_dashboard(query, user)
@@ -8404,9 +7539,6 @@ async def cb_nav_to_main_menu(query: CallbackQuery, state: FSMContext | None = N
         await query.answer()
     except Exception:
         pass
-
-async def cb_admin_dashboard(query: CallbackQuery, state: FSMContext | None = None):
-    await cb_nav_to_main_menu(query, state)
 
 @router.callback_query(F.data == "act_change_lang")
 async def cb_act_change_lang(query: CallbackQuery):
@@ -8433,7 +7565,26 @@ async def cb_ack_notif(query: CallbackQuery):
         except Exception:
             pass
 
-# Merged into cb_nav_to_main_menu above
+async def cb_admin_dashboard(query: CallbackQuery, state: FSMContext | None = None):
+    if state: await state.clear()
+    user_id = query.from_user.id
+    chat_id = query.message.chat.id if (query and query.message) else user_id
+    bot_obj = query.bot if getattr(query, 'bot', None) else (query.message.bot if query.message else bot)
+
+    for cache_dict in [PIN_PENDING_ACTIONS, PIN_CHANGE_SESSION, ADMIN_PIN_INPUT, ADMIN_PIN_FAILURES]:
+        cache_dict.pop(user_id, None)
+
+    sub_id = PIN_SUB_MSG_ID.pop(user_id, None)
+    if sub_id:
+        try: await bot_obj.delete_message(chat_id=chat_id, message_id=sub_id)
+        except Exception: pass
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if user:
+            # Geri tıklandığında alt menüyü (ReplyKeyboardMarkup) Telegram'a kesin olarak geri yükle!
+            await render_clean_dashboard(query, user)
+    await query.answer()
 
 @router.callback_query(F.data == "adm:unack_notifs")
 async def cb_admin_unack_notifs(query: CallbackQuery):
@@ -8797,8 +7948,7 @@ async def cb_cat_reports(event: Message | CallbackQuery, state: FSMContext | Non
         buttons = [
             [InlineKeyboardButton(text=get_text("btn_cockpit_unified", lang), callback_data="adm:cockpit")],
             [InlineKeyboardButton(text=get_text("btn_risk_radar", lang), callback_data="adm:risk_radar"), InlineKeyboardButton(text=get_text("btn_academic_report", lang), callback_data="adm:academic_report")],
-            [InlineKeyboardButton(text=get_text("btn_unack_notifs", lang), callback_data="adm:unack_notifs"), InlineKeyboardButton(text=get_text("btn_emergency_monitor", lang), callback_data="adm:emergency_monitor")],
-            get_nav_buttons(lang, back_callback="adm:dashboard")
+            [InlineKeyboardButton(text=get_text("btn_unack_notifs", lang), callback_data="adm:unack_notifs"), InlineKeyboardButton(text=get_text("btn_emergency_monitor", lang), callback_data="adm:emergency_monitor")]
         ]
         await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     if isinstance(event, CallbackQuery):
@@ -10088,7 +9238,7 @@ async def cb_admin_class_promotion_confirm(query: CallbackQuery):
             return
 
         target_chat_id = query.message.chat.id if query.message else query.from_user.id
-        bot_obj = (getattr(query, "bot", None) or getattr(getattr(query, "message", None), "bot", None)) or bot
+        bot_obj = query.bot if getattr(query, 'bot', None) else (query.message.bot if query.message else bot)
         try:
             buf = await export_all_school_data_excel()
             today_str = datetime.utcnow().strftime("%d_%m_%Y")
@@ -12667,6 +11817,832 @@ async def cb_class_attendance_sheet(query: CallbackQuery):
 # 15. SABİT ALT MENÜ (REPLY KEYBOARD) VE DOĞRUDAN KOD YAZMA MOTORU
 # ======================================================================
 
+REPLY_BUTTON_ACTIONS = {
+    "rk_digital_locker": "act_digital_locker",
+    "rk_my_credentials": "act_my_credentials",
+    "rk_logout": "act_logout",
+    "rk_restart": "act_restart",
+    "rk_main_menu": "act_main_menu",
+    "rk_admin_dash": "act_main_menu",
+    "btn_main_menu": "act_main_menu",
+    "btn_proposals": "act_proposals",
+    "btn_bot_block_monitor": "act_bot_block_monitor",
+    "bc_home": "act_main_menu",
+    "rk_lang": "act_lang",
+    "btn_lang": "act_lang",
+    "btn_login_prompt": "act_enter_code",
+    "btn_req_access": "act_req_access",
+    "rk_enter_code": "act_enter_code",
+    "rk_req_access": "act_req_access",
+    "rk_cat_staff": "act_cat_staff",
+    "rk_cat_reports": "act_cat_reports",
+    "rk_cat_requests": "act_cat_requests",
+    "rk_cat_tools": "act_cat_tools",
+    "rk_cat_tools_reports": "act_cat_tools_reports",
+    "btn_bulletin_program": "act_parent_bulletin",
+    "rk_cat_settings": "act_cat_settings",
+    "rk_cockpit": "act_cockpit",
+    "rk_classes": "act_classes",
+    "rk_teachers": "act_teachers",
+    "rk_requests": "act_requests",
+    "rk_attendance": "act_attendance",
+    "rk_grade": "act_grade",
+    "rk_homework": "act_homework",
+    "rk_behavior": "act_behavior",
+    "btn_student_behavior_history": "act_behavior_hist",
+    "btn_exam_schedule": "act_view_exams",
+    "rk_parent_info": "act_parent_info",
+    "rk_parent_settings": "act_parent_settings",
+    "rk_report": "act_report",
+    "rk_appointments": "act_appointments",
+    "rk_schedule": "act_schedule",
+    "rk_notices": "act_notices",
+    "rk_cafeteria": "act_cafeteria",
+    "rk_switch_student": "act_switch_student",
+    "rk_upload_medical": "act_upload_medical"
+}
+
+def match_reply_button(text: str) -> str | None:
+    if not text: return None
+    clean_text = text.strip()
+    for key, action in REPLY_BUTTON_ACTIONS.items():
+        for lang_code in LOCALES:
+            btn_txt = LOCALES[lang_code].get(key, "")
+            if btn_txt and btn_txt == clean_text:
+                return action
+
+    clean_norm = clean_text.lower().replace("🏠", "").replace("⚡", "").replace("•", "").replace("📊", "").replace("🛠️", "").replace("👥", "").replace("🔔", "").replace("⚙️", "").replace("📁", "").replace("🔑", "").replace("🌐", "").replace("🚪", "").replace("🗳️", "").replace("🗳", "").replace("📅", "").replace("🧑‍🎓", "").replace("ℹ️", "").replace("⭐", "").replace("📋", "").replace("📝", "").replace("📢", "").replace("🤝", "").replace("🏥", "").strip()
+    
+    # Fuzzy & Normalized matches for all languages & historical button labels
+    if any(m in clean_norm for m in ["kadro", "ogrenci", "öğrenci", "ученики", "учителя", "staff", "students", "xodim", "персонал"]):
+        return "act_cat_staff"
+    if any(m in clean_norm for m in ["rapor", "arac", "araç", "отчеты", "инструменты", "тулы", "reports", "tools", "hisobot"]):
+        return "act_cat_tools_reports"
+    if any(m in clean_norm for m in ["onay", "одобрений", "approval", "tasdiqlash"]):
+        return "act_cat_requests"
+    if any(m in clean_norm for m in ["ayar", "настройки", "settings", "sozlamalar"]):
+        return "act_cat_settings"
+    if any(m in clean_norm for m in ["dijital", "dosyam", "дело", "locker", "ishim"]):
+        return "act_digital_locker"
+    if any(m in clean_norm for m in ["sifre", "şifre", "пароли", "credentials", "passwords", "parol"]):
+        return "act_my_credentials"
+    if any(m in clean_norm for m in ["dil", "язык", "language", "til"]):
+        return "act_lang"
+    if any(m in clean_norm for m in ["cikis", "çıkış", "выйти", "logout", "chiqish"]):
+        return "act_logout"
+    if any(m in clean_norm for m in ["teklif", "oylama", "голосован", "предложен", "taklif", "ovoz", "proposal", "voting", "ballot", "oylar"]):
+        return "act_proposals"
+    if any(m in clean_norm for m in ["yoklama", "перекличка", "davomat", "attendance"]):
+        return "act_attendance"
+    if any(m in clean_norm for m in ["not gir", "оценки", "baho", "grade"]):
+        return "act_grade"
+    if any(m in clean_norm for m in ["davranış", "davranis", "поведение", "xulq", "behavior"]):
+        return "act_behavior"
+    if any(m in clean_norm for m in ["ödev", "odev", "задани", "vazifa", "homework"]):
+        return "act_homework"
+    if any(m in clean_norm for m in ["görüşme", "gorusme", "записи", "uchrashuv", "meeting"]):
+        return "act_appointments"
+    if any(m in clean_norm for m in ["karne", "табель", "tabel", "report"]):
+        return "act_report"
+    if any(m in clean_norm for m in ["tarix", "история", "geçmiş", "gecmis", "history"]):
+        return "act_behavior_hist"
+    if any(m in clean_norm for m in ["rapor", "справка", "медсправка", "ma'lumotnoma", "medical"]):
+        return "act_upload_medical"
+    if any(m in clean_norm for m in ["bülten", "bulten", "программ", "вестник", "график", "jadval", "bulletin", "plan"]):
+        return "act_parent_bulletin"
+    if any(m in clean_norm for m in ["öğrenci seç", "ogrenci sec", "смена", "almashtir", "tanlash", "switch"]):
+        return "act_switch_student"
+    if any(m in clean_norm for m in ["sınav", "sinav", "экзамен", "imtihon", "exam"]):
+        return "act_view_exams"
+    if any(m in clean_norm for m in ["bilgi", "инфо", "axborot", "info"]):
+        return "act_parent_info"
+    if any(m in clean_norm for m in ["giriş yap", "giris yap", "войти", "kirish", "log in"]):
+        return "act_enter_code"
+    if any(m in clean_norm for m in ["başvuru", "basvuru", "запрос", "talep", "ariza", "parol so", "request"]):
+        return "act_req_access"
+    if clean_norm in [
+        "ana menu", "ana menü", "baş menü", "bas menu", "главное меню", "главное",
+        "glavnoe menu", "glavnoye menyu", "asosiy menyu", "main menu", "menu", "меню"
+    ]:
+        return "act_main_menu"
+    return None
+@router.callback_query(F.data.startswith("rec_dismiss:"))
+async def cb_rec_dismiss(query: CallbackQuery):
+    try:
+        rec_id = int(query.data.split(":")[1])
+        async with AsyncSessionLocal() as session:
+            rec = await session.get(DigitalRecord, rec_id)
+            if rec:
+                rec.is_archived_from_chat = True
+                await session.commit()
+    except Exception:
+        pass
+
+    user_lang = "tr"
+    try:
+        async with AsyncSessionLocal() as session:
+            u = await session.get(User, query.from_user.id)
+            if u and u.language:
+                user_lang = u.language
+    except Exception:
+        pass
+
+    toast_msg = {
+        "tr": "📁 Evrak 'Dijital Dosyam' bölümüne kaldırıldı.",
+        "ru": "📁 Документ перемещен в раздел 'Мое цифровое дело'.",
+        "uz": "📁 Hujjat 'Raqamli hujjatlarim' bo'limiga olindi.",
+        "en": "📁 Document moved to 'Digital Locker'."
+    }.get(user_lang, "📁 Belge arşivlendi.")
+
+    try:
+        await query.answer(toast_msg, show_alert=False)
+    except Exception:
+        pass
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "cb_digital_locker")
+async def cb_digital_locker(event: Message | CallbackQuery, state: FSMContext | None = None):
+    if state: await state.clear()
+    user_id = event.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        lang = user.language if user else "tr"
+
+        categories = ["receipt", "exam", "homework", "attendance", "appointment", "medical", "notice"]
+        counts = {}
+        for cat in categories:
+            cnt = (await session.execute(
+                select(func.count(DigitalRecord.id)).where(
+                    DigitalRecord.user_telegram_id == user_id,
+                    DigitalRecord.category == cat
+                )
+            )).scalar() or 0
+            counts[cat] = cnt
+
+        total_records = sum(counts.values())
+
+        title = {
+            "tr": "📁 <b>DİJİTAL DOSYAM & EVRAK ARŞİVİ</b>",
+            "ru": "📁 <b>МОЕ ЦИФРОВОЕ ДЕЛО И АРХИВ</b>",
+            "uz": "📁 <b>RAQAMLI HUJJATLARIM VA ARXIV</b>",
+            "en": "📁 <b>DIGITAL LOCKER & ARCHIVE</b>"
+        }.get(lang, "📁 <b>DİJİTAL DOSYAM</b>")
+
+        desc = {
+            "tr": (
+                f"{title}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"Adınıza kayıtlı toplam <b>{total_records}</b> adet resmi evrak ve makbuz bulunmaktadır.\n\n"
+                f"İncelemek istediğiniz evrak kategorisini seçiniz:"
+            ),
+            "ru": (
+                f"{title}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"В вашем деле <b>{total_records}</b> официальных документов и квитанций.\n\n"
+                f"Выберите категорию документов для просмотра:"
+            ),
+            "uz": (
+                f"{title}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"Sizning nomingizda <b>{total_records}</b> ta rasmiy hujjat va kvitansiya mavjud.\n\n"
+                f"Ko'rmoqchi bo'lgan hujjat toifasini tanlang:"
+            ),
+            "en": (
+                f"{title}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"You have <b>{total_records}</b> official documents and receipts in your file.\n\n"
+                f"Select a category to view:"
+            )
+        }.get(lang, f"{title}\nSeçim yapınız:")
+
+        cat_labels = {
+            "exam": {"tr": f"📑 Sınav Takvimleri ({counts['exam']})", "ru": f"📑 Расписание экзаменов ({counts['exam']})", "uz": f"📑 Imtihon jadvallari ({counts['exam']})", "en": f"📑 Exam Schedules ({counts['exam']})"},
+            "homework": {"tr": f"📝 Ödev Makbuzları ({counts['homework']})", "ru": f"📝 Квитанции ДЗ ({counts['homework']})", "uz": f"📝 Vazifa kvitansiyalari ({counts['homework']})", "en": f"📝 Homework Receipts ({counts['homework']})"},
+            "attendance": {"tr": f"⚠️ Devamsızlık Bildirimleri ({counts['attendance']})", "ru": f"⚠️ Пропуски ({counts['attendance']})", "uz": f"⚠️ Davomat xabarlari ({counts['attendance']})", "en": f"⚠️ Attendance Notices ({counts['attendance']})"},
+            "appointment": {"tr": f"🗓️ Randevu Fişleri ({counts['appointment']})", "ru": f"🗓️ Талоны встреч ({counts['appointment']})", "uz": f"🗓️ Uchrashuv talonlari ({counts['appointment']})", "en": f"🗓️ Appointments ({counts['appointment']})"},
+            "medical": {"tr": f"🏥 Sağlık & İzin Belgeleri ({counts['medical']})", "ru": f"🏥 Мед. справки ({counts['medical']})", "uz": f"🏥 Tibbiy ma'lumotnomalar ({counts['medical']})", "en": f"🏥 Medical Reports ({counts['medical']})"},
+            "notice": {"tr": f"📢 Okul Duyuruları ({counts['notice']})", "ru": f"📢 Объявления школы ({counts['notice']})", "uz": f"📢 Maktab e'lonlari ({counts['notice']})", "en": f"📢 School Notices ({counts['notice']})"},
+            "receipt": {"tr": f"📜 Kimlik & Giriş Makbuzları ({counts['receipt']})", "ru": f"📜 Учетные данные ({counts['receipt']})", "uz": f"📜 Kirish ma'lumotlari ({counts['receipt']})", "en": f"📜 Credentials & Receipts ({counts['receipt']})"}
+        }
+
+        buttons = [
+            [InlineKeyboardButton(text=cat_labels["exam"][lang], callback_data="dl_cat:exam:1"), InlineKeyboardButton(text=cat_labels["homework"][lang], callback_data="dl_cat:homework:1")],
+            [InlineKeyboardButton(text=cat_labels["attendance"][lang], callback_data="dl_cat:attendance:1"), InlineKeyboardButton(text=cat_labels["appointment"][lang], callback_data="dl_cat:appointment:1")],
+            [InlineKeyboardButton(text=cat_labels["medical"][lang], callback_data="dl_cat:medical:1"), InlineKeyboardButton(text=cat_labels["notice"][lang], callback_data="dl_cat:notice:1")],
+            [InlineKeyboardButton(text=cat_labels["receipt"][lang], callback_data="dl_cat:receipt:1")],
+            [get_nav_buttons(lang)]
+        ]
+
+        await safe_edit_or_answer(event, desc, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("dl_cat:"))
+async def cb_dl_cat(query: CallbackQuery):
+    parts = query.data.split(":")
+    cat = parts[1]
+    page = int(parts[2]) if len(parts) > 2 else 1
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+        per_page = 5
+        offset = (page - 1) * per_page
+
+        total_cnt = (await session.execute(
+            select(func.count(DigitalRecord.id)).where(
+                DigitalRecord.user_telegram_id == query.from_user.id,
+                DigitalRecord.category == cat
+            )
+        )).scalar() or 0
+
+        total_pages = max(1, (total_cnt + per_page - 1) // per_page)
+
+        records = (await session.execute(
+            select(DigitalRecord).where(
+                DigitalRecord.user_telegram_id == query.from_user.id,
+                DigitalRecord.category == cat
+            ).order_by(desc(DigitalRecord.created_at)).limit(per_page).offset(offset)
+        )).scalars().all()
+
+        cat_names = {
+            "exam": {"tr": "Sınav Takvimleri", "ru": "Расписание экзаменов", "uz": "Imtihon jadvallari", "en": "Exam Schedules"},
+            "homework": {"tr": "Ödev Makbuzları", "ru": "Квитанции ДЗ", "uz": "Vazifa kvitansiyalari", "en": "Homework Receipts"},
+            "attendance": {"tr": "Devamsızlık Bildirimleri", "ru": "Пропуски", "uz": "Davomat xabarlari", "en": "Attendance Notices"},
+            "appointment": {"tr": "Randevu Fişleri", "ru": "Талоны встреч", "uz": "Uchrashuv talonlari", "en": "Appointments"},
+            "medical": {"tr": "Sağlık Belgeleri", "ru": "Мед. справки", "uz": "Tibbiy ma'lumotnomalar", "en": "Medical Reports"},
+            "notice": {"tr": "Duyurular", "ru": "Объявления", "uz": "E'lonlar", "en": "Notices"},
+            "receipt": {"tr": "Giriş & Makbuzlar", "ru": "Квитанции", "uz": "Kvitansiyalar", "en": "Receipts"}
+        }
+        c_title = cat_names.get(cat, {}).get(lang, cat)
+
+        if not records:
+            empty_txt = {
+                "tr": f"📁 <b>{c_title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBu kategoride henüz kayıtlı bir evrak bulunmamaktadır.",
+                "ru": f"📁 <b>{c_title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nВ этой категории пока нет документов.",
+                "uz": f"📁 <b>{c_title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nUshbu toifada hozircha hujjat mavjud emas.",
+                "en": f"📁 <b>{c_title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nNo records found in this category yet."
+            }.get(lang, "Kayıt yok.")
+            buttons = [[InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="cb_digital_locker")]]
+            await safe_edit_or_answer(query, empty_txt, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+            return
+
+        txt = (
+            f"📁 <b>{c_title}</b> (Sayfa {page}/{total_pages})\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Detayını incelemek istediğiniz evraka tıklayınız:\n"
+        )
+
+        buttons = []
+        for r in records:
+            d_str = r.created_at.strftime("%d.%m.%Y %H:%M")
+            btn_txt = f"📄 {r.title[:24]} ({d_str[:10]})"
+            buttons.append([InlineKeyboardButton(text=btn_txt, callback_data=f"dl_view:{r.id}:{cat}:{page}")])
+
+        nav_row = []
+        if page > 1:
+            nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"dl_cat:{cat}:{page-1}"))
+        nav_row.append(InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="noop"))
+        if page < total_pages:
+            nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"dl_cat:{cat}:{page+1}"))
+        
+        if nav_row:
+            buttons.append(nav_row)
+
+        buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="cb_digital_locker")])
+
+        await safe_edit_or_answer(query, txt, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("dl_view:"))
+async def cb_dl_view(query: CallbackQuery):
+    parts = query.data.split(":")
+    rec_id = int(parts[1])
+    cat = parts[2]
+    page = int(parts[3])
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, query.from_user.id)
+        lang = user.language if user else "tr"
+
+        rec = await session.get(DigitalRecord, rec_id)
+        if not rec:
+            await query.answer({"tr": "⚠️ Kayıt bulunamadı.", "ru": "⚠️ Запись не найдена.", "uz": "⚠️ Yozuv topilmadi.", "en": "⚠️ Record not found."}.get(lang, "⚠️ Record not found."), show_alert=True)
+            return
+
+        d_str = rec.created_at.strftime("%d.%m.%Y %H:%M")
+        detail_html = (
+            f"📁 <b>DİJİTAL EVRAK DETAYI</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📄 <b>Evrak:</b> {escape_html(rec.title)}\n"
+            f"📅 <b>Kayıt Tarihi:</b> <code>{d_str}</code>\n"
+            f"🆔 <b>Kayıt No:</b> <code>#EVR-{rec.id:04d}</code>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"{rec.full_content}"
+        )
+
+        buttons = []
+        if rec.file_id:
+            dl_file_label = {
+                "tr": "📥 Dosyayı Tekrar İndir",
+                "ru": "📥 Скачать файл снова",
+                "uz": "📥 Faylni qayta yuklash",
+                "en": "📥 Download File Again"
+            }.get(lang, "📥 Dosyayı İndir")
+            buttons.append([InlineKeyboardButton(text=dl_file_label, callback_data=f"dl_file:{rec.id}")])
+
+        buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=f"dl_cat:{cat}:{page}")])
+
+        await safe_edit_or_answer(query, detail_html, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("dl_file:"))
+async def cb_dl_file(query: CallbackQuery):
+    rec_id = int(query.data.split(":")[1])
+    async with AsyncSessionLocal() as session:
+        rec = await session.get(DigitalRecord, rec_id)
+        if not rec or not rec.file_id:
+            await query.answer({"tr": "⚠️ Dosya bulunamadı.", "ru": "⚠️ Файл не найден.", "uz": "⚠️ Fayl topilmadi.", "en": "⚠️ File not found."}.get(lang, "⚠️ File not found."), show_alert=True)
+            return
+        
+        try:
+            if rec.file_type == "photo":
+                await query.message.bot.send_photo(chat_id=query.from_user.id, photo=rec.file_id, caption=f"📄 {rec.title}")
+            else:
+                await query.message.bot.send_document(chat_id=query.from_user.id, document=rec.file_id, caption=f"📄 {rec.title}")
+            await query.answer("Dosya iletildi.")
+        except Exception as e:
+            await query.answer("Dosya gönderilemedi.", show_alert=True)
+
+async def cb_show_my_credentials(event: Message | CallbackQuery, state: FSMContext | None = None):
+    if state: await state.clear()
+    user_id = event.from_user.id
+    chat_id = event.chat.id if isinstance(event, Message) else (event.message.chat.id if event.message else user_id)
+    
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            role = "admin" if user_id in ADMIN_IDS else "guest"
+            user = User(telegram_id=user_id, language="tr", role=role, full_name=event.from_user.full_name)
+            session.add(user)
+            await session.commit()
+        lang = user.language or "tr"
+
+        if user.role == "guest":
+            guest_txt = {
+                "tr": "⚠️ <b>Henüz Giriş Yapmadınız</b>\n──────────────\nŞifrelerinizi ve yetkilerinizi görebilmek için lütfen okul idaresinden aldığınız giriş kodunu giriniz veya <b>📩 Başvuru Yap</b> butonuna basarak kayıt talebinde bulununuz.",
+                "ru": "⚠️ <b>Вы еще не вошли в систему</b>\n──────────────\nЧтобы увидеть ваши данные доступа, пожалуйста, введите код доступа или нажмите кнопку <b>📩 Запросить пароль</b> для подачи заявки.",
+                "uz": "⚠️ <b>Siz hali tizimga kirmagansiz</b>\n──────────────\nKirish ma'lumotlaringizni ko'rish uchun maktab ma'muriyatidan berilgan kodni kiriting yoki <b>📩 Ariza berish</b> tugmasini bosing.",
+                "en": "⚠️ <b>You are not logged in</b>\n──────────────\nPlease enter your access code or tap <b>📩 Request Access</b> to submit a registration request."
+            }.get(lang, "Please log in.")
+            await safe_edit_or_answer(event, guest_txt, parse_mode="HTML")
+            if isinstance(event, CallbackQuery):
+                try: await event.answer()
+                except Exception: pass
+            return
+
+        title = {
+            "tr": "🔑 <b>GİRİŞ VE KOD BİLGİLERİM</b>",
+            "ru": "🔑 <b>МОИ ДАННЫЕ ДЛЯ ВХОДА И ПАРОЛИ</b>",
+            "uz": "🔑 <b>KIRISH VA PAROL MA'LUMOTLARIM</b>",
+            "en": "🔑 <b>MY ACCESS CREDENTIALS & CODES</b>"
+        }.get(lang, "🔑 <b>MY ACCESS CREDENTIALS</b>")
+
+        details_txt = ""
+        if user.role == "teacher":
+            tch = (await session.execute(select(Teacher).where(Teacher.telegram_id == user_id))).scalar_one_or_none()
+            if not tch and user.full_name:
+                tch = (await session.execute(select(Teacher).where(Teacher.full_name == user.full_name))).scalar_one_or_none()
+            code = tch.auth_code if tch else "-"
+            
+            raw_subj = tch.subject if (tch and tch.subject and tch.subject.strip()) else ""
+            if not raw_subj or raw_subj.lower() in ("genel", "nothing", "none", "-"):
+                subj = {"tr": "Genel", "ru": "Общий", "uz": "Umumiy", "en": "General"}.get(lang, "General")
+            else:
+                subj = raw_subj
+
+            raw_classes = tch.assigned_classes if (tch and tch.assigned_classes and tch.assigned_classes.strip()) else "ALL"
+            if raw_classes.upper() == "ALL":
+                cls_assigned = {"tr": "Tüm Sınıflar", "ru": "Все классы", "uz": "Barcha sinflar", "en": "All Classes"}.get(lang, "All Classes")
+            else:
+                cls_assigned = raw_classes
+            
+            details_txt = {
+                "tr": (
+                    f"📋 <b>Rolünüz:</b> 👨‍🏫 Öğretmen\n"
+                    f"👤 <b>Adınız:</b> <b>{escape_html(user.full_name or 'Öğretmen')}</b>\n"
+                    f"📚 <b>Branşınız:</b> <code>{escape_html(subj)}</code>\n"
+                    f"🏫 <b>Atanan Sınıflar:</b> <code>{escape_html(cls_assigned)}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    f"🔑 <b>Özel Öğretmen Şifreniz / Kodunuz:</b> <code>{code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Bu kod sisteme kayıtlı size özel erişim kodunuzdur.</i>"
+                ),
+                "ru": (
+                    f"📋 <b>Роль:</b> 👨‍🏫 Учитель\n"
+                    f"👤 <b>ФИО:</b> <b>{escape_html(user.full_name or 'Учитель')}</b>\n"
+                    f"📚 <b>Предмет:</b> <code>{escape_html(subj)}</code>\n"
+                    f"🏫 <b>Классы:</b> <code>{escape_html(cls_assigned)}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    f"🔑 <b>Ваш код доступа (пароль):</b> <code>{code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Этот код привязан к вашей учетной записи учителя.</i>"
+                ),
+                "uz": (
+                    f"📋 <b>Lavozimingiz:</b> 👨‍🏫 O'qituvchi\n"
+                    f"👤 <b>F.I.O:</b> <b>{escape_html(user.full_name or 'O`qituvchi')}</b>\n"
+                    f"📚 <b>Faningiz:</b> <code>{escape_html(subj)}</code>\n"
+                    f"🏫 <b>Sinflar:</b> <code>{escape_html(cls_assigned)}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    f"🔑 <b>Maxsus o'qituvchi kodingiz (parol):</b> <code>{code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Ushbu kod sizning shaxsiy kirish kodingizdir.</i>"
+                ),
+                "en": (
+                    f"📋 <b>Role:</b> 👨‍🏫 Teacher\n"
+                    f"👤 <b>Name:</b> <b>{escape_html(user.full_name or 'Teacher')}</b>\n"
+                    f"📚 <b>Subject:</b> <code>{escape_html(subj)}</code>\n"
+                    f"🏫 <b>Assigned Classes:</b> <code>{escape_html(cls_assigned)}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    f"🔑 <b>Teacher Access Code:</b> <code>{code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>This access code is linked to your teacher profile.</i>"
+                )
+            }.get(lang, "")
+
+        elif user.role == "student":
+            st = (await session.execute(select(Student).where(Student.student_telegram_id == user_id))).scalar_one_or_none()
+            if not st and user.full_name:
+                st = (await session.execute(select(Student).where(Student.full_name == user.full_name))).scalar_one_or_none()
+            st_name = st.full_name if st else (user.full_name or "Öğrenci")
+            cls_name = st.class_name if st else "-"
+            st_no = st.student_number if st else "-"
+            st_code = st.student_code if st else "-"
+            pr_code = st.parent_code if st else "-"
+
+            details_txt = {
+                "tr": (
+                    f"📋 <b>Rolünüz:</b> 🎓 Öğrenci\n"
+                    f"👤 <b>Adınız:</b> <b>{escape_html(st_name)}</b>\n"
+                    f"🏫 <b>Sınıfınız:</b> <code>{escape_html(cls_name)}</code>\n"
+                    f"🔢 <b>Okul Numaranız:</b> <code>{escape_html(st_no)}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    f"🔑 <b>Öğrenci Giriş Kodunuz:</b> <code>{st_code}</code>\n"
+                    f"👨‍👩‍👧 <b>Veli Bağlantı Kodunuz:</b> <code>{pr_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Veliniz bu Veli Kodunu kullanarak bota kaydolabilir ve durumunuzu takip edebilir.</i>"
+                ),
+                "ru": (
+                    f"📋 <b>Роль:</b> 🎓 Ученик\n"
+                    f"👤 <b>ФИО:</b> <b>{escape_html(st_name)}</b>\n"
+                    f"🏫 <b>Класс:</b> <code>{escape_html(cls_name)}</code>\n"
+                    f"🔢 <b>Номер в школе:</b> <code>{escape_html(st_no)}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    f"🔑 <b>Код ученика:</b> <code>{st_code}</code>\n"
+                    f"👨‍👩‍👧 <b>Код для родителя:</b> <code>{pr_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Родитель может использовать данный код для подключения к боту.</i>"
+                ),
+                "uz": (
+                    f"📋 <b>Lavozim:</b> 🎓 O'quvchi\n"
+                    f"👤 <b>F.I.O:</b> <b>{escape_html(st_name)}</b>\n"
+                    f"🏫 <b>Sinfingiz:</b> <code>{escape_html(cls_name)}</code>\n"
+                    f"🔢 <b>Maktab raqamingiz:</b> <code>{escape_html(st_no)}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    f"🔑 <b>O'quvchi kodingiz:</b> <code>{st_code}</code>\n"
+                    f"👨‍👩‍👧 <b>Ota-ona ulanish kodi:</b> <code>{pr_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Ota-onangiz ushbu kod orqali botga ulanishi mumkin.</i>"
+                ),
+                "en": (
+                    f"📋 <b>Role:</b> 🎓 Student\n"
+                    f"👤 <b>Name:</b> <b>{escape_html(st_name)}</b>\n"
+                    f"🏫 <b>Class:</b> <code>{escape_html(cls_name)}</code>\n"
+                    f"🔢 <b>Roll Number:</b> <code>{escape_html(st_no)}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    f"🔑 <b>Student Code:</b> <code>{st_code}</code>\n"
+                    f"👨‍👩‍👧 <b>Parent Code:</b> <code>{pr_code}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Your parent can use this Parent Code to link their account.</i>"
+                )
+            }.get(lang, "")
+
+        elif user.role == "parent":
+            st_list = []
+            rels = (await session.execute(select(ParentStudent).where(ParentStudent.parent_telegram_id == user_id))).scalars().all()
+            for r in rels:
+                s = await session.get(Student, r.student_id)
+                if s: st_list.append(s)
+            
+            lbl_pr_code = {"tr": "Veli Kodu", "ru": "Код родителя", "uz": "Ota-ona kodi", "en": "Parent Code"}.get(lang, "Parent Code")
+            children_str = ""
+            if st_list:
+                for s in st_list:
+                    children_str += f"\n• <b>{escape_html(s.full_name)}</b> (<code>{escape_html(s.class_name)}</code> - No: <code>{escape_html(s.student_number)}</code>)\n  └ 🔑 {lbl_pr_code}: <code>{s.parent_code}</code>"
+            else:
+                children_str = {
+                    "tr": "\n• <i>Henüz bağlı öğrenci bulunmuyor.</i>",
+                    "ru": "\n• <i>Нет привязанных учеников.</i>",
+                    "uz": "\n• <i>Hozircha biriktirilgan o'quvchi yo'q.</i>",
+                    "en": "\n• <i>No linked students yet.</i>"
+                }.get(lang, "\n• <i>No linked students.</i>")
+
+            details_txt = {
+                "tr": (
+                    f"📋 <b>Rolünüz:</b> 👨‍👩‍👧 Veli\n"
+                    f"👤 <b>Adınız:</b> <b>{escape_html(user.full_name or 'Veli')}</b>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    f"🧑‍🎓 <b>Bağlı Öğrenciler:</b>{children_str}\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Yeni bir öğrenci bağlamak için okul idaresinden aldığınız Veli Kodunu giriniz.</i>"
+                ),
+                "ru": (
+                    f"📋 <b>Роль:</b> 👨‍👩‍👧 Родитель\n"
+                    f"👤 <b>ФИО:</b> <b>{escape_html(user.full_name or 'Родитель')}</b>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    f"🧑‍🎓 <b>Привязанные ученики:</b>{children_str}\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Используйте код родителя для привязки новых учеников.</i>"
+                ),
+                "uz": (
+                    f"📋 <b>Lavozim:</b> 👨‍👩‍👧 Ota-ona\n"
+                    f"👤 <b>F.I.O:</b> <b>{escape_html(user.full_name or 'Ota-ona')}</b>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    f"🧑‍🎓 <b>Biriktirilgan o'quvchilar:</b>{children_str}\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Yangi o'quvchi qo'shish uchun maktab ma'muriyatiga murojaat qiling.</i>"
+                ),
+                "en": (
+                    f"📋 <b>Role:</b> 👨‍👩‍👧 Parent\n"
+                    f"👤 <b>Name:</b> <b>{escape_html(user.full_name or 'Parent')}</b>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    f"🧑‍🎓 <b>Linked Students:</b>{children_str}\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Use the parent codes to link additional children.</i>"
+                )
+            }.get(lang, "")
+
+        else: # admin
+            admin_title = get_text("permanent_admin_title", lang) if (user_id in ADMIN_IDS or user.admin_type == "permanent") else get_text("temporary_admin_title", lang)
+            details_txt = {
+                "tr": (
+                    f"📋 <b>Rolünüz:</b> ⚡ {admin_title}\n"
+                    f"👤 <b>Adınız:</b> <b>{escape_html(user.full_name or 'Yönetici')}</b>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Tüm okul yönetim paneline ve yetkilerine doğrudan erişiminiz bulunmaktadır.</i>"
+                ),
+                "ru": (
+                    f"📋 <b>Роль:</b> ⚡ {admin_title}\n"
+                    f"👤 <b>ФИО:</b> <b>{escape_html(user.full_name or 'Администратор')}</b>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>У вас есть полный доступ ко всем функциям управления школой.</i>"
+                ),
+                "uz": (
+                    f"📋 <b>Lavozim:</b> ⚡ {admin_title}\n"
+                    f"👤 <b>F.I.O:</b> <b>{escape_html(user.full_name or 'Ma`mur')}</b>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>Barcha maktab boshqaruv vositalariga to'liq ruxsatingiz mavjud.</i>"
+                ),
+                "en": (
+                    f"📋 <b>Role:</b> ⚡ {admin_title}\n"
+                    f"👤 <b>Name:</b> <b>{escape_html(user.full_name or 'Admin')}</b>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+                    "──────────────\n"
+                    "ℹ️ <i>You have full administrative access to all school management tools.</i>"
+                )
+            }.get(lang, "Admin access active.")
+
+        back_cb = "adm:dashboard" if user.role == "admin" else ("tch:menu" if user.role == "teacher" else ("pr:menu" if user.role == "parent" else "st:menu"))
+        creds_kb = InlineKeyboardMarkup(inline_keyboard=[
+            get_nav_buttons(lang, back_callback=back_cb)
+        ])
+        full_card = f"{title}\n──────────────\n{details_txt}"
+        await safe_edit_or_answer(event, full_card, reply_markup=creds_kb, parse_mode="HTML")
+    if isinstance(event, CallbackQuery):
+        try: await event.answer()
+        except Exception: pass
+
+@router.message(any_state, F.text.func(lambda text: match_reply_button(text) is not None))
+async def global_reply_keyboard_router(message: Message, state: FSMContext):
+    action = match_reply_button(message.text)
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            role = "admin" if user_id in ADMIN_IDS else "guest"
+            user = User(telegram_id=user_id, language="tr", role=role, full_name=message.from_user.full_name)
+            session.add(user)
+            await session.commit()
+        elif user_id in ADMIN_IDS and user.role != "admin":
+            user.role = "admin"
+            await session.commit()
+        if message.from_user.full_name and user.full_name != message.from_user.full_name:
+            user.full_name = message.from_user.full_name
+            await session.commit()
+        lang = user.language
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    if action:
+        await state.clear()
+        if action == "act_digital_locker":
+            await cb_digital_locker(message, state)
+            return
+        elif action == "act_my_credentials":
+            await cb_show_my_credentials(message, state)
+            return
+        elif action == "act_logout":
+            await handle_bot_logout_cmd(message, state)
+            return
+        elif action == "act_restart":
+            await handle_bot_restart_cmd(message, state)
+            return
+        elif action == "act_cat_staff" and user.role == "admin":
+            await cb_cat_staff(message, state)
+            return
+        elif action == "act_cat_reports" and user.role == "admin":
+            await cb_cat_reports(message, state)
+            return
+        elif action == "act_cat_requests" and user.role == "admin":
+            await cb_cat_requests(message, state)
+            return
+        elif action == "act_cat_tools" and user.role == "admin":
+            await cb_cat_tools(message, state)
+            return
+        elif action == "act_cat_settings" and user.role == "admin":
+            await cb_cat_settings(message, state)
+            return
+        elif action == "act_main_menu":
+            await render_clean_dashboard(message, user)
+            return
+        elif action == "act_lang":
+            await safe_edit_or_answer(message, get_text("lang_select", lang), reply_markup=get_language_inline_kb())
+            return
+        elif action == "act_enter_code":
+            await message.answer(get_text("prompt_enter_code_direct", lang), parse_mode="HTML")
+            await state.set_state(Form.waiting_auth_code)
+            return
+        elif action == "act_req_access":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_req_access")
+            await cb_act_req_access(dummy_q, state)
+            return
+        elif action == "act_cockpit" and user.role == "admin":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:cockpit")
+            await cb_cockpit(dummy_q)
+            return
+        elif action == "act_classes" and user.role == "admin":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:classes")
+            await cb_classes_list(dummy_q, state)
+            return
+        elif action == "act_teachers" and user.role == "admin":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:teachers")
+            await cb_admin_teachers_list(dummy_q)
+            return
+        elif action == "act_requests" and user.role == "admin":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:requests_list")
+            await cb_admin_requests_list(dummy_q)
+            return
+        elif action == "act_attendance" and user.role == "teacher":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:classes")
+            await cb_teacher_classes(dummy_q, state)
+            return
+        elif action == "act_grade" and user.role == "teacher":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:grade_classes")
+            await cb_grade_classes(dummy_q, state)
+            return
+        elif action == "act_behavior" and user.role == "teacher":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:behavior_classes")
+            await cb_teacher_behavior_classes(dummy_q)
+            return
+        elif action == "act_behavior_hist" and user.role in ("parent", "student"):
+            st_id = user.current_child_id
+            if user.role == "student":
+                async with AsyncSessionLocal() as session:
+                    st = (await session.execute(select(Student).where(Student.student_telegram_id == user_id))).scalar_one_or_none()
+                    st_id = st.id if st else None
+            if st_id:
+                dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data=f"bh_hist:{st_id}")
+                await cb_student_behavior_history(dummy_q)
+            return
+        elif action == "act_view_exams":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_exams")
+            await cb_view_exams_list(dummy_q)
+            return
+        elif action == "act_homework":
+            if user.role == "teacher":
+                dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:hw_classes")
+                await cb_hw_classes(dummy_q, state)
+                return
+            elif user.role in ("student", "parent"):
+                dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_hw")
+                await cb_view_homeworks_list(dummy_q)
+                return
+        elif action == "act_appointments" and user.role == "teacher":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:appointments")
+            await cb_teacher_appointments_list(dummy_q)
+            return
+        elif action == "act_report" and user.role in ["parent", "student"]:
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_report")
+            await cb_view_report_card(dummy_q, state)
+            return
+        elif action == "act_appointments" and user.role == "parent":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_book_app")
+            await cb_parent_book_app_init(dummy_q, state)
+            return
+        elif action == "act_schedule" and user.role in ["teacher", "parent", "student"]:
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_sched")
+            await cb_view_schedule(dummy_q)
+            return
+        elif action == "act_notices" and user.role in ["parent", "student"]:
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_notices")
+            await cb_view_notices(dummy_q)
+            return
+        elif action == "act_cafeteria" and user.role in ["parent", "student"]:
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="act_view_cafe")
+            await cb_view_cafeteria(dummy_q)
+            return
+        elif action == "act_switch_student" and user.role == "parent":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="parent:switch_student")
+            await cb_parent_switch_student(dummy_q, state)
+            return
+        elif action == "act_upload_medical" and user.role == "parent":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="upload_medical_init")
+            await cb_upload_med_init(dummy_q, state)
+            return
+        elif action == "act_parent_info":
+            buttons = [
+                [InlineKeyboardButton(text=get_text("btn_notices", lang), callback_data="act_view_notices"), InlineKeyboardButton(text=get_text("btn_view_schedule", lang), callback_data="act_view_sched")],
+                [InlineKeyboardButton(text=get_text("btn_view_cafeteria", lang), callback_data="act_view_cafe"), InlineKeyboardButton(text=get_text("btn_exam_schedule", lang), callback_data="act_view_exams")]
+            ]
+            if user.role == "parent":
+                buttons.append([InlineKeyboardButton(text=get_text("rk_appointments", lang), callback_data="act_book_app"), InlineKeyboardButton(text=get_text("rk_upload_medical", lang), callback_data="upload_medical_init")])
+
+            title = get_text("parent_info_title", lang)
+            info_desc = {
+                "tr": f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nOkul duyurularını, haftalık ders programını, yemekhane menüsünü veya sınav takvimini görüntülemek için bir işlem seçiniz:",
+                "ru": f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nВыберите раздел для просмотра объявлений школы, расписания уроков, меню или экзаменов:",
+                "uz": f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nMaktab e'lonlari, dars jadvali, oshxona menyusi yoki imtihonlar jadvalini ko'rish uchun tanlang:",
+                "en": f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSelect an option to view school announcements, timetable, cafeteria menu, or exams:"
+            }.get(lang, f"<b>{title}</b>\nSelect an option:")
+
+            sent_m = await message.bot.send_message(chat_id=message.chat.id, text=info_desc, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+            if sent_m:
+                LAST_MENU_MSG_ID[message.chat.id] = sent_m.message_id
+                ACTIVE_CHAT_MESSAGES.setdefault(message.chat.id, set()).add(sent_m.message_id)
+            return
+        elif action == "act_parent_settings":
+            btn_brief = get_text("btn_briefing_on", lang) if user.evening_briefing else get_text("btn_briefing_off", lang)
+            buttons = [
+                [InlineKeyboardButton(text=btn_brief, callback_data="parent:toggle_briefing")],
+                [InlineKeyboardButton(text="➕ " + {"tr": "Başka Çocuk Ekle", "ru": "Привязать ребенка", "uz": "Boshqa farzandni ulash", "en": "Link Child"}.get(lang, "Link Child"), callback_data="parent:add_child_code")],
+                [InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")]
+            ]
+            title = get_text("parent_settings_title", lang)
+            p_desc = f"<b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + {"tr": "Ayarlarınızı yapılandırabilirsiniz:", "ru": "Настройки аккаунта:", "uz": "Sozlamalarni boshqarish:", "en": "Configure your settings:"}.get(lang, "Settings:")
+            sent_m = await message.bot.send_message(chat_id=message.chat.id, text=p_desc, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+            if sent_m:
+                LAST_MENU_MSG_ID[message.chat.id] = sent_m.message_id
+                ACTIVE_CHAT_MESSAGES.setdefault(message.chat.id, set()).add(sent_m.message_id)
+            return
+        elif action == "act_proposals":
+            if user.role == "teacher":
+                dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="tch:prop_hub")
+                await cb_teacher_proposal_hub(dummy_q)
+                return
+            elif user.role == "admin":
+                dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:proposals_hub")
+                await cb_admin_proposals_hub(dummy_q)
+                return
+        elif action == "act_bot_block_monitor" and user.role == "admin":
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="adm:bot_block_monitor:0")
+            await cb_admin_bot_block_monitor(dummy_q)
+            return
+        elif action == "act_cat_tools_reports" and user.role == "admin":
+            await cb_cat_tools_reports(message, state)
+            return
+        elif action == "act_parent_bulletin" and user.role in ("parent", "student"):
+            dummy_q = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="parent:tab_bulletin:notices")
+            await cb_parent_tab_bulletin(dummy_q)
+            return
+
 @router.message(any_state, F.text.func(lambda text: normalize_code(text).startswith(("VELI-", "OGR-", "HCA-", "ADM-")) or normalize_code(text) == ADMIN_CODE))
 @router.message(default_state, F.text)
 async def smart_text_auth_router(message: Message, state: FSMContext):
@@ -12783,7 +12759,7 @@ async def cb_force_audio_alert_init(query: CallbackQuery):
             [InlineKeyboardButton(text="👨‍👩‍👧‍👦 " + {"tr": "Tüm Velilere Zorla Sesli Bildirim", "ru": "Всем родителям (Звук)", "uz": "Barcha ota-onalarga (Ovozli)", "en": "All Parents (Audio Alert)"}.get(lang, "All Parents"), callback_data="adm:force_aud:parents")],
             [InlineKeyboardButton(text="👨‍🏫 " + {"tr": "Tüm Öğretmenlere Zorla Sesli Bildirim", "ru": "Всем учителям (Звук)", "uz": "Barcha o'qituvchilarga (Ovozli)", "en": "All Teachers (Audio Alert)"}.get(lang, "All Teachers"), callback_data="adm:force_aud:teachers")],
             [InlineKeyboardButton(text="👥 " + {"tr": "Tüm Okula Zorla Sesli Bildirim (Genel)", "ru": "Всей школе (Звук)", "uz": "Butun maktabga (Ovozli)", "en": "All School (Audio Alert)"}.get(lang, "All School"), callback_data="adm:force_aud:all")],
-            [InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data="adm:cat_tools_reports")]
+            [InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data="adm:bot_block_monitor:0")]
         ]
         await safe_edit_or_answer(query, hdr, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
@@ -14447,9 +14423,11 @@ async def cb_admin_remind_votes(query: CallbackQuery):
 # 16. FASTAPI, HATA KALKANI VE ARKA PLAN DÖNGÜLERİ (LIFESPAN & PINGER)
 # ======================================================================
 
-# bot, dp, and router are initialized at top of module
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
 dp.callback_query.outer_middleware(AutoCallbackAnswerMiddleware())
-dp.message.middleware(GlobalMenuButtonMiddleware())
+dp.message.outer_middleware(GlobalMenuButtonMiddleware())
+dp.include_router(router)
 
 @dp.error()
 async def global_error_shield(event, exception):
@@ -14623,38 +14601,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"--> [HATA 2/6] BOT_TOKEN ile Telegram'a bağlanılamadı: {e}")
 
-    polling_task = None
-    if POLLING_MODE:
-        print("--> [3/6] POLLING_MODE=true aktif! Webhook silinip doğrudan POLLING başlatılıyor...")
-        try: await bot.delete_webhook(drop_pending_updates=True)
-        except Exception: pass
-        polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=["message", "callback_query"]))
-        print("--> [3/6] Arka plan POLLING modu aktif!")
-    elif WEBHOOK_URL:
+    if bot_info and WEBHOOK_URL:
         try:
             print(f"--> [3/6] Webhook Telegram'a kaydediliyor: {WEBHOOK_URL}")
-            await bot.delete_webhook(drop_pending_updates=True)
+            await bot.delete_webhook(drop_pending_updates=False)
             await bot.set_webhook(
                 url=WEBHOOK_URL,
                 secret_token=WEBHOOK_SECRET,
-                drop_pending_updates=True,
+                drop_pending_updates=False,
                 allowed_updates=["message", "callback_query"]
             )
             wh = await bot.get_webhook_info()
-            print(f"--> [3/6] Webhook Başarıyla Kuruldu! Aktif URL: {wh.url} (Bekleyen Update: {wh.pending_update_count})")
+            print(f"--> [3/6] Webhook Başarıyla Kuruldu! Aktif URL: {wh.url}")
         except Exception as e:
-            print(f"--> [HATA 3/6] Webhook kurulum hatası: {e}. Otomatik POLLING moduna geçiliyor...")
-            try: await bot.delete_webhook(drop_pending_updates=True)
-            except Exception: pass
-            polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=["message", "callback_query"]))
-    else:
-        print("--> [3/6] WEBHOOK_URL bulunamadı! Telegram Webhook silinip otomatik POLLING moduna geçiliyor...")
-        try:
-            await bot.delete_webhook(drop_pending_updates=True)
-        except Exception:
-            pass
-        polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=["message", "callback_query"]))
-        print("--> [3/6] Otomatik POLLING modu arka planda başarıyla başlatıldı!")
+            print(f"--> [HATA 3/6] Webhook kurulum hatası: {e}")
 
     t1 = asyncio.create_task(background_attendance_loop())
     t2 = asyncio.create_task(background_keep_alive_pinger())
@@ -14667,8 +14627,6 @@ async def lifespan(app: FastAPI):
     print("--> [6/6] SİSTEM CANLI VE TÜM GÜVENLİK KALKANLARI HAZIR.")
     print("=" * 60)
     yield
-    if polling_task:
-        polling_task.cancel()
     t1.cancel()
     t2.cancel()
     t3.cancel()
@@ -14698,92 +14656,69 @@ async def health_check():
         db_ok = False
 
     uptime_sec = int((datetime.utcnow() - BOT_START_TIME).total_seconds())
+    st_code = status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE
     return JSONResponse(
-        status_code=status.HTTP_200_OK,
+        status_code=st_code,
         content={
-            "status": "healthy" if db_ok else "initializing",
-            "database": "connected" if db_ok else "connecting",
+            "status": "healthy" if db_ok else "unhealthy",
+            "database": "connected" if db_ok else "disconnected",
             "uptime_seconds": uptime_sec,
             "service": "OkulYonetimBot",
             "timezone_offset": TIMEZONE_OFFSET,
-            "version": "PROD_V33_ENTERPRISE"
+            "version": "PROD_V30_ENTERPRISE"
         }
     )
 
 @app.post("/webhook")
-@app.post("/webhook/")
 async def telegram_webhook(request: Request):
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-    if WEBHOOK_SECRET and secret and secret != WEBHOOK_SECRET:
-        print(f"--> [WEBHOOK UYARI] Secret token uyuşmazlığı: gelen={secret}, beklenen={WEBHOOK_SECRET}")
+    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
         return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"error": "Invalid secret"})
 
     try:
         data = await request.json()
-    except Exception as e:
-        print(f"--> [WEBHOOK HATA] Geçersiz JSON içeriği: {e}")
+    except Exception:
         return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Bad JSON"})
 
     try:
         telegram_update = Update.model_validate(data, context={"bot": bot})
-        
-        # Real-time console trace for incoming messages
-        m_txt = getattr(telegram_update.message, "text", None) if telegram_update.message else None
-        c_dat = getattr(telegram_update.callback_query, "data", None) if telegram_update.callback_query else None
-        s_uid = (telegram_update.message.from_user.id if telegram_update.message and telegram_update.message.from_user else (telegram_update.callback_query.from_user.id if telegram_update.callback_query and telegram_update.callback_query.from_user else None))
-        print(f"--> [WEBHOOK UPDATE #{telegram_update.update_id}] Gönderen: {s_uid} | Metin: '{m_txt}' | Buton: '{c_dat}'")
-
-        if s_uid:
+        u_id = None
+        if telegram_update.message and telegram_update.message.from_user:
+            u_id = telegram_update.message.from_user.id
+        elif telegram_update.callback_query and telegram_update.callback_query.from_user:
+            u_id = telegram_update.callback_query.from_user.id
+        if u_id:
             import time
             now_t = time.time()
-            if s_uid in USER_COOLDOWN:
-                if now_t < USER_COOLDOWN[s_uid]:
+            if u_id in USER_COOLDOWN:
+                if now_t < USER_COOLDOWN[u_id]:
                     return {"ok": True}
                 else:
-                    del USER_COOLDOWN[s_uid]
-                    USER_REQUEST_LOG[s_uid] = []
-
+                    del USER_COOLDOWN[u_id]
+                    USER_REQUEST_LOG[u_id] = []
             # Debounce duplicate click on the exact same button within 0.35s
-            last_data, last_time = USER_LAST_CLICK.get(s_uid, (None, 0.0))
-            if c_dat and last_data == c_dat and (now_t - last_time < 0.35):
+            cb_data = telegram_update.callback_query.data if telegram_update.callback_query else None
+            last_data, last_time = USER_LAST_CLICK.get(u_id, (None, 0.0))
+            if cb_data and last_data == cb_data and (now_t - last_time < 0.35):
                 if telegram_update.callback_query:
                     try: await telegram_update.callback_query.answer()
                     except Exception: pass
                 return {"ok": True}
-            if c_dat:
-                USER_LAST_CLICK[s_uid] = (c_dat, now_t)
+            if cb_data:
+                USER_LAST_CLICK[u_id] = (cb_data, now_t)
 
-            reqs = [t for t in USER_REQUEST_LOG.get(s_uid, []) if now_t - t < 5.0]
+            # High-capacity burst rate limit: allow up to 25 requests in 5s
+            reqs = [t for t in USER_REQUEST_LOG.get(u_id, []) if now_t - t < 5.0]
             if len(reqs) >= 25:
                 return {"ok": True}
             reqs.append(now_t)
-            USER_REQUEST_LOG[s_uid] = reqs
-
-        await dp.feed_update(bot, telegram_update)
+            USER_REQUEST_LOG[u_id] = reqs
+        await asyncio.wait_for(dp.feed_update(bot, telegram_update), timeout=15.0)
     except Exception as e:
         import traceback
-        print(f"--> [WEBHOOK İŞLEME HATASI]: {e}")
         traceback.print_exc()
 
     return {"ok": True}
-
-@app.get("/bot-status")
-async def bot_status_view():
-    try:
-        me = await bot.get_me()
-        wh = await bot.get_webhook_info()
-        return {
-            "status": "online",
-            "bot_username": f"@{me.username}",
-            "bot_id": me.id,
-            "webhook_url": wh.url,
-            "pending_update_count": wh.pending_update_count,
-            "last_error_message": wh.last_error_message,
-            "last_error_date": str(wh.last_error_date) if wh.last_error_date else None,
-            "allowed_updates": wh.allowed_updates
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
