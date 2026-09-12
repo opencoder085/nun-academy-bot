@@ -41,6 +41,8 @@ async def _safe_cb_answer(self, text: str | None = None, show_alert: bool | None
         return True
 CallbackQuery.answer = _safe_cb_answer
 
+router = Router()
+
 class AutoCallbackAnswerMiddleware(BaseMiddleware):
     async def __call__(
         self,
@@ -4213,19 +4215,7 @@ class Form(StatesGroup):
     appr_st_class = State()
     appr_st_no = State()
 
-router = Router()
-# Global Safe CallbackQuery Answer Shield
-_orig_cb_answer = CallbackQuery.answer
-
-async def _shielded_callback_answer(self, *args, **kwargs):
-    if not getattr(self, "id", None) or self.id in ("0", "dummy", "fake") or str(self.id).startswith("dummy_"):
-        return True
-    try:
-        return await _orig_cb_answer(self, *args, **kwargs)
-    except Exception:
-        return True
-
-CallbackQuery.answer = _shielded_callback_answer
+# router already defined at top of module
 
 ATTENDANCE_CACHE = {}
 GRADE_CACHE = {}
