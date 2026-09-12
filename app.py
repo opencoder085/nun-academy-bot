@@ -12908,12 +12908,19 @@ async def cb_open_proposal_for_vote(query: CallbackQuery):
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             "<i>Lütfen aşağıdaki butonlarla oyunuzu kullanınız:</i>"
         )
+        b_agr = {"tr": "✅ Katılıyorum", "ru": "✅ Согласен", "uz": "✅ Qo'shilaman", "en": "✅ Agree"}.get(lang, "✅ Agree")
+        b_dis = {"tr": "❌ Katılmıyorum", "ru": "❌ Не согласен", "uz": "❌ Qo'shilmayman", "en": "❌ Disagree"}.get(lang, "❌ Disagree")
+        b_rsn = {"tr": "📝 Gerekçe / Fikir Ekle", "ru": "📝 Добавить комментарий", "uz": "📝 Izoh / Fikr qo'shish", "en": "📝 Add Note"}.get(lang, "📝 Add Note")
+        b_res = {"tr": "📊 Oylama Sonuçları", "ru": "📊 Результаты", "uz": "📊 Natijalar", "en": "📊 Results"}.get(lang, "📊 Results")
+        back_cb = "adm:proposals_hub" if is_admin_user(user, query.from_user.id) else "tch:active_props:0"
         vote_buttons = [
             [
-                InlineKeyboardButton(text="✅ Katılıyorum", callback_data=f"prop:vote:{prop.id}:agree"),
-                InlineKeyboardButton(text="❌ Katılmıyorum", callback_data=f"prop:vote:{prop.id}:disagree")
+                InlineKeyboardButton(text=b_agr, callback_data=f"prop:vote:{prop.id}:agree"),
+                InlineKeyboardButton(text=b_dis, callback_data=f"prop:vote:{prop.id}:disagree")
             ],
-            [InlineKeyboardButton(text="📝 Gerekçe / Fikir Ekle", callback_data=f"prop:reason:{prop.id}")]
+            [InlineKeyboardButton(text=b_rsn, callback_data=f"prop:reason:{prop.id}")],
+            [InlineKeyboardButton(text=b_res, callback_data=f"prop:results:{prop.id}")],
+            [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=back_cb)]
         ]
         if prop.attachment_file_id:
             b_att = {"tr": "📎 Ekli Belgeyi Gör", "ru": "📎 Прикрепленный файл", "uz": "📎 Biriktirilgan fayl", "en": "📎 View Attachment"}.get(lang, "📎 View Attachment")
@@ -13134,11 +13141,32 @@ async def process_teacher_proposal_content(message: Message, state: FSMContext):
         await session.commit()
 
         # 3. Dispatch localized ballot card to other staff members
-        staff_users = (await session.execute(select(User).where(User.role.in_(["teacher", "admin"])))).scalars().all()
-        for su in staff_users:
-            if su.telegram_id == user_id:
+        target_staff_ids = set(ADMIN_IDS)
+        db_staff_users = (await session.execute(
+            select(User).where(
+                or_(
+                    User.role.in_(["teacher", "admin"]),
+                    User.telegram_id.in_(ADMIN_IDS)
+                ),
+                User.is_bot_blocked == False,
+                User.is_blacklisted == False
+            )
+        )).scalars().all()
+        user_lang_map = {u.telegram_id: (u.language or "tr") for u in db_staff_users if u.telegram_id}
+        for u in db_staff_users:
+            if u.telegram_id:
+                target_staff_ids.add(u.telegram_id)
+
+        tch_records = (await session.execute(select(Teacher.telegram_id).where(Teacher.telegram_id.isnot(None)))).scalars().all()
+        for tid in tch_records:
+            if tid:
+                target_staff_ids.add(tid)
+
+        dispatched_count = 0
+        for target_tid in target_staff_ids:
+            if target_tid == user_id:
                 continue  # Creator receives confirmation card instead of ballot
-            su_lang = su.language or "tr"
+            su_lang = user_lang_map.get(target_tid, "tr")
             type_lbl_su = {
                 "student_complaint": {
                     "tr": "⚠️ Öğrenci Şikayeti & Disiplin",
@@ -13220,7 +13248,15 @@ async def process_teacher_proposal_content(message: Message, state: FSMContext):
             ]
 
             try:
-                await message.bot.send_message(chat_id=su.telegram_id, text=vote_card_su, reply_markup=InlineKeyboardMarkup(inline_keyboard=vote_buttons_su), parse_mode="HTML")
+                sent_msg = await safe_send_message(
+                    message.bot,
+                    chat_id=target_tid,
+                    text=vote_card_su,
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=vote_buttons_su),
+                    parse_mode="HTML"
+                )
+                if sent_msg:
+                    dispatched_count += 1
                 await asyncio.sleep(0.04)
             except Exception:
                 pass
@@ -13467,6 +13503,10 @@ async def cb_proposal_view_results(query: CallbackQuery):
         )
 
         buttons = []
+        if prop.status == "active":
+            b_vote_btn = {"tr": "🗳️ Oy Ver / Değiştir", "ru": "🗳️ Голосовать / Изменить", "uz": "🗳️ Ovoz berish", "en": "🗳️ Cast / Change Vote"}.get(lang, "🗳️ Vote")
+            buttons.append([InlineKeyboardButton(text=b_vote_btn, callback_data=f"prop:open:{prop.id}")])
+
         if is_admin_user(user, query.from_user.id) and prop.status == "active":
             btn_acc = {"tr": "🏆 Kabul Et & Onayla", "ru": "🏆 Принять решение", "uz": "🏆 Qabul qilish", "en": "🏆 Accept & Enact"}.get(lang, "Accept")
             btn_rej = {"tr": "❌ Reddet", "ru": "❌ Отклонить", "uz": "❌ Rad etish", "en": "❌ Reject"}.get(lang, "Reject")
@@ -13692,12 +13732,54 @@ async def process_admin_prop_content(message: Message, state: FSMContext):
             [InlineKeyboardButton(text=b_live, callback_data=f"prop:results:{prop.id}")]
         ]
 
-        staff_users = (await session.execute(select(User).where(User.role.in_(["teacher", "admin"])))).scalars().all()
-        for su in staff_users:
+        target_staff_ids = set(ADMIN_IDS)
+        db_staff_users = (await session.execute(
+            select(User).where(
+                or_(
+                    User.role.in_(["teacher", "admin"]),
+                    User.telegram_id.in_(ADMIN_IDS)
+                ),
+                User.is_bot_blocked == False,
+                User.is_blacklisted == False
+            )
+        )).scalars().all()
+        user_lang_map = {u.telegram_id: (u.language or "tr") for u in db_staff_users if u.telegram_id}
+        for u in db_staff_users:
+            if u.telegram_id:
+                target_staff_ids.add(u.telegram_id)
+
+        tch_records = (await session.execute(select(Teacher.telegram_id).where(Teacher.telegram_id.isnot(None)))).scalars().all()
+        for tid in tch_records:
+            if tid:
+                target_staff_ids.add(tid)
+
+        for target_tid in target_staff_ids:
+            if target_tid == message.from_user.id:
+                continue
+            su_lang = user_lang_map.get(target_tid, "tr")
+            b_acc_su = {"tr": "✅ Kabul / Katılıyorum", "ru": "✅ Согласен", "uz": "✅ Qo'shilaman", "en": "✅ Agree"}.get(su_lang, "✅ Agree")
+            b_rej_su = {"tr": "❌ Red / Karşıyım", "ru": "❌ Не согласен", "uz": "❌ Qo'shilmayman", "en": "❌ Disagree"}.get(su_lang, "❌ Disagree")
+            b_rsn_su = {"tr": "📝 Gerekçe / Fikir Ekle", "ru": "📝 Добавить комментарий", "uz": "📝 Izoh / Fikr qo'shish", "en": "📝 Add Note"}.get(su_lang, "📝 Add Note")
+            b_live_su = {"tr": "📊 Canlı Sonuçlar", "ru": "📊 Результаты", "uz": "📊 Natijalar", "en": "📊 Live Results"}.get(su_lang, "📊 Live Results")
+            vote_btns_su = [
+                [
+                    InlineKeyboardButton(text=b_acc_su, callback_data=f"prop:vote:{prop.id}:agree"),
+                    InlineKeyboardButton(text=b_rej_su, callback_data=f"prop:vote:{prop.id}:disagree")
+                ],
+                [InlineKeyboardButton(text=b_rsn_su, callback_data=f"prop:reason:{prop.id}")],
+                [InlineKeyboardButton(text=b_live_su, callback_data=f"prop:results:{prop.id}")]
+            ]
             try:
-                await message.bot.send_message(chat_id=su.telegram_id, text=vote_card, reply_markup=InlineKeyboardMarkup(inline_keyboard=vote_buttons), parse_mode="HTML")
+                await safe_send_message(
+                    message.bot,
+                    chat_id=target_tid,
+                    text=vote_card,
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=vote_btns_su),
+                    parse_mode="HTML"
+                )
                 await asyncio.sleep(0.04)
-            except Exception: pass
+            except Exception:
+                pass
 
         succ_txt = f"✅ <b>İdari Teklif Oylamaya Açıldı (#{prop.id})!</b>\\nTüm idare ve öğretmenlere oylama kartı iletildi."
         buttons_ret = [
@@ -13725,7 +13807,7 @@ async def cb_teacher_active_proposals_list(query: CallbackQuery):
 
         buttons = []
         for p in props:
-            buttons.append([InlineKeyboardButton(text=f"🗳️ #{p.id} {p.title[:25]}", callback_data=f"prop:results:{p.id}")])
+            buttons.append([InlineKeyboardButton(text=f"🗳️ #{p.id} {p.title[:25]}", callback_data=f"prop:open:{p.id}")])
         buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="tch:prop_hub")])
 
         hdr_ap = "🗳️ <b>Aktif Oylama ve İstişareler:</b>\\nOyunuzu kullanmak veya sonuçları görmek için seçiniz:"
