@@ -224,20 +224,21 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
     bot_obj = target.bot if isinstance(target, Message) else (target.message.bot if target.message else bot)
     target_chat_id = target.chat.id if isinstance(target, Message) else (target.message.chat.id if target.message else target.from_user.id)
     is_reply_kb = isinstance(reply_markup, ReplyKeyboardMarkup)
-    anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)
 
-    # 1. Determine message ID to edit in-place
+    # If incoming target was a user message (e.g. from reply keyboard click), delete it immediately
+    if isinstance(target, Message):
+        try: await target.delete()
+        except Exception: pass
+
+    # 1. Determine message ID to edit in-place:
+    # Always prefer the existing active card on screen (LAST_MENU_MSG_ID or target.message_id)
     edit_mid = None
     if isinstance(target, CallbackQuery) and target.message and target.message.from_user and target.message.from_user.is_bot and not target.message.photo:
         edit_mid = target.message.message_id
     elif LAST_MENU_MSG_ID.get(target_chat_id):
         edit_mid = LAST_MENU_MSG_ID.get(target_chat_id)
 
-    # Never overwrite the keyboard anchor with an inline card
-    if edit_mid and anchor_id and edit_mid == anchor_id and not is_reply_kb:
-        edit_mid = None
-
-    # 2. Attempt in-place edit
+    # 2. Attempt in-place edit (only if not replacing with a ReplyKeyboardMarkup)
     if edit_mid and not is_reply_kb:
         try:
             await bot_obj.edit_message_text(chat_id=target_chat_id, message_id=edit_mid, text=text, reply_markup=reply_markup, parse_mode="HTML")
@@ -255,14 +256,14 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
                     return
                 pass
 
-    # 3. Fallback: send message and clean up old card (NEVER delete keyboard anchor!)
+    # 3. If in-place edit failed or not possible, send replacement card and delete previous card immediately
     old_card_id = LAST_MENU_MSG_ID.get(target_chat_id)
     try:
         s_m = await bot_obj.send_message(chat_id=target_chat_id, text=text, reply_markup=reply_markup, parse_mode="HTML")
         if s_m:
             LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
             ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
-            if old_card_id and old_card_id != s_m.message_id and old_card_id != anchor_id:
+            if old_card_id and old_card_id != s_m.message_id:
                 try: await bot_obj.delete_message(chat_id=target_chat_id, message_id=old_card_id)
                 except Exception: pass
         return
@@ -272,7 +273,7 @@ async def safe_edit_or_answer(target: Message | CallbackQuery, text: str, reply_
         if s_m:
             LAST_MENU_MSG_ID[target_chat_id] = s_m.message_id
             ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(s_m.message_id)
-            if old_card_id and old_card_id != s_m.message_id and old_card_id != anchor_id:
+            if old_card_id and old_card_id != s_m.message_id:
                 try: await bot_obj.delete_message(chat_id=target_chat_id, message_id=old_card_id)
                 except Exception: pass
 
@@ -1263,7 +1264,7 @@ LOCALES = {
         'rk_behavior': '⭐ Behavior & Points',
         'rk_cancel_action': '❌ Cancel Action',
         'rk_cat_reports': '📊 Reports & Audits',
-        'rk_cat_requests': '🛎️ Approval Center',
+        'rk_cat_requests': '🔔 Approval Center',
         'rk_cat_settings': '⚙️ System & Settings',
         'rk_cat_staff': '👥 Staff & Students',
         'rk_cat_tools': '🛠️ Admin Tools',
@@ -1714,7 +1715,7 @@ LOCALES = {
         'rk_behavior': '⭐ Поведение и баллы',
         'rk_cancel_action': '❌ Отменить действие',
         'rk_cat_reports': '📊 Отчеты и контроль',
-        'rk_cat_requests': '🛎️ Центр одобрений',
+        'rk_cat_requests': '🔔 Центр одобрений',
         'rk_cat_settings': '⚙️ Настройки системы',
         'rk_cat_staff': '👥 Ученики и учителя',
         'rk_cat_tools': '🛠️ Инструменты',
@@ -2165,7 +2166,7 @@ LOCALES = {
         'rk_behavior': '⭐ Davranış & Puan',
         'rk_cancel_action': '❌ İşlemi İptal Et',
         'rk_cat_reports': '📊 Raporlar & Denetim',
-        'rk_cat_requests': '🛎️ Onay Masası',
+        'rk_cat_requests': '🔔 Onay Masası',
         'rk_cat_settings': '⚙️ Sistem & Ayarlar',
         'rk_cat_staff': '👥 Kadro & Öğrenci',
         'rk_cat_tools': '🛠️ Yönetim Araçları',
@@ -2616,7 +2617,7 @@ LOCALES = {
         'rk_behavior': '⭐ Xulq-atvor va ball',
         'rk_cancel_action': '❌ Amalni bekor qilish',
         'rk_cat_reports': '📊 Hisobotlar va nazorat',
-        'rk_cat_requests': '🛎️ Tasdiqlash markazi',
+        'rk_cat_requests': '🔔 Tasdiqlash markazi',
         'rk_cat_settings': '⚙️ Tizim va sozlamalar',
         'rk_cat_staff': '👥 Xodimlar va o\'quvchilar',
         'rk_cat_tools': '🛠️ Boshqaruv vositalari',
@@ -4019,61 +4020,26 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
     bot_obj = target if isinstance(target, Bot) else (target.bot if isinstance(target, Message) else (target.message.bot if target.message else bot))
     target_chat_id = chat_id or (target.chat.id if isinstance(target, Message) else (target.message.chat.id if isinstance(target, CallbackQuery) and target.message else user.telegram_id))
 
-    # 1. Ensure Keyboard Anchor Message is permanently present with ReplyKeyboardMarkup
-    anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)
-    if not anchor_id:
-        anchor_text = {
-            "tr": "🏫 <b>Haliç Okul Yönetim Paneli</b>\n<i>Kalıcı alt menü ve operasyon masası devrede.</i>",
-            "ru": "🏫 <b>Панель управления Haliç</b>\n<i>Нижнее меню и рабочий стол активны.</i>",
-            "uz": "🏫 <b>Haliç boshqaruv paneli</b>\n<i>Pastki menyu va ish stoli faol.</i>",
-            "en": "🏫 <b>Haliç School Desk</b>\n<i>Bottom menu and operational desk active.</i>"
-        }.get(lang, "🏫 <b>Haliç Okul Yönetim Paneli</b>")
-        try:
-            anc = await bot_obj.send_message(
-                chat_id=target_chat_id,
-                text=anchor_text,
-                reply_markup=target_reply_kb,
-                parse_mode="HTML"
-            )
-            if anc:
-                KEYBOARD_ANCHOR_MSG_ID[target_chat_id] = anc.message_id
-                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(anc.message_id)
-        except Exception:
-            pass
-
-    # 2. In-place edit or render the active operational card
-    old_card_id = LAST_MENU_MSG_ID.get(target_chat_id)
-    card_edited = False
-    if old_card_id and old_card_id != KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id):
-        try:
-            await bot_obj.edit_message_text(
-                chat_id=target_chat_id,
-                message_id=old_card_id,
-                text=text,
-                reply_markup=None,
-                parse_mode="HTML"
-            )
-            card_edited = True
-        except Exception:
-            pass
-
-    if not card_edited:
-        sent_m = await bot_obj.send_message(
-            chat_id=target_chat_id,
-            text=text,
-            reply_markup=None,
-            parse_mode="HTML"
-        )
-        if sent_m:
-            new_mid = sent_m.message_id
-            LAST_MENU_MSG_ID[target_chat_id] = new_mid
-            ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(new_mid)
-            await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
-
     if isinstance(target, Message):
         try: await target.delete()
         except Exception: pass
-    elif isinstance(target, CallbackQuery) and target.message and target.message.message_id != LAST_MENU_MSG_ID.get(target_chat_id):
+
+    # In single-surface architecture: exactly ONE card exists at all times!
+    # Sending dashboard with target_reply_kb sets the persistent 2-column bottom menu!
+    sent_m = await bot_obj.send_message(
+        chat_id=target_chat_id,
+        text=text,
+        reply_markup=target_reply_kb,
+        parse_mode="HTML"
+    )
+    if sent_m:
+        new_mid = sent_m.message_id
+        LAST_MENU_MSG_ID[target_chat_id] = new_mid
+        ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(new_mid)
+        # Purge all previous bot messages so zero old cards remain above it!
+        await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
+
+    if isinstance(target, CallbackQuery) and target.message and target.message.message_id != LAST_MENU_MSG_ID.get(target_chat_id):
         try: await target.message.delete()
         except Exception: pass
 
@@ -7578,6 +7544,7 @@ async def cb_cat_staff(event: Message | CallbackQuery, state: FSMContext | None 
             [InlineKeyboardButton(text=get_text("btn_bot_block_monitor", lang), callback_data="adm:bot_block_monitor:0"), InlineKeyboardButton(text=get_text("btn_class_promotion", lang), callback_data="adm:class_promotion_init")],
             [InlineKeyboardButton(text="🎓 " + {"tr": "Mezunlar Arşivi", "ru": "Архив выпускников", "uz": "Bitiruvchilar arxivi", "en": "Alumni Archive"}.get(lang, "Alumni"), callback_data="adm:graduates:0")]
         ]
+        buttons.append(get_nav_buttons(lang, back_callback="adm:dashboard"))
         await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     if isinstance(event, CallbackQuery):
         await event.answer()
@@ -7723,6 +7690,7 @@ async def cb_cat_settings(event: Message | CallbackQuery, state: FSMContext | No
             [InlineKeyboardButton(text=get_text("btn_clean_logs", lang), callback_data="adm:clean_old_logs"), InlineKeyboardButton(text=get_text("btn_export_all_data", lang), callback_data="adm:export_all_excel")],
             [InlineKeyboardButton(text=get_text("btn_timezone_setting", lang, offset=TIMEZONE_OFFSET), callback_data="adm:timezone_menu"), InlineKeyboardButton(text=get_text("btn_lang", lang), callback_data="act_change_lang")],
         ]
+        buttons.append(get_nav_buttons(lang, back_callback="adm:dashboard"))
         await safe_edit_or_answer(event, title, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     if isinstance(event, CallbackQuery):
         await event.answer()
@@ -8979,6 +8947,7 @@ async def cb_grade_classes(query: CallbackQuery, state: FSMContext):
         buttons = [[InlineKeyboardButton(text=get_text("btn_recent_grades_menu", lang), callback_data="tch:recent_grades")]]
         for c in classes:
             buttons.append([InlineKeyboardButton(text=f"🏫 {c}", callback_data=f"gr_cls:{c}")])
+        buttons.append(get_nav_buttons(lang, back_callback="adm:dashboard"))
         await safe_edit_or_answer(query, get_text("grade_select_class", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
@@ -9288,6 +9257,7 @@ async def cb_teacher_behavior_classes(query: CallbackQuery):
         for c in classes:
             buttons.append([InlineKeyboardButton(text=f"🏫 {c}", callback_data=f"bh_cls:{c}")])
         prompt_b = {"tr": "⭐ Davranış değerlendirmesi yapmak istediğiniz sınıfı seçiniz:", "ru": "⭐ Выберите класс:", "uz": "⭐ Xulq-atvor baholash uchun sinfni tanlang:", "en": "⭐ Select class for behavior evaluation:"}.get(lang, "⭐ Select class:")
+        buttons.append(get_nav_buttons(lang, back_callback="adm:dashboard"))
         await safe_edit_or_answer(query, prompt_b, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
@@ -9474,6 +9444,7 @@ async def cb_hw_classes(query: CallbackQuery, state: FSMContext):
         for c in classes:
             buttons.append([InlineKeyboardButton(text=f"📢 {c} - {get_text('btn_send_new_hw', lang)}", callback_data=f"hw_cls:{c}")])
         buttons.append([InlineKeyboardButton(text=get_text("btn_my_hws", lang), callback_data="tch:view_my_hws")])
+        buttons.append(get_nav_buttons(lang, back_callback="adm:dashboard"))
         await safe_edit_or_answer(query, get_text("prompt_hw_class", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await query.answer()
 
