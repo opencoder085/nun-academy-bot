@@ -3534,6 +3534,81 @@ SUBMISSION_CACHE = {}
 BC_CACHE = {}
 ADMIN_DISPATCHED_NOTIFS = {}
 
+async def sync_admin_notif_resolution(bot_obj: Bot, key: str, actor_id: int, actor_name: str, status: str, summary: str):
+    dispatched = ADMIN_DISPATCHED_NOTIFS.pop(key, [])
+
+    async with AsyncSessionLocal() as session:
+        admin_users = (await session.execute(select(User).where(User.role == "admin"))).scalars().all()
+        admin_lang_map = {u.telegram_id: (u.language or "tr") for u in admin_users}
+        for a_id in ADMIN_IDS:
+            if a_id not in admin_lang_map:
+                admin_lang_map[a_id] = "tr"
+
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+
+    for a_id, msg_id in dispatched:
+        # 1. Silme işlemi: Tüm adminlerin sohbetindeki beklemede olan bildirim kartını yok et!
+        try:
+            await bot_obj.delete_message(chat_id=a_id, message_id=msg_id)
+        except Exception:
+            try:
+                await bot_obj.edit_message_reply_markup(chat_id=a_id, message_id=msg_id, reply_markup=None)
+            except Exception:
+                pass
+
+        # 2. Bilgilendirme: İşlemi yapan admin HARİÇ diğer tüm adminlere anlık haber ver!
+        if a_id != actor_id:
+            a_lang = admin_lang_map.get(a_id, "tr")
+            status_lbl = {
+                "approved": {"tr": "✅ ONAYLANDI", "ru": "✅ ОДОБРЕНО", "uz": "✅ TASDIQLANDI", "en": "✅ APPROVED"},
+                "rejected": {"tr": "❌ REDDEDİLDİ", "ru": "❌ ОТКЛОНЕНО", "uz": "❌ RAD ETILDI", "en": "❌ REJECTED"}
+            }.get(status, {}).get(a_lang, status.upper())
+
+            info_card = {
+                "tr": (
+                    "📢 <b>YÖNETİCİ BİLGİLENDİRMESİ</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📌 <b>Durum:</b> {status_lbl}\n"
+                    f"👤 <b>İşlemi Yapan:</b> <b>{escape_html(actor_name)}</b>\n"
+                    f"📝 <b>Açıklama:</b> {escape_html(summary)}\n"
+                    f"📅 <b>Tarih:</b> {now_str}\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                ),
+                "ru": (
+                    "📢 <b>УВЕДОМЛЕНИЕ ДЛЯ АДМИНИСТРАЦИИ</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📌 <b>Статус:</b> {status_lbl}\n"
+                    f"👤 <b>Администратор:</b> <b>{escape_html(actor_name)}</b>\n"
+                    f"📝 <b>Детали:</b> {escape_html(summary)}\n"
+                    f"📅 <b>Дата:</b> {now_str}\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                ),
+                "uz": (
+                    "📢 <b>MA'MURIYAT UCHUN XABARNOMA</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📌 <b>Holat:</b> {status_lbl}\n"
+                    f"👤 <b>Bajaruvchi ma'mur:</b> <b>{escape_html(actor_name)}</b>\n"
+                    f"📝 <b>Tafsilot:</b> {escape_html(summary)}\n"
+                    f"📅 <b>Sana:</b> {now_str}\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                ),
+                "en": (
+                    "📢 <b>ADMINISTRATIVE UPDATE</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📌 <b>Action:</b> {status_lbl}\n"
+                    f"👤 <b>Handled by:</b> <b>{escape_html(actor_name)}</b>\n"
+                    f"📝 <b>Details:</b> {escape_html(summary)}\n"
+                    f"📅 <b>Date:</b> {now_str}\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                )
+            }.get(a_lang, f"Request {status} by {actor_name}")
+
+            try:
+                await bot_obj.send_message(chat_id=a_id, text=info_card, parse_mode="HTML")
+            except Exception:
+                pass
+
+
 # ======================================================================
 # 8. ROUTER: BAŞLANGIÇ, PROFİL, KİMLİK DOĞRULAMA VE OTURUM KAPATMA
 # ======================================================================
@@ -4547,6 +4622,11 @@ async def cb_admin_view_request(query: CallbackQuery, state: FSMContext | None =
         req = await session.get(AccessRequest, req_id)
         if not req or req.status != "pending":
             await query.answer(get_text("request_already_handled", lang), show_alert=True)
+            if query.message:
+                try: await query.message.delete()
+                except Exception:
+                    try: await query.message.edit_reply_markup(reply_markup=None)
+                    except Exception: pass
             await cb_admin_requests_list(query)
             return
 
@@ -4619,6 +4699,11 @@ async def cb_admin_approve_request(query: CallbackQuery, state: FSMContext):
         req = await session.get(AccessRequest, req_id)
         if not req or req.status != "pending":
             await query.answer(get_text("request_already_handled", lang), show_alert=True)
+            if query.message:
+                try: await query.message.delete()
+                except Exception:
+                    try: await query.message.edit_reply_markup(reply_markup=None)
+                    except Exception: pass
             return
 
         if req.role == "student":
@@ -5483,6 +5568,11 @@ async def cb_admin_reject_request(query: CallbackQuery):
         req = await session.get(AccessRequest, req_id)
         if not req or req.status != "pending":
             await query.answer(get_text("request_already_handled", lang), show_alert=True)
+            if query.message:
+                try: await query.message.delete()
+                except Exception:
+                    try: await query.message.edit_reply_markup(reply_markup=None)
+                    except Exception: pass
             return
 
         req.status = "rejected"
