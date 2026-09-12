@@ -4014,26 +4014,79 @@ async def render_clean_dashboard(target: Message | CallbackQuery | Bot, user: Us
         try: await target.delete()
         except Exception: pass
 
-    # Always deliver a clean single operational card equipped with the collapsible role reply keyboard (pulls down to [::] icon on click)
-    sent_m = await bot_obj.send_message(
-        chat_id=target_chat_id,
-        text=text,
-        reply_markup=target_reply_kb,
-        parse_mode="HTML"
-    )
-    if sent_m:
-        new_mid = sent_m.message_id
-        LAST_MENU_MSG_ID[target_chat_id] = new_mid
-        chat_msgs = ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set())
-        chat_msgs.add(new_mid)
-        if len(chat_msgs) > 100:
-            ACTIVE_CHAT_MESSAGES[target_chat_id] = set(sorted(list(chat_msgs))[-30:])
-        await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
+    async with AsyncSessionLocal() as session:
+        sn_obj = await session.get(SystemSetting, "school_name")
+        school_name = sn_obj.value if (sn_obj and sn_obj.value) else {
+            "tr": "Okul Yönetim Sistemi",
+            "ru": "Система управления школой",
+            "uz": "Maktab boshqaruv tizimi",
+            "en": "School Management System"
+        }.get(lang, "School Management System")
 
-    if isinstance(target, CallbackQuery) and target.message and target.message.message_id != LAST_MENU_MSG_ID.get(target_chat_id):
+    # 1. Klavye Çapası (Anchor): ReplyKeyboardMarkup taşır, ASLA silinmez veya inline yapılmaz.
+    # Bu sayede Telegram'daki [::] dörtgen simge KESİNTİSİZ ve SABİT kalır!
+    anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)
+    anchor_text = f"🏛️ <b>{escape_html(school_name)}</b>"
+
+    if not anchor_id:
+        try:
+            anc = await bot_obj.send_message(
+                chat_id=target_chat_id,
+                text=anchor_text,
+                reply_markup=target_reply_kb,
+                parse_mode="HTML"
+            )
+            if anc:
+                KEYBOARD_ANCHOR_MSG_ID[target_chat_id] = anc.message_id
+                ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set()).add(anc.message_id)
+        except Exception:
+            pass
+    else:
+        try:
+            await bot_obj.edit_message_text(
+                chat_id=target_chat_id,
+                message_id=anchor_id,
+                text=anchor_text,
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+    # 2. Aktif Çalışma Kartı (LAST_MENU_MSG_ID): Yerinde güncellenen operasyon kartı
+    old_card_id = LAST_MENU_MSG_ID.get(target_chat_id)
+    card_edited = False
+    if old_card_id and old_card_id != KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id):
+        try:
+            await bot_obj.edit_message_text(
+                chat_id=target_chat_id,
+                message_id=old_card_id,
+                text=text,
+                reply_markup=None,
+                parse_mode="HTML"
+            )
+            card_edited = True
+        except Exception:
+            pass
+
+    if not card_edited:
+        sent_m = await bot_obj.send_message(
+            chat_id=target_chat_id,
+            text=text,
+            reply_markup=None,
+            parse_mode="HTML"
+        )
+        if sent_m:
+            new_mid = sent_m.message_id
+            LAST_MENU_MSG_ID[target_chat_id] = new_mid
+            chat_msgs = ACTIVE_CHAT_MESSAGES.setdefault(target_chat_id, set())
+            chat_msgs.add(new_mid)
+            if len(chat_msgs) > 100:
+                ACTIVE_CHAT_MESSAGES[target_chat_id] = set(sorted(list(chat_msgs))[-30:])
+            await purge_previous_bot_messages(bot_obj, target_chat_id, keep_msg_id=new_mid)
+
+    if isinstance(target, CallbackQuery) and target.message and target.message.message_id not in (LAST_MENU_MSG_ID.get(target_chat_id), KEYBOARD_ANCHOR_MSG_ID.get(target_chat_id)):
         try: await target.message.delete()
         except Exception: pass
-
 async def process_auth_code_string(code: str, user_id: int, message: Message, state: FSMContext):
     try: await message.delete()
     except Exception: pass
@@ -7715,7 +7768,20 @@ async def process_waiting_school_name(message: Message, state: FSMContext):
         "en": f"✅ School name successfully updated: <b>{escape_html(display_saved)}</b>"
     }.get(lang, "School name updated successfully.")
 
-    await message.answer(done_msg, parse_mode="HTML")
+    # 1. Update anchor header message in-place
+    anchor_id = KEYBOARD_ANCHOR_MSG_ID.get(message.chat.id)
+    if anchor_id:
+        try:
+            await message.bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=anchor_id,
+                text=f"🏛️ <b>{escape_html(display_saved)}</b>",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+    # 2. Re-render settings desk in-place with zero stray messages
     await cb_cat_settings(message)
 
 @router.callback_query(F.data == "adm:backup_db_now")
@@ -12029,8 +12095,12 @@ async def cb_show_my_credentials(event: Message | CallbackQuery, state: FSMConte
                 )
             }.get(lang, "Admin access active.")
 
+        back_cb = "adm:dashboard" if user.role == "admin" else ("tch:menu" if user.role == "teacher" else ("pr:menu" if user.role == "parent" else "st:menu"))
+        creds_kb = InlineKeyboardMarkup(inline_keyboard=[
+            get_nav_buttons(lang, back_callback=back_cb)
+        ])
         full_card = f"{title}\n──────────────\n{details_txt}"
-        await safe_edit_or_answer(event, full_card, parse_mode="HTML")
+        await safe_edit_or_answer(event, full_card, reply_markup=creds_kb, parse_mode="HTML")
     if isinstance(event, CallbackQuery):
         try: await event.answer()
         except Exception: pass
