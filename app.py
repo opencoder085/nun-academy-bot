@@ -1,3 +1,4 @@
+from typing import Callable, Dict, Any, Awaitable
 # -*- coding: utf-8 -*-
 """
 OKUL YÖNETİM TELEGRAM BOTU - KURUMSAL VE EKSİKSİZ TAM SİSTEM MİMARİSİ (PROD V27 - ENTERPRISE ULTIMATE)
@@ -18,15 +19,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, BackgroundTasks, status
 from fastapi.responses import JSONResponse
-from aiogram import Bot, Dispatcher, Router, F
+from aiogram import Bot, Dispatcher, Router, F, BaseMiddleware
 from aiogram.filters import CommandStart, Command
 from aiogram.types import (
+    TelegramObject,
     Update, Message, BotCommand, CallbackQuery, BufferedInputFile,
     InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
     ChatMemberUpdated
 )
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup, any_state
+from aiogram.fsm.state import State, StatesGroup, any_state, default_state
 
 # Global Safe Callback Query Wrapper (prevents invalid query id crashes on dummy callbacks)
 _orig_cb_answer = CallbackQuery.answer
@@ -38,6 +40,23 @@ async def _safe_cb_answer(self, text: str | None = None, show_alert: bool | None
     except Exception:
         return True
 CallbackQuery.answer = _safe_cb_answer
+
+class AutoCallbackAnswerMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: Dict[str, Any]
+    ) -> Any:
+        try:
+            return await handler(event, data)
+        finally:
+            if isinstance(event, CallbackQuery):
+                try:
+                    await event.answer()
+                except Exception:
+                    pass
+
 
 
 from sqlalchemy import (
@@ -868,11 +887,11 @@ LOCALES = {
         'btn_scan_bot_blocks': '🔍 Silent Connection Check (Health-Check)',
         'btn_rename_class': '✏️ Rename Class',
         'btn_graduates_archive': '🎓 Alumni Archive',
-        'btn_bulletin_program': '📅 School Bulletin & Schedule',
+        'btn_bulletin_program': '📅 Bulletin & Plan',
         'rk_cat_tools_reports': '📊 Reports & Tools',
         'btn_force_audio_alert': '🚨 Audio Alert',
         'btn_bot_block_monitor': '🚫 Block Radar',
-        'btn_proposals': '🗳️ Voting & Proposals',
+        'btn_proposals': '🗳️ Proposals',
         'acknowledged_toast': 'Confirmation recorded.',
         'action_cancelled': '❌ <b>Action cancelled.</b>',
         'admin_add_name_prompt': '👤 Enter Full Name of new administrator:',
@@ -1246,7 +1265,7 @@ LOCALES = {
         'restore_success': '✅ System backup restored successfully! Students: <b>{s_cnt}</b>, Teachers: <b>{t_cnt}</b>',
         'rk_appointments': '🤝 Parent Meetings',
         'rk_attendance': '📋 Fast Attendance',
-        'rk_behavior': '⭐ Behavior & Points',
+        'rk_behavior': '⭐ Behavior',
         'rk_cancel_action': '❌ Cancel Action',
         'rk_cat_reports': '📊 Reports & Audits',
         'rk_cat_requests': '🔔 Approval Center',
@@ -1256,10 +1275,10 @@ LOCALES = {
         'rk_grade': '📝 Grade Book',
         'rk_homework': '📢 Homework Board',
         'rk_logout': '🚪 Log Out',
-        'rk_parent_info': 'ℹ️ School Info Board',
+        'rk_parent_info': 'ℹ️ School Info',
         'rk_report': '📊 Report Card',
         'rk_restart': '🔄 Restart Bot',
-        'rk_switch_student': '🧑‍🎓 Switch Student',
+        'rk_switch_student': '🧑‍🎓 Switch Child',
         'rk_upload_medical': '🏥 Medical Note',
         'role_parent_btn': '👨‍👩‍👧‍👦 Parent',
         'role_student_btn': '🎓 Student',
@@ -1319,11 +1338,11 @@ LOCALES = {
         'btn_scan_bot_blocks': '🔍 Тихая проверка связи (Health-Check)',
         'btn_rename_class': '✏️ Переименовать класс',
         'btn_graduates_archive': '🎓 Архив выпуска',
-        'btn_bulletin_program': '📅 Школьный вестник и расписание',
+        'btn_bulletin_program': '📅 Новости и план',
         'rk_cat_tools_reports': '📊 Отчеты и тулы',
         'btn_force_audio_alert': '🚨 Срочный алярм',
         'btn_bot_block_monitor': '🚫 Блок-радар',
-        'btn_proposals': '🗳️ Голосования и предложения',
+        'btn_proposals': '🗳️ Голосования',
         'acknowledged_toast': 'Подтверждение принято.',
         'action_cancelled': '❌ <b>Действие отменено.</b>',
         'admin_add_name_prompt': '👤 Введите ФИО нового администратора:',
@@ -1437,7 +1456,7 @@ LOCALES = {
         'btn_emergency_alert': '🚨 Экстренное оповещение',
         'btn_emergency_monitor': '🚨 Контроль экстренных подтверждений',
         'btn_enter_grade': '📝 Выставить оценки',
-        'btn_exam_schedule': '📅 Расписание экзаменов',
+        'btn_exam_schedule': '📅 График экзаменов',
         'btn_excel': '📥 Импорт из Excel',
         'btn_excel_hub': '📥 Центр Excel',
         'btn_export_all_data': '📊 Экспорт базы',
@@ -1484,7 +1503,7 @@ LOCALES = {
         'btn_send_dm': '✉️ Отправить личное сообщение',
         'btn_send_new_hw': 'Отправить задание',
         'btn_share_contact': '📱 Поделиться номером телефона',
-        'btn_student_behavior_history': '⭐ История поведения',
+        'btn_student_behavior_history': '⭐ История баллов',
         'btn_submit_hw': '📤 Сдать задание',
         'btn_switch_student': '🧑‍🎓 Сменить ученика',
         'btn_teachers': '👨‍🏫 Учителя',
@@ -1696,22 +1715,22 @@ LOCALES = {
         'request_already_handled': '⚠️ Эта заявка уже обработана.',
         'restore_success': '✅ Данные успешно восстановлены! Учеников: <b>{s_cnt}</b>, Учителей: <b>{t_cnt}</b>',
         'rk_appointments': '🤝 Записи родителей',
-        'rk_attendance': '📋 Быстрая перекличка',
-        'rk_behavior': '⭐ Поведение и баллы',
+        'rk_attendance': '📋 Перекличка',
+        'rk_behavior': '⭐ Поведение',
         'rk_cancel_action': '❌ Отменить действие',
         'rk_cat_reports': '📊 Отчеты и контроль',
         'rk_cat_requests': '🔔 Центр одобрений',
         'rk_cat_settings': '⚙️ Настройки',
-        'rk_cat_staff': '👥 Ученики и учителя',
+        'rk_cat_staff': '👥 Персонал и дети',
         'rk_cat_tools': '🛠️ Инструменты',
         'rk_grade': '📝 Выставить оценки',
         'rk_homework': '📢 Доска заданий',
         'rk_logout': '🚪 Выйти',
-        'rk_parent_info': 'ℹ️ Инфопанель школы',
-        'rk_report': '📊 Табель успеваемости',
+        'rk_parent_info': 'ℹ️ Инфо о школе',
+        'rk_report': '📊 Табель оценок',
         'rk_restart': '🔄 Перезапуск',
-        'rk_switch_student': '🧑‍🎓 Сменить ученика',
-        'rk_upload_medical': '🏥 Отправить справку',
+        'rk_switch_student': '🧑‍🎓 Смена ученика',
+        'rk_upload_medical': '🏥 Медсправка',
         'role_parent_btn': '👨‍👩‍👧‍👦 Родитель',
         'role_student_btn': '🎓 Ученик',
         'role_teacher_btn': '👨‍🏫 Учитель',
@@ -1770,11 +1789,11 @@ LOCALES = {
         'btn_scan_bot_blocks': '🔍 Sessiz Sağlık Taraması (Health-Check)',
         'btn_rename_class': '✏️ Sınıf Adını Değiştir',
         'btn_graduates_archive': '🎓 Mezunlar Arşivi',
-        'btn_bulletin_program': '📅 Okul Bülteni & Program',
+        'btn_bulletin_program': '📅 Bülten & Program',
         'rk_cat_tools_reports': '📊 Rapor & Araçlar',
         'btn_force_audio_alert': '🚨 Acil Alarm',
         'btn_bot_block_monitor': '🚫 Blok Radarı',
-        'btn_proposals': '🗳️ Teklif & Şikayet Masası',
+        'btn_proposals': '🗳️ Oylamalar',
         'acknowledged_toast': 'Bildirim onaylandı.',
         'action_cancelled': '❌ <b>İşlem iptal edildi.</b>',
         'admin_add_name_prompt': '👤 Yeni yöneticinin Adını ve Soyadını yazınız:',
@@ -2158,10 +2177,10 @@ LOCALES = {
         'rk_grade': '📝 Not Girişi',
         'rk_homework': '📢 Ödev Panosu',
         'rk_logout': '🚪 Çıkış Yap',
-        'rk_parent_info': 'ℹ️ Okul Bilgi Panosu',
+        'rk_parent_info': 'ℹ️ Okul Bilgisi',
         'rk_report': '📊 Not Karnesi',
         'rk_restart': '🔄 Yeniden Başlat',
-        'rk_switch_student': '🧑‍🎓 Öğrenci Değiştir',
+        'rk_switch_student': '🧑‍🎓 Öğrenci Seç',
         'rk_upload_medical': '🏥 Sağlık Raporu',
         'role_parent_btn': '👨‍👩‍👧‍👦 Veli',
         'role_student_btn': '🎓 Öğrenci',
@@ -2221,11 +2240,11 @@ LOCALES = {
         'btn_scan_bot_blocks': '🔍 Tinch aloqa tekshiruvi (Health-Check)',
         'btn_rename_class': "✏️ Sinf nomini o'zgartirish",
         'btn_graduates_archive': '🎓 Bitiruvchilar',
-        'btn_bulletin_program': '📅 Maktab xabarlari va jadval',
+        'btn_bulletin_program': '📅 Xabar & Jadval',
         'rk_cat_tools_reports': '📊 Hisobot & Vosita',
         'btn_force_audio_alert': '🚨 Tezkor signal',
         'btn_bot_block_monitor': '🚫 Blok nazorati',
-        'btn_proposals': '🗳️ Taklif va shikoyatlar',
+        'btn_proposals': '🗳️ Ovoz berish',
         'acknowledged_toast': 'Tasdiqlandi.',
         'action_cancelled': '❌ <b>Amal bekor qilindi.</b>',
         'admin_add_name_prompt': '👤 Yangi ma\'murning Ism va Familiyasini kiriting:',
@@ -2339,10 +2358,10 @@ LOCALES = {
         'btn_emergency_alert': '🚨 Favqulodda holat / Qizil signal',
         'btn_emergency_monitor': '🚨 Favqulodda nazorat markazi',
         'btn_enter_grade': "📝 Baho qo\'yish",
-        'btn_exam_schedule': '📅 Imtihonlar jadvali',
+        'btn_exam_schedule': '📅 Imtihon jadvali',
         'btn_excel': '📥 Excel orqali yuklash',
         'btn_excel_hub': '📥 Excel markazi',
-        'btn_export_all_data': "📊 Eksport (.xlsx)'lumotlarni eksport qilish (.xlsx)",
+        'btn_export_all_data': "📊 Eksport (.xlsx)",
         'btn_gen_admin_code': "🔑 Bir martalik ma\'mur kodi yaratish",
         'btn_gender_female': '👩 Qiz bola',
         'btn_gender_male': "👨 O\'g\'il bola",
@@ -2381,12 +2400,12 @@ LOCALES = {
         'btn_school_admins': '👨‍💼 Rahbariyat',
         'btn_search_again': '🔍 Qayta qidirish',
         'btn_search_student': '🔍 Oʻquvchi izlash',
-        'btn_search_teacher': "🔍 Ustoz izlash'qituvchi qidirish",
+        'btn_search_teacher': "🔍 O'qituvchi qidirish",
         'btn_search_user': '🔍 Foydalanuvchi qidirish',
         'btn_send_dm': '✉️ Shaxsiy xabar yuborish',
         'btn_send_new_hw': 'Vazifa yuborish',
         'btn_share_contact': '📱 Telefon raqamimni ulashish',
-        'btn_student_behavior_history': '⭐ Xulq-atvor tarixi',
+        'btn_student_behavior_history': '⭐ Ballar tarixi',
         'btn_submit_hw': '📤 Vazifani topshirish',
         'btn_switch_student': "🧑‍🎓 O\'quvchini almashtirish",
         'btn_teachers': '👨‍🏫 Ustozlar',
@@ -2599,7 +2618,7 @@ LOCALES = {
         'restore_success': '✅ Tizim arxivi muvaffaqiyatli yuklandi! O\'quvchilar: <b>{s_cnt}</b>, O\'qituvchilar: <b>{t_cnt}</b>',
         'rk_appointments': '🤝 Uchrashuvlar',
         'rk_attendance': '📋 Tezkor davomat',
-        'rk_behavior': '⭐ Xulq-atvor va ball',
+        'rk_behavior': '⭐ Xulq-atvor',
         'rk_cancel_action': '❌ Amalni bekor qilish',
         'rk_cat_reports': '📊 Hisobotlar va nazorat',
         'rk_cat_requests': '🔔 Tasdiqlash',
@@ -2609,10 +2628,10 @@ LOCALES = {
         'rk_grade': "📝 Baho qo\'yish",
         'rk_homework': '📢 Vazifalar paneli',
         'rk_logout': '🚪 Chiqish',
-        'rk_parent_info': 'ℹ️ Maktab axborot paneli',
+        'rk_parent_info': "ℹ️ Maktab haqida",
         'rk_report': '📊 Baholar tabeli',
         'rk_restart': '🔄 Qayta ishga tushirish',
-        'rk_switch_student': "🧑‍🎓 O\'quvchini almashtirish",
+        'rk_switch_student': "🧑‍🎓 Bolani tanlash",
         'rk_upload_medical': "🏥 Ma\'lumotnoma",
         'role_parent_btn': '👨‍👩‍👧‍👦 Ota-ona',
         'role_student_btn': '🎓 O\'quvchi',
@@ -2736,6 +2755,14 @@ def get_cancel_reply_kb(lang: str = "tr") -> ReplyKeyboardMarkup:
         is_persistent=False
     )
 
+
+def get_inline_cancel_kb(lang: str = "tr", back_callback: str = "cancel_action") -> InlineKeyboardMarkup:
+    cb_data = f"cancel_action:{back_callback}" if back_callback != "cancel_action" and not back_callback.startswith("cancel_action:") else back_callback
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data=cb_data)
+    ]])
+
+
 def get_language_inline_kb() -> InlineKeyboardMarkup:
     buttons = [
         [
@@ -2757,7 +2784,7 @@ def get_attendance_grid_kb(students: list, attendance_state: dict, class_name: s
     inline_keyboard = []
     
     btn_all_txt = {
-        "tr": "🟢 Herkes Burada (Tek Dokunuşla Kaydet)",
+        "tr": "🟢 Herkes Burada (Hızlı Kaydet)",
         "ru": "🟢 Все присутствуют (Сохранить в 1 клик)",
         "uz": "🟢 Barcha darsda (1 bosishda saqlash)",
         "en": "🟢 All Present (1-Click Save)"
@@ -3544,6 +3571,7 @@ EXAM_CACHE = {}
 SUBMISSION_CACHE = {}
 BC_CACHE = {}
 PROP_CACHE = {}
+VOTE_REASON_CACHE = {}
 PIN_PENDING_ACTIONS = {}
 PIN_CHANGE_SESSION = {}
 ADMIN_PIN_INPUT = {}
@@ -3743,6 +3771,61 @@ async def cmd_cancel(message: Message, state: FSMContext):
         if s_m:
             LAST_MENU_MSG_ID[message.chat.id] = s_m.message_id
             ACTIVE_CHAT_MESSAGES.setdefault(message.chat.id, set()).add(s_m.message_id)
+
+
+@router.callback_query(F.data.func(lambda d: d == "cancel_action" or (isinstance(d, str) and d.startswith("cancel_action:"))))
+async def cb_cancel_action(query: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = query.from_user.id
+    for cache_dict in [ATTENDANCE_CACHE, GRADE_CACHE, HW_CACHE, REQ_CACHE, APP_CACHE, BEHAVIOR_CACHE, SUBMISSION_CACHE, EXAM_CACHE, BC_CACHE, PIN_PENDING_ACTIONS, PIN_CHANGE_SESSION, ADMIN_PIN_INPUT, ADMIN_PIN_FAILURES, PROP_CACHE]:
+        cache_dict.pop(user_id, None)
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        lang = user.language if user else "tr"
+
+    p_mid = PIN_MSG_ID.pop(user_id, None)
+    PIN_CHAT_ID.pop(user_id, None)
+    if p_mid:
+        try: await query.bot.delete_message(chat_id=query.message.chat.id, message_id=p_mid)
+        except Exception: pass
+
+    target = query.data.split(":", 1)[1] if ":" in query.data else ""
+    if target:
+        query.data = target
+        if target == "adm:classes":
+            await cb_classes_list(query, state)
+            return
+        elif target == "adm:cat_staff":
+            await cb_cat_staff(query, state)
+            return
+        elif target == "adm:cat_settings":
+            await cb_cat_settings(query, state)
+            return
+        elif target == "adm:cat_tools_reports":
+            await cb_cat_tools_reports(query, state)
+            return
+        elif target == "adm:excel_hub":
+            await cb_admin_excel_hub(query)
+            return
+        elif target == "adm:proposals_hub":
+            await cb_admin_proposals_hub(query)
+            return
+        elif target == "adm:teachers":
+            await cb_admin_teachers_list(query)
+            return
+        elif target.startswith("adm:show_class:"):
+            await cb_show_class_students(query)
+            return
+
+    # Default fallback: render clean dashboard in-place
+    if user and user.role != "guest":
+        role_kb = get_role_reply_kb(user.role, lang)
+        await render_clean_dashboard(query, user, reply_kb=role_kb)
+    else:
+        guest_kb = get_role_reply_kb("guest", lang)
+        await safe_edit_or_answer(query, get_text("unreg_welcome", lang), reply_markup=guest_kb)
+
 
 @router.message(any_state, Command("logout", "cikis"))
 @router.message(any_state, F.text.in_(["🚪 Çıkış Yap", "🚪 Выйти", "🚪 Chiqish", "🚪 Log Out", "/logout", "/cikis"]))
@@ -5529,8 +5612,6 @@ async def cb_appr_st_finalize(query: CallbackQuery, state: FSMContext):
         await safe_edit_or_answer(query, adm_success, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer("✅ " + ("Öğrenci eklendi!" if lang == "tr" else "O'quvchi qo'shildi!"))
 
-@router.callback_query(F.data.startswith("adm:rej_req:"))
-
 @router.callback_query(F.data == "adm:approve_all_requests")
 async def cb_admin_approve_all_requests(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
@@ -5542,7 +5623,7 @@ async def cb_admin_approve_all_requests(query: CallbackQuery):
 
         pending_requests = (await session.execute(select(AccessRequest).where(AccessRequest.status == "pending"))).scalars().all()
         if not pending_requests:
-            await query.answer("Bekleyen başvuru bulunamadı.", show_alert=True)
+            await query.answer({"tr": "Bekleyen başvuru bulunamadı.", "ru": "Нет ожидающих заявок.", "uz": "Kutilayotgan arizalar topilmadi.", "en": "No pending applications found."}.get(lang, "No pending applications found."), show_alert=True)
             return
 
         approved_count = 0
@@ -6104,16 +6185,19 @@ async def process_menu_update_text(message: Message, state: FSMContext):
 # 11. YÖNETİCİ İŞLEMLERİ (ÖĞRENCİ, ÖĞRETMEN, İNTERAKTİF SINIF MASASI & DEVRETME)
 # ======================================================================
 
-@router.callback_query(F.data == "adm:add_student")
 @router.callback_query(F.data == "adm:add_class")
 async def cb_admin_add_class_init(query: CallbackQuery, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
 
-    cancel_kb = get_cancel_reply_kb(lang)
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
+
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="adm:classes")
     prompt_add_c = {
         "tr": "🏫 <b>Yeni Sınıf Ekleme</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nLütfen eklemek istediğiniz yeni sınıfın adını yazınız (Örn: <code>10-A</code>, <code>11-B</code>, <code>5-C</code>):",
         "ru": "🏫 <b>Добавление нового класса</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nПожалуйста, введите название нового класса (Напр: <code>10-A</code>, <code>11-B</code>, <code>5-C</code>):",
@@ -6188,7 +6272,11 @@ async def cb_admin_del_class(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         st_cnt = (await session.execute(select(func.count(Student.id)).where(Student.class_name == class_name))).scalar() or 0
         if st_cnt > 0:
@@ -6220,7 +6308,7 @@ async def cb_add_student_to_specific_class(query: CallbackQuery, state: FSMConte
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback=f"adm:show_class:{class_name}")
     prompt_msg = {
         "tr": f"👤 <b>{class_name} Sınıfına Öğrenci Ekleme</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nLütfen öğrencinin Adını ve Soyadını yazınız:",
         "ru": f"👤 <b>Добавление ученика в класс {class_name}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nВведите ФИО ученика:",
@@ -6232,13 +6320,14 @@ async def cb_add_student_to_specific_class(query: CallbackQuery, state: FSMConte
     await state.set_state(Form.add_student_name)
     await query.answer()
 
+@router.callback_query(F.data == "adm:add_student")
 async def cb_start_add_student(query: CallbackQuery, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="adm:classes")
     await safe_edit_or_answer(query, get_text("prompt_student_name", lang), reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.add_student_name)
     await query.answer()
@@ -6258,12 +6347,15 @@ async def process_student_name(message: Message, state: FSMContext):
     await state.update_data(name=name_val)
 
     data = await state.get_data()
-    if data.get("class_name"):
-        await message.answer(get_text("prompt_student_no", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="HTML")
+    cls_target = data.get("class_name")
+    back_cb = f"adm:show_class:{cls_target}" if cls_target else "adm:classes"
+    cancel_kb = get_inline_cancel_kb(lang, back_callback=back_cb)
+    if cls_target:
+        await safe_edit_or_answer(message, get_text("prompt_student_no", lang), reply_markup=cancel_kb, parse_mode="HTML")
         await state.set_state(Form.add_student_no)
         return
 
-    await message.answer(get_text("prompt_student_class", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="HTML")
+    await safe_edit_or_answer(message, get_text("prompt_student_class", lang), reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.add_student_class)
 
 @router.message(Form.add_student_class)
@@ -6274,8 +6366,10 @@ async def process_student_class(message: Message, state: FSMContext):
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
 
-    await state.update_data(class_name=message.text.strip().upper())
-    await message.answer(get_text("prompt_student_no", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="HTML")
+    cls_name = message.text.strip().upper()
+    await state.update_data(class_name=cls_name)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="adm:classes")
+    await safe_edit_or_answer(message, get_text("prompt_student_no", lang), reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.add_student_no)
 
 @router.message(Form.add_student_no)
@@ -6322,7 +6416,7 @@ async def cb_start_add_teacher(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="adm:teachers")
     await safe_edit_or_answer(query, get_text("prompt_teacher_name", lang), reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.add_teacher_name)
     await query.answer()
@@ -6340,8 +6434,8 @@ async def process_teacher_name(message: Message, state: FSMContext):
         await message.answer(get_text("teacher_name_invalid", lang))
         return
     await state.update_data(name=name_val)
-
-    await message.answer(get_text("prompt_teacher_subject", lang), reply_markup=get_cancel_reply_kb(lang), parse_mode="HTML")
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="adm:teachers")
+    await safe_edit_or_answer(message, get_text("prompt_teacher_subject", lang), reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.add_teacher_subject)
 
 @router.message(Form.add_teacher_subject)
@@ -7362,11 +7456,6 @@ async def cb_delete_student_confirmed(query: CallbackQuery):
             return
     await query.answer()
 
-@router.callback_query(F.data == "adm:dashboard")
-@router.callback_query(F.data == "tch:menu")
-@router.callback_query(F.data == "pr:menu")
-@router.callback_query(F.data == "st:menu")
-@router.callback_query(F.data == "nav:main_menu")
 @router.callback_query(F.data.in_(["adm:dashboard", "tch:menu", "pr:menu", "st:menu", "nav:main_menu"]))
 async def cb_nav_to_main_menu(query: CallbackQuery, state: FSMContext | None = None):
     if state:
@@ -7521,7 +7610,11 @@ async def cb_admin_risk_radar(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         students = (await session.execute(select(Student).order_by(Student.class_name, Student.student_number))).scalars().all()
         risky_items = []
@@ -7558,7 +7651,11 @@ async def cb_admin_audit_logs(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         logs = (await session.execute(select(AuditLog).order_by(desc(AuditLog.created_at)).limit(12))).scalars().all()
         no_logs_txt = {"tr": "✅ Henüz kayıtlı işlem geçmişi bulunmamaktadır.", "ru": "✅ Журнал действий пуст.", "uz": "✅ Hozircha tizim jurnali bo'sh.", "en": "✅ No audit logs recorded yet."}.get(lang, "✅ No logs.")
@@ -7581,7 +7678,11 @@ async def cb_admin_academic_report(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         classes = (await session.execute(select(Student.class_name).distinct().order_by(Student.class_name))).scalars().all()
         rankings = []
@@ -7614,7 +7715,11 @@ async def cb_admin_att_check(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         today = get_local_date()
         all_classes = (await session.execute(select(Student.class_name).distinct().order_by(Student.class_name))).scalars().all()
@@ -7910,9 +8015,10 @@ async def process_waiting_school_name(message: Message, state: FSMContext):
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
-        if not is_admin_user(user, message.from_user.id):
-            return
         lang = user.language if user else "tr"
+        if not is_admin_user(user, message.from_user.id):
+            await message.answer(get_text("unauthorized_action", lang))
+            return
 
         sn_obj = await session.get(SystemSetting, "school_name")
         if not sn_obj:
@@ -7967,7 +8073,7 @@ async def cb_admin_backup_db_now(query: CallbackQuery):
     import os
     from aiogram.types import FSInputFile
     if not os.path.exists(db_path):
-        await query.answer("❌ school.db bulunamadı!", show_alert=True)
+        await query.answer({"tr": "❌ school.db bulunamadı!", "ru": "❌ school.db не найден!", "uz": "❌ school.db topilmadi!", "en": "❌ school.db not found!"}.get(lang, "❌ school.db not found!"), show_alert=True)
         return
 
     now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -8046,7 +8152,11 @@ async def cb_admin_toggle_readonly(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         setting = await session.get(SystemSetting, "readonly_mode")
         if not setting:
@@ -8211,7 +8321,9 @@ async def process_search_user_query(message: Message, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, message.from_user.id): return
+        if not is_admin_user(user, message.from_user.id):
+            await message.answer(get_text("unauthorized_action", lang))
+            return
 
         conds = [
             func.lower(User.full_name).contains(q_txt.lower()),
@@ -8420,7 +8532,11 @@ async def cb_admin_make_perm_admin(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         admin_u = await session.get(User, query.from_user.id)
         lang = admin_u.language if admin_u else "tr"
-        if not is_admin_user(admin_u, query.from_user.id): return
+        if not is_admin_user(admin_u, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         target_u = await session.get(User, tg_id)
         if target_u:
@@ -8462,7 +8578,11 @@ async def cb_admin_set_temp_admin(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         admin_u = await session.get(User, query.from_user.id)
         lang = admin_u.language if admin_u else "tr"
-        if not is_admin_user(admin_u, query.from_user.id): return
+        if not is_admin_user(admin_u, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         target_u = await session.get(User, tg_id)
         if target_u:
@@ -8490,7 +8610,11 @@ async def cb_admin_revoke_admin(query: CallbackQuery):
         if tg_id in PERMANENT_ADMIN_IDS:
             await query.answer(get_text("permanent_admin_protected", lang), show_alert=True)
             return
-        if not is_admin_user(admin_u, query.from_user.id): return
+        if not is_admin_user(admin_u, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         target_u = await session.get(User, tg_id)
         if target_u:
@@ -8615,7 +8739,11 @@ async def cb_admin_admins_list(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         db_admins = (await session.execute(select(User).where(User.role == "admin"))).scalars().all()
         admin_map = {u.telegram_id: u for u in db_admins}
@@ -8694,7 +8822,11 @@ async def cb_admin_gen_code(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         code_val = generate_secure_code("ADM")
         adm_key = AdminKey(code=code_val, created_by=query.from_user.id)
@@ -8712,7 +8844,7 @@ async def cb_admin_add_id_init(query: CallbackQuery, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="adm:cat_settings")
     await safe_edit_or_answer(query, get_text("admin_add_tg_id_prompt", lang), reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.waiting_admin_tg_id)
     await query.answer()
@@ -8789,7 +8921,11 @@ async def cb_admin_broadcast_hub(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         bc_bh = {"tr": "🏠 Ana Menü ➔ 🛠️ İdari Araçlar ➔ 📢 Toplu Duyuru", "ru": "🏠 Главное меню ➔ 🛠️ Инструменты ➔ 📢 Центр рассылки", "uz": "🏠 Asosiy menyu ➔ 🛠️ Boshqaruv ➔ 📢 E'lonlar", "en": "🏠 Main Menu ➔ 🛠️ Admin Tools ➔ 📢 Broadcast Hub"}.get(lang, "📢 Broadcast Hub")
         text = f"<b>{bc_bh}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + get_text("broadcast_hub_title", lang)
@@ -8815,7 +8951,11 @@ async def cb_admin_bc_target_selected(query: CallbackQuery, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         if target_type == "class":
             classes = await get_all_school_classes(session)
@@ -8944,7 +9084,8 @@ async def process_broadcast_text(message: Message, state: FSMContext):
 
         for u_id in set(target_ids):
             try:
-                read_btn = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👀 Okudum / Bilgim Var", callback_data=f"ack_bc:{notice.id}")]])
+                b_read = {"tr": "👀 Okudum / Bilgim Var", "ru": "👀 Прочитано", "uz": "👀 O'qidim / Xabardorman", "en": "👀 Read / Acknowledged"}.get(lang, "👀 Read / Acknowledged")
+                read_btn = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=b_read, callback_data=f"ack_bc:{notice.id}")]])
                 if photo_id:
                     await message.bot.send_photo(chat_id=u_id, photo=photo_id, caption=f"📢 <b>OKUL DUYURUSU</b>\n\n{safe_text}", reply_markup=read_btn, parse_mode="HTML")
                 else:
@@ -9002,7 +9143,11 @@ async def cb_admin_class_promotion_init(query: CallbackQuery, state: FSMContext 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         buttons = [
             [InlineKeyboardButton(text={"tr": "✅ Evet, Sınıfları Yükselt (PIN Gerekir)", "ru": "✅ Да, перевести классы (Требуется ПИН)", "uz": "✅ Ha, sinflarni ko'chirish (PIN kerak)", "en": "✅ Yes, Promote Classes (PIN Required)"}.get(lang, "✅ Promote Classes"), callback_data="adm:class_promotion_pin_prompt")]
@@ -9020,7 +9165,11 @@ async def cb_admin_class_promotion_confirm(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         target_chat_id = query.message.chat.id if query.message else query.from_user.id
         bot_obj = query.bot if getattr(query, 'bot', None) else (query.message.bot if query.message else bot)
@@ -9057,7 +9206,11 @@ async def cb_admin_clean_old_logs(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         cutoff = datetime.utcnow() - timedelta(days=90)
         res = await session.execute(delete(AuditLog).where(AuditLog.created_at < cutoff))
@@ -9072,7 +9225,11 @@ async def cb_admin_timezone_menu(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         bc_tz = {"tr": "🏠 Ana Menü ➔ ⚙️ Ayarlar ➔ 🕒 Zaman Dilimi", "ru": "🏠 Главное меню ➔ ⚙️ Настройки ➔ 🕒 Часовой пояс", "uz": "🏠 Asosiy menyu ➔ ⚙️ Sozlamalar ➔ 🕒 Vaqt mintaqasi", "en": "🏠 Main Menu ➔ ⚙️ Settings ➔ 🕒 Timezone"}.get(lang, "🕒 Timezone")
         buttons = [
@@ -9588,7 +9745,7 @@ async def cb_teacher_edit_grade_init(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="cancel_action")
     await safe_edit_or_answer(query, get_text("prompt_new_score", lang), reply_markup=cancel_kb)
     await state.set_state(Form.edit_grade_val)
     await query.answer()
@@ -9730,7 +9887,7 @@ async def cb_behavior_badge_chosen(query: CallbackQuery, state: FSMContext):
         st = await session.get(Student, st_id)
 
     prompt = get_text("prompt_behavior_note", lang, name=escape_md(st.full_name), badge=icon, title=escape_md(title))
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="cancel_action")
     await safe_edit_or_answer(query, prompt, reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.waiting_behavior_note)
     await query.answer()
@@ -10002,7 +10159,7 @@ async def cb_submit_homework_init(query: CallbackQuery, state: FSMContext):
         if not hw: return
 
     SUBMISSION_CACHE[query.from_user.id] = {"homework_id": hw_id}
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="cancel_action")
     await safe_edit_or_answer(query, get_text("prompt_hw_submission", lang, subject=escape_md(hw.subject)), reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.waiting_hw_submission)
     await query.answer()
@@ -10181,7 +10338,7 @@ async def cb_teacher_sub_rev_init(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="cancel_action")
     p_rev = {
         "tr": "📝 Lütfen öğrenciye iletilecek düzeltme notunu yazınız:",
         "ru": "📝 Введите комментарий для доработки задания:",
@@ -10278,7 +10435,7 @@ async def cb_admin_add_exam_init(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback=f"adm:show_class:{class_name}")
     p_ex_sb = {
         "tr": f"📅 *{class_name} Sınav Girişi*\n\nLütfen Ders Adını yazınız (Örn: `Matematik`):",
         "ru": f"📅 *Ввод экзамена для класса {class_name}*\n\nВведите название предмета (Напр: `Математика`):",
@@ -10351,9 +10508,13 @@ async def cb_admin_emergency_init(query: CallbackQuery, state: FSMContext | None
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
 
-    cancel_kb = get_cancel_reply_kb(lang)
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
+
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="adm:cat_tools_reports")
     await safe_edit_or_answer(query, get_text("emergency_alert_prompt", lang), reply_markup=cancel_kb, parse_mode="HTML")
     if state: await state.set_state(Form.waiting_emergency_text)
 
@@ -10367,7 +10528,9 @@ async def process_emergency_text(message: Message, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, message.from_user.id): return
+        if not is_admin_user(user, message.from_user.id):
+            await message.answer(get_text("unauthorized_action", lang))
+            return
 
         alert = EmergencyAlert(message_text=em_text, created_by=message.from_user.id)
         session.add(alert)
@@ -10419,7 +10582,11 @@ async def cb_admin_emergency_monitor(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         latest_alert = (await session.execute(select(EmergencyAlert).order_by(desc(EmergencyAlert.created_at)).limit(1))).scalar_one_or_none()
         no_em_txt = {
@@ -10489,7 +10656,7 @@ async def cb_parent_add_child_init(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="cancel_action")
     await safe_edit_or_answer(query, get_text("prompt_add_child_code", lang), reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.parent_add_child_code)
     await query.answer()
@@ -10933,7 +11100,13 @@ async def cb_admin_change_pin_init(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, user_id): return
+        if not is_admin_user(user, user_id):
+
+            if "query" in locals() and isinstance(locals()["query"], CallbackQuery):
+
+                await locals()["query"].answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         pin_setting = await session.get(SystemSetting, "admin_pin")
         is_custom_pin_set = (pin_setting is not None and bool(pin_setting.value.strip()))
@@ -11255,7 +11428,7 @@ async def cb_excel_teacher_info(query: CallbackQuery, state: FSMContext):
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="adm:excel_hub")
     await safe_edit_or_answer(query, get_text("prompt_upload_teacher_excel", lang), reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.waiting_teacher_excel)
     await query.answer()
@@ -11270,7 +11443,7 @@ async def cb_admin_restore_backup_direct(query: CallbackQuery, state: FSMContext
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
 
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="adm:cat_settings")
     await safe_edit_or_answer(query, get_text("prompt_restore_backup", lang), reply_markup=cancel_kb, parse_mode="HTML")
     if state: await state.set_state(Form.waiting_restore_excel)
 
@@ -11632,10 +11805,10 @@ def match_reply_button(text: str) -> str | None:
             if btn_txt and btn_txt == clean_text:
                 return action
 
-    clean_norm = clean_text.lower().replace("🏠", "").replace("⚡", "").replace("•", "").replace("📊", "").replace("🛠️", "").replace("👥", "").replace("🔔", "").replace("⚙️", "").replace("📁", "").replace("🔑", "").replace("🌐", "").replace("🚪", "").strip()
+    clean_norm = clean_text.lower().replace("🏠", "").replace("⚡", "").replace("•", "").replace("📊", "").replace("🛠️", "").replace("👥", "").replace("🔔", "").replace("⚙️", "").replace("📁", "").replace("🔑", "").replace("🌐", "").replace("🚪", "").replace("🗳️", "").replace("🗳", "").replace("📅", "").replace("🧑‍🎓", "").replace("ℹ️", "").replace("⭐", "").replace("📋", "").replace("📝", "").replace("📢", "").replace("🤝", "").replace("🏥", "").strip()
     
     # Fuzzy & Normalized matches for all languages & historical button labels
-    if any(m in clean_norm for m in ["kadro", "ogrenci", "öğrenci", "ученики", "учителя", "staff", "students", "xodim"]):
+    if any(m in clean_norm for m in ["kadro", "ogrenci", "öğrenci", "ученики", "учителя", "staff", "students", "xodim", "персонал"]):
         return "act_cat_staff"
     if any(m in clean_norm for m in ["rapor", "arac", "araç", "отчеты", "инструменты", "тулы", "reports", "tools", "hisobot"]):
         return "act_cat_tools_reports"
@@ -11647,18 +11820,46 @@ def match_reply_button(text: str) -> str | None:
         return "act_digital_locker"
     if any(m in clean_norm for m in ["sifre", "şifre", "пароли", "credentials", "passwords", "parol"]):
         return "act_my_credentials"
-    if any(m in clean_norm for m in ["dil", "язык", "language", "til", "tilni tanlash"]):
+    if any(m in clean_norm for m in ["dil", "язык", "language", "til"]):
         return "act_lang"
     if any(m in clean_norm for m in ["cikis", "çıkış", "выйти", "logout", "chiqish"]):
         return "act_logout"
+    if any(m in clean_norm for m in ["teklif", "oylama", "голосован", "предложен", "taklif", "ovoz", "proposal", "voting", "ballot", "oylar"]):
+        return "act_proposals"
+    if any(m in clean_norm for m in ["yoklama", "перекличка", "davomat", "attendance"]):
+        return "act_attendance"
+    if any(m in clean_norm for m in ["not gir", "оценки", "baho", "grade"]):
+        return "act_grade"
+    if any(m in clean_norm for m in ["davranış", "davranis", "поведение", "xulq", "behavior"]):
+        return "act_behavior"
+    if any(m in clean_norm for m in ["ödev", "odev", "задани", "vazifa", "homework"]):
+        return "act_homework"
+    if any(m in clean_norm for m in ["görüşme", "gorusme", "записи", "uchrashuv", "meeting"]):
+        return "act_appointments"
+    if any(m in clean_norm for m in ["karne", "табель", "tabel", "report"]):
+        return "act_report"
+    if any(m in clean_norm for m in ["tarix", "история", "geçmiş", "gecmis", "history"]):
+        return "act_behavior_hist"
+    if any(m in clean_norm for m in ["rapor", "справка", "медсправка", "ma'lumotnoma", "medical"]):
+        return "act_upload_medical"
+    if any(m in clean_norm for m in ["bülten", "bulten", "программ", "вестник", "график", "jadval", "bulletin", "plan"]):
+        return "act_parent_bulletin"
+    if any(m in clean_norm for m in ["öğrenci seç", "ogrenci sec", "смена", "almashtir", "tanlash", "switch"]):
+        return "act_switch_student"
+    if any(m in clean_norm for m in ["sınav", "sinav", "экзамен", "imtihon", "exam"]):
+        return "act_view_exams"
+    if any(m in clean_norm for m in ["bilgi", "инфо", "axborot", "info"]):
+        return "act_parent_info"
+    if any(m in clean_norm for m in ["giriş yap", "giris yap", "войти", "kirish", "log in"]):
+        return "act_enter_code"
+    if any(m in clean_norm for m in ["başvuru", "basvuru", "запрос", "talep", "ariza", "parol so", "request"]):
+        return "act_req_access"
     if clean_norm in [
         "ana menu", "ana menü", "baş menü", "bas menu", "главное меню", "главное",
         "glavnoe menu", "glavnoye menyu", "asosiy menyu", "main menu", "menu", "меню"
     ]:
         return "act_main_menu"
     return None
-
-
 @router.callback_query(F.data.startswith("rec_dismiss:"))
 async def cb_rec_dismiss(query: CallbackQuery):
     try:
@@ -11820,7 +12021,7 @@ async def cb_dl_cat(query: CallbackQuery):
                 "uz": f"📁 <b>{c_title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nUshbu toifada hozircha hujjat mavjud emas.",
                 "en": f"📁 <b>{c_title}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nNo records found in this category yet."
             }.get(lang, "Kayıt yok.")
-            buttons = [[InlineKeyboardButton(text="⬅️ Geri", callback_data="cb_digital_locker")]]
+            buttons = [[InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="cb_digital_locker")]]
             await safe_edit_or_answer(query, empty_txt, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
             return
 
@@ -11846,7 +12047,7 @@ async def cb_dl_cat(query: CallbackQuery):
         if nav_row:
             buttons.append(nav_row)
 
-        buttons.append([InlineKeyboardButton(text="⬅️ Dijital Dosyaya Dön", callback_data="cb_digital_locker")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="cb_digital_locker")])
 
         await safe_edit_or_answer(query, txt, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
 
@@ -11864,7 +12065,7 @@ async def cb_dl_view(query: CallbackQuery):
 
         rec = await session.get(DigitalRecord, rec_id)
         if not rec:
-            await query.answer("Kayıt bulunamadı.", show_alert=True)
+            await query.answer({"tr": "⚠️ Kayıt bulunamadı.", "ru": "⚠️ Запись не найдена.", "uz": "⚠️ Yozuv topilmadi.", "en": "⚠️ Record not found."}.get(lang, "⚠️ Record not found."), show_alert=True)
             return
 
         d_str = rec.created_at.strftime("%d.%m.%Y %H:%M")
@@ -11888,7 +12089,7 @@ async def cb_dl_view(query: CallbackQuery):
             }.get(lang, "📥 Dosyayı İndir")
             buttons.append([InlineKeyboardButton(text=dl_file_label, callback_data=f"dl_file:{rec.id}")])
 
-        buttons.append([InlineKeyboardButton(text="⬅️ Listeye Dön", callback_data=f"dl_cat:{cat}:{page}")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=f"dl_cat:{cat}:{page}")])
 
         await safe_edit_or_answer(query, detail_html, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
 
@@ -11899,7 +12100,7 @@ async def cb_dl_file(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         rec = await session.get(DigitalRecord, rec_id)
         if not rec or not rec.file_id:
-            await query.answer("Dosya bulunamadı.", show_alert=True)
+            await query.answer({"tr": "⚠️ Dosya bulunamadı.", "ru": "⚠️ Файл не найден.", "uz": "⚠️ Fayl topilmadi.", "en": "⚠️ File not found."}.get(lang, "⚠️ File not found."), show_alert=True)
             return
         
         try:
@@ -12377,7 +12578,7 @@ async def global_reply_keyboard_router(message: Message, state: FSMContext):
             return
 
 @router.message(any_state, F.text.func(lambda text: normalize_code(text).startswith(("VELI-", "OGR-", "HCA-", "ADM-")) or normalize_code(text) == ADMIN_CODE))
-@router.message(F.text)
+@router.message(default_state, F.text)
 async def smart_text_auth_router(message: Message, state: FSMContext):
     user_id = message.from_user.id
     clean_code = normalize_code(message.text)
@@ -12475,7 +12676,11 @@ async def cb_force_audio_alert_init(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         hdr = {
             "tr": "🚨 <b>ZORLA SESLİ ACİL BİLDİRİM MASASI</b>\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\nBu işlem botu sessize alan veya bildirimleri kapatan kullanıcılara Telegram'ın <code>disable_notification=False</code> parametresi ile <b>sesli yüksek öncelikli kırmızı alarm</b> gönderir.\\n\\nLütfen hedef kitleyi seçiniz:",
@@ -12610,7 +12815,7 @@ async def cb_view_proposal_attachment(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         prop = await session.get(Proposal, prop_id)
         if not prop or not prop.attachment_file_id:
-            await query.answer("⚠️ Bu teklife ait ekli belge bulunamadı.", show_alert=True)
+            await query.answer({"tr": "⚠️ Bu teklife ait ekli belge bulunamadı.", "ru": "⚠️ К этому предложению нет прикрепленного документа.", "uz": "⚠️ Ushbu taklifga biriktirilgan hujjat topilmadi.", "en": "⚠️ No attached document found for this proposal."}.get(lang, "⚠️ No attached document found for this proposal."), show_alert=True)
             return
 
         caption = f"📎 <b>{escape_html(prop.title)}</b> — Ekli Belge / Tutanak"
@@ -12659,7 +12864,8 @@ async def cb_open_proposal_for_vote(query: CallbackQuery):
             [InlineKeyboardButton(text="📝 Gerekçe / Fikir Ekle", callback_data=f"prop:reason:{prop.id}")]
         ]
         if prop.attachment_file_id:
-            vote_buttons.append([InlineKeyboardButton(text="📎 Ekli Belgeyi / Dosyayı Gör", callback_data=f"prop:view_att:{prop.id}")])
+            b_att = {"tr": "📎 Ekli Belgeyi Gör", "ru": "📎 Прикрепленный файл", "uz": "📎 Biriktirilgan fayl", "en": "📎 View Attachment"}.get(lang, "📎 View Attachment")
+            vote_buttons.append([InlineKeyboardButton(text=b_att, callback_data=f"prop:view_att:{prop.id}")])
         await safe_edit_or_answer(query, p_card, reply_markup=InlineKeyboardMarkup(inline_keyboard=vote_buttons), parse_mode="HTML")
     await query.answer()
 
@@ -12693,9 +12899,9 @@ async def cb_teacher_proposal_hub(query: CallbackQuery):
         )
 
         buttons = [
-            [InlineKeyboardButton(text="⚠️ " + {"tr": "Öğrenci Şikayeti / Disiplin", "ru": "Жалоба на ученика / Дисциплина", "uz": "O'quvchi shikoyati / Intizom", "en": "Student Disciplinary Complaint"}.get(lang, "Student Complaint"), callback_data="tch:prop_new:student_complaint")],
-            [InlineKeyboardButton(text="💡 " + {"tr": "Kurumsal Teklif / Öneri", "ru": "Школьное предложение / Идея", "uz": "Maktab taklifi / Tashabbus", "en": "School Proposal / Initiative"}.get(lang, "School Proposal"), callback_data="tch:prop_new:teacher_proposal")],
-            [InlineKeyboardButton(text="🗳️ " + {"tr": f"Aktif Oylamalar ({active_cnt})", "ru": f"Текущие голосования ({active_cnt})", "uz": f"Faol ovoz berishlar ({active_cnt})", "en": f"Active Ballots ({active_cnt})"}.get(lang, f"Active Ballots ({active_cnt})"), callback_data="tch:active_props:0")],
+            [InlineKeyboardButton(text="⚠️ " + {"tr": "Öğrenci Disiplin Şikayeti", "ru": "Дисциплинарная жалоба", "uz": "O'quvchi intizom shikoyati", "en": "Disciplinary Complaint"}.get(lang, "Disciplinary Complaint"), callback_data="tch:prop_new:student_complaint")],
+            [InlineKeyboardButton(text="💡 " + {"tr": "Kurumsal Teklif & Öneri", "ru": "Школьное предложение", "uz": "Maktab bo'yicha taklif", "en": "School Proposal"}.get(lang, "School Proposal"), callback_data="tch:prop_new:teacher_proposal")],
+            [InlineKeyboardButton(text="🗳️ " + {"tr": f"Aktif Oylamalar ({active_cnt})", "ru": f"Голосования ({active_cnt})", "uz": f"Ovoz berishlar ({active_cnt})", "en": f"Active Ballots ({active_cnt})"}.get(lang, f"Active Ballots ({active_cnt})"), callback_data="tch:active_props:0")],
             [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="tch:menu")]
         ]
         await safe_edit_or_answer(query, text_content, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
@@ -12820,20 +13026,41 @@ async def cb_teacher_prop_select_student(query: CallbackQuery, state: FSMContext
         await query.answer()
 @router.message(Form.waiting_prop_content)
 async def process_teacher_proposal_content(message: Message, state: FSMContext):
-    try: await message.delete()
-    except Exception: pass
-    text_content = message.text.strip()
-    cache = PROP_CACHE.pop(message.from_user.id, {})
-    prop_type = cache.get("type", "teacher_proposal")
-    st_id = cache.get("student_id")
-    await state.clear()
-
     user_id = message.from_user.id
+    text_content = (message.text or "").strip()
+
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         lang = user.language if user else "tr"
+
+        # 1. Validation check (minimum 3 characters)
+        if len(text_content) < 3:
+            warn_msg = {
+                "tr": "⚠️ <b>Geçersiz Teklif Metni</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nLütfen teklifiniz veya şikayetiniz için en az 3 karakterden oluşan açıklayıcı bir metin yazınız:",
+                "ru": "⚠️ <b>Слишком короткое описание</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nПожалуйста, введите содержательное описание предложения (не менее 3 символов):",
+                "uz": "⚠️ <b>Matn juda qisqa</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nIltimos, taklif yoki shikoyatingiz bo'yicha kamida 3 ta belgidan iborat aniq ma'lumot kiriting:",
+                "en": "⚠️ <b>Text Too Short</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nPlease enter a meaningful proposal description (at least 3 characters):"
+            }.get(lang, "Please enter at least 3 characters.")
+            cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=get_text("btn_cancel_action", lang), callback_data="tch:prop_hub")]
+            ])
+            await message.answer(warn_msg, reply_markup=cancel_kb, parse_mode="HTML")
+            return
+
+        # 2. Extract cache & state
+        cache = PROP_CACHE.pop(user_id, {})
+        prop_type = cache.get("type", "teacher_proposal")
+        st_id = cache.get("student_id")
+        await state.clear()
+
+        # Delete prompt card from chat to keep screen clean
+        old_prompt_id = LAST_MENU_MSG_ID.get(message.chat.id)
+        if old_prompt_id:
+            try: await message.bot.delete_message(chat_id=message.chat.id, message_id=old_prompt_id)
+            except Exception: pass
+
         tch = (await session.execute(select(Teacher).where(Teacher.telegram_id == user_id))).scalar_one_or_none()
-        creator_name = tch.full_name if tch else (user.full_name or "Öğretmen")
+        creator_name = tch.full_name if tch else (user.full_name or get_role_label("teacher", lang))
         st = await session.get(Student, st_id) if st_id else None
 
         if prop_type == "student_complaint" and st:
@@ -12854,33 +13081,11 @@ async def process_teacher_proposal_content(message: Message, state: FSMContext):
         session.add(proposal)
         await session.commit()
 
-        # Otomatik oylama kartı oluştur
-        type_lbl = {"student_complaint": "⚠️ Öğrenci Şikayeti & Disiplin", "teacher_proposal": "💡 Kurumsal Eğitim Teklifi", "admin_proposal": "👑 Yönetici İdari Teklifi"}.get(prop_type, "Teklif")
-        st_row = f"🧑‍🎓 <b>İlgili Öğrenci:</b> {escape_html(st.full_name)} ({escape_html(st.class_name)})\\n" if st else ""
-
-        vote_card = (
-            f"🗳️ <b>YENİ OYLAMA VE İSTİŞARE TALEBİ (#{proposal.id})</b>\\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n"
-            f"👤 <b>Teklif Eden:</b> {escape_html(creator_name)}\\n"
-            f"📌 <b>Kategori:</b> {type_lbl}\\n"
-            f"{st_row}"
-            f"📝 <b>Açıklama / Gerekçe:</b>\\n{escape_html(text_content)}\\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n"
-            "Lütfen görüşünüzü belirtiniz (Gerekçenizi de yazabilirsiniz):"
-        )
-
-        vote_buttons = [
-            [
-                InlineKeyboardButton(text="✅ Katılıyorum", callback_data=f"prop:vote:{proposal.id}:agree"),
-                InlineKeyboardButton(text="❌ Katılmıyorum", callback_data=f"prop:vote:{proposal.id}:disagree")
-            ],
-            [InlineKeyboardButton(text="📝 Gerekçe / Fikir Ekle", callback_data=f"prop:reason:{proposal.id}")],
-            [InlineKeyboardButton(text="📊 Oylama Sonuçları", callback_data=f"prop:results:{proposal.id}")]
-        ]
-
-        # Tüm öğretmenlere ve yöneticilere gönder
+        # 3. Dispatch localized ballot card to other staff members
         staff_users = (await session.execute(select(User).where(User.role.in_(["teacher", "admin"])))).scalars().all()
         for su in staff_users:
+            if su.telegram_id == user_id:
+                continue  # Creator receives confirmation card instead of ballot
             su_lang = su.language or "tr"
             type_lbl_su = {
                 "student_complaint": {
@@ -12968,18 +13173,40 @@ async def process_teacher_proposal_content(message: Message, state: FSMContext):
             except Exception:
                 pass
 
+        # 4. Immediate confirmation card to the creator
         succ_txt = {
-            "tr": f"✅ <b>Oylama Talebi Başarıyla Yayınlandı (#{proposal.id})!</b>\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\nTüm öğretmenlere ve idareye oylama kartı iletildi. Oylama sonuçlarını dilediğiniz an takip edebilirsiniz.",
-            "ru": f"✅ <b>Голосование успешно создано (#{proposal.id})!</b>\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\nКарточка отправлена учителям и администрации.",
-            "uz": f"✅ <b>Ovoz berish muvaffaqiyatli e'lon qilindi (#{proposal.id})!</b>\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\nBarcha o'qituvchilarga ovoz berish kartasi yetkazildi.",
-            "en": f"✅ <b>Voting Ballot Published (#{proposal.id})!</b>\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\nDispatched to all faculty and administration."
+            "tr": (
+                f"✅ <b>Teklifiniz Başarıyla Yayınlandı (#{proposal.id})!</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📌 <b>Başlık:</b> {escape_html(title)}\n\n"
+                "Teklifiniz tüm öğretmenlerin ve okul yönetiminin oylamasına sunuldu. Oylama sonuçlarını canlı olarak takip edebilirsiniz."
+            ),
+            "ru": (
+                f"✅ <b>Ваше предложение успешно опубликовано (#{proposal.id})!</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📌 <b>Тема:</b> {escape_html(title)}\n\n"
+                "Предложение вынесено на голосование учителей и администрации. Вы можете отслеживать ход голосования."
+            ),
+            "uz": (
+                f"✅ <b>Taklifingiz muvaffaqiyatli e'lon qilindi (#{proposal.id})!</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📌 <b>Mavzu:</b> {escape_html(title)}\n\n"
+                "Taklifingiz barcha o'qituvchilar va ma'muriyat ovoz berishiga taqdim etildi. Ovoz berish natijalarini kuzatib borishingiz mumkin."
+            ),
+            "en": (
+                f"✅ <b>Your Proposal Was Successfully Published (#{proposal.id})!</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📌 <b>Title:</b> {escape_html(title)}\n\n"
+                "Submitted for faculty and administration review and voting."
+            )
         }.get(lang, "Proposal published.")
 
         buttons_ret = [
-            [InlineKeyboardButton(text="📊 " + {"tr": "Sonuçları İzle", "ru": "Смотреть результаты", "uz": "Natijalarni ko'rish", "en": "View Results"}.get(lang, "Results"), callback_data=f"prop:results:{proposal.id}")]
+            [InlineKeyboardButton(text={"tr": "📊 Oylama Sonuçları", "ru": "📊 Результаты", "uz": "📊 Natijalar", "en": "📊 Results"}.get(lang, "Results"), callback_data=f"prop:results:{proposal.id}")],
+            [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="tch:prop_hub")]
         ]
         role_kb = get_role_reply_kb(user.role, lang)
-        sent_m = await message.bot.send_message(chat_id=message.chat.id, text=succ_txt, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons_ret), parse_mode="HTML")
+        sent_m = await message.answer(succ_txt, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons_ret), parse_mode="HTML")
         if sent_m:
             LAST_MENU_MSG_ID[message.chat.id] = sent_m.message_id
             ACTIVE_CHAT_MESSAGES.setdefault(message.chat.id, set()).add(sent_m.message_id)
@@ -13017,7 +13244,10 @@ async def cb_proposal_cast_vote(query: CallbackQuery):
 
         await session.commit()
 
-        choice_lbl = {"agree": "✅ Katılıyorum / Kabul", "disagree": "❌ Katılmıyorum / Red"}.get(choice, choice)
+        choice_lbl = {
+            "agree": {"tr": "✅ Katılıyorum", "ru": "✅ Согласен", "uz": "✅ Qo'shilaman", "en": "✅ Agree"}.get(lang, "Agree"),
+            "disagree": {"tr": "❌ Katılmıyorum", "ru": "❌ Не согласен", "uz": "❌ Qo'shilmayman", "en": "❌ Disagree"}.get(lang, "Disagree")
+        }.get(choice, choice)
         tst = {"tr": f"✅ Oyunuz kaydedildi: {choice_lbl}", "ru": f"✅ Ваш голос принят: {choice_lbl}", "uz": f"✅ Ovozingiz qabul qilindi: {choice_lbl}", "en": f"✅ Vote recorded: {choice_lbl}"}.get(lang, "Vote recorded.")
         await query.answer(tst, show_alert=True)
 
@@ -13072,8 +13302,9 @@ async def process_proposal_reason_text(message: Message, state: FSMContext):
         await session.commit()
 
         done_r = {"tr": "✅ Gerekçeniz başarıyla oylama kaydınıza eklendi!", "ru": "✅ Ваш комментарий успешно добавлен!", "uz": "✅ Izohingiz muvaffaqiyatli saqlandi!", "en": "✅ Reason successfully attached to your vote!"}.get(lang, "Reason saved.")
+        b_res = {"tr": "📊 Sonuçları Gör", "ru": "📊 Результаты", "uz": "📊 Natijalar", "en": "📊 Results"}.get(lang, "📊 Results")
         buttons = [
-            [InlineKeyboardButton(text="📊 Sonuçları Gör", callback_data=f"prop:results:{prop_id}")]
+            [InlineKeyboardButton(text=b_res, callback_data=f"prop:results:{prop_id}")]
         ]
         role_kb = get_role_reply_kb(user.role, lang)
         sent_m = await message.bot.send_message(chat_id=message.chat.id, text=done_r, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
@@ -13089,7 +13320,8 @@ async def cb_proposal_view_results(query: CallbackQuery):
         lang = user.language if user else "tr"
         prop = await session.get(Proposal, prop_id)
         if not prop:
-            await query.answer("Teklif bulunamadı.", show_alert=True)
+            not_found_tst = {"tr": "Teklif bulunamadı.", "ru": "Предложение не найдено.", "uz": "Taklif topilmadi.", "en": "Proposal not found."}.get(lang, "Not found.")
+            await query.answer(not_found_tst, show_alert=True)
             return
 
         votes = (await session.execute(select(ProposalVote).where(ProposalVote.proposal_id == prop_id))).scalars().all()
@@ -13100,88 +13332,145 @@ async def cb_proposal_view_results(query: CallbackQuery):
         pct_agree = round((len(agrees) / total_votes * 100), 1) if total_votes > 0 else 0.0
         prog_bar = render_progress_bar(int(pct_agree // 10), 10)
 
-        # Gerekçeler
+        # Reasons list
         reasons_list = []
         for v in votes:
             if v.reason_note:
                 icon = "✅" if v.vote_choice == "agree" else "❌"
                 reasons_list.append(f"• {icon} <b>{escape_html(v.voter_name)}:</b> <i>\"{escape_html(v.reason_note)}\"</i>")
 
-        reasons_block = "\\n".join(reasons_list[:8]) if reasons_list else "<i>Henüz gerekçe eklenmemiş.</i>"
+        no_reasons_txt = {
+            "tr": "<i>Henüz gerekçe eklenmemiş.</i>",
+            "ru": "<i>Комментариев пока нет.</i>",
+            "uz": "<i>Hozircha izohlar qo'shilmagan.</i>",
+            "en": "<i>No reasons added yet.</i>"
+        }.get(lang, "No reasons yet.")
+        reasons_block = "\n".join(reasons_list[:8]) if reasons_list else no_reasons_txt
 
         status_badge = {
-            "active": "🟢 <b>Oylama Devam Ediyor</b>",
-            "accepted": "🏆 <b>Yönetim Tarafından Kabul Edildi</b>",
-            "rejected": "❌ <b>Yönetim Tarafından Reddedildi</b>"
+            "active": {
+                "tr": "🟢 <b>Oylama Devam Ediyor</b>",
+                "ru": "🟢 <b>Голосование продолжается</b>",
+                "uz": "🟢 <b>Ovoz berish davom etmoqda</b>",
+                "en": "🟢 <b>Ballot in Progress</b>"
+            }.get(lang, "In Progress"),
+            "accepted": {
+                "tr": "🏆 <b>Yönetim Tarafından Kabul Edildi</b>",
+                "ru": "🏆 <b>Одобрено администрацией</b>",
+                "uz": "🏆 <b>Ma'muriyat tomonidan qabul qilindi</b>",
+                "en": "🏆 <b>Approved by Administration</b>"
+            }.get(lang, "Approved"),
+            "rejected": {
+                "tr": "❌ <b>Yönetim Tarafından Reddedildi</b>",
+                "ru": "❌ <b>Отклонено администрацией</b>",
+                "uz": "❌ <b>Ma'muriyat tomonidan rad etildi</b>",
+                "en": "❌ <b>Rejected by Administration</b>"
+            }.get(lang, "Rejected")
         }.get(prop.status, prop.status)
 
         dec_note_block = ""
         if prop.admin_decision_note:
-            dec_note_block = f"\\n📌 <b>Yönetim Karar Gerekçesi:</b>\\n<i>{escape_html(prop.admin_decision_note)}</i>\\n"
+            dec_lbl = {
+                "tr": "📌 <b>Yönetim Karar Gerekçesi:</b>",
+                "ru": "📌 <b>Обоснование руководства:</b>",
+                "uz": "📌 <b>Ma'muriyat qaror asosi:</b>",
+                "en": "📌 <b>Administrative Rationale:</b>"
+            }.get(lang, "Administrative Decision:")
+            dec_note_block = f"\n{dec_lbl}\n<i>{escape_html(prop.admin_decision_note)}</i>\n"
+
+        card_title = {
+            "tr": f"📊 <b>OYLAMA VE İSTİŞARE SONUÇLARI (#{prop.id})</b>",
+            "ru": f"📊 <b>РЕЗУЛЬТАТЫ ГОЛОСОВАНИЯ (#{prop.id})</b>",
+            "uz": f"📊 <b>OVOZ BERISH VA MUHOKAMA NATIJALARI (#{prop.id})</b>",
+            "en": f"📊 <b>BALLOT & DISCUSSION RESULTS (#{prop.id})</b>"
+        }.get(lang, "Ballot Results")
+
+        lbl_title = {"tr": "Başlık", "ru": "Тема", "uz": "Mavzu", "en": "Title"}.get(lang, "Title")
+        lbl_author = {"tr": "Teklif Eden", "ru": "Автор", "uz": "Taklif egasi", "en": "Submitted by"}.get(lang, "Submitted by")
+        lbl_status = {"tr": "Durum", "ru": "Статус", "uz": "Holat", "en": "Status"}.get(lang, "Status")
+        lbl_distrib = {"tr": "Oy Dağılımı", "ru": "Распределение голосов", "uz": "Ovozlar taqsimoti", "en": "Vote Distribution"}.get(lang, "Distribution")
+        lbl_support = {"tr": "Destek", "ru": "Поддержка", "uz": "Qo'llab-quvvatlash", "en": "Support"}.get(lang, "Support")
+        lbl_agrees = {"tr": "Katılanlar (Destekleyenler)", "ru": "Согласны (Поддерживают)", "uz": "Qo'shilganlar (Qo'llaganlar)", "en": "In Favor (Agreed)"}.get(lang, "In Favor")
+        lbl_disagrees = {"tr": "Karşı Olanlar", "ru": "Против", "uz": "Qarshilar", "en": "Opposed"}.get(lang, "Opposed")
+        lbl_total = {"tr": "Toplam Kullanılan Oy", "ru": "Всего проголосовало", "uz": "Jami ovozlar", "en": "Total Votes Cast"}.get(lang, "Total Votes")
+        lbl_reasons = {"tr": "Gerekçeler ve Öğretmen Görüşleri", "ru": "Комментарии и мнения учителей", "uz": "Izohlar va o'qituvchilar fikri", "en": "Staff Notes & Feedback"}.get(lang, "Feedback")
+        lbl_unit = {"tr": "Kişi", "ru": "чел.", "uz": "ta", "en": "votes"}.get(lang, "")
 
         card_text = (
-            f"📊 <b>OYLAMA VE İSTİŞARE SONUÇLARI (#{prop.id})</b>\\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n"
-            f"📌 <b>Başlık:</b> {escape_html(prop.title)}\\n"
-            f"👤 <b>Teklif Eden:</b> {escape_html(prop.creator_name)}\\n"
-            f"🏁 <b>Durum:</b> {status_badge}\\n"
+            f"{card_title}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📌 <b>{lbl_title}:</b> {escape_html(prop.title)}\n"
+            f"👤 <b>{lbl_author}:</b> {escape_html(prop.creator_name)}\n"
+            f"🏁 <b>{lbl_status}:</b> {status_badge}\n"
             f"{dec_note_block}"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n"
-            f"📈 <b>Oy Dağılımı:</b>\\n"
-            f"<code>{prog_bar}</code> <b>%{pct_agree} Destek</b>\\n"
-            f"• ✅ <b>Katılanlar (Destekleyenler):</b> {len(agrees)} Kişi\\n"
-            f"• ❌ <b>Karşı Olanlar:</b> {len(disagrees)} Kişi\\n"
-            f"• 👥 <b>Toplam Kullanılan Oy:</b> {total_votes}\\n\\n"
-            f"💬 <b>Gerekçeler ve Öğretmen Görüşleri:</b>\\n"
-            f"{reasons_block}\\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📈 <b>{lbl_distrib}:</b>\n"
+            f"<code>{prog_bar}</code> <b>%{pct_agree} {lbl_support}</b>\n"
+            f"• ✅ <b>{lbl_agrees}:</b> {len(agrees)} {lbl_unit}\n"
+            f"• ❌ <b>{lbl_disagrees}:</b> {len(disagrees)} {lbl_unit}\n"
+            f"• 👥 <b>{lbl_total}:</b> {total_votes}\n\n"
+            f"💬 <b>{lbl_reasons}:</b>\n"
+            f"{reasons_block}\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
 
         buttons = []
-        # Eğer aktifse oy kullanma butonları
-        if prop.status == "active":
-            buttons.append([
-                InlineKeyboardButton(text="✅ Katılıyorum", callback_data=f"prop:vote:{prop.id}:agree"),
-                InlineKeyboardButton(text="❌ Katılmıyorum", callback_data=f"prop:vote:{prop.id}:disagree")
-            ])
-            buttons.append([InlineKeyboardButton(text="📝 Gerekçe Ekle", callback_data=f"prop:reason:{prop.id}")])
-
-        # Eğer Admin ise karar butonları
         if is_admin_user(user, query.from_user.id) and prop.status == "active":
+            btn_acc = {"tr": "🏆 Kabul Et & Onayla", "ru": "🏆 Принять решение", "uz": "🏆 Qabul qilish", "en": "🏆 Accept & Enact"}.get(lang, "Accept")
+            btn_rej = {"tr": "❌ Reddet", "ru": "❌ Отклонить", "uz": "❌ Rad etish", "en": "❌ Reject"}.get(lang, "Reject")
             buttons.append([
-                InlineKeyboardButton(text="✅ Kararı Onayla & Yürürlüğe Koy", callback_data=f"adm:prop_decide:{prop.id}:accept"),
-                InlineKeyboardButton(text="❌ Reddet / Arşivle", callback_data=f"adm:prop_decide:{prop.id}:reject")
+                InlineKeyboardButton(text=btn_acc, callback_data=f"adm:prop_decide:{prop.id}:accept"),
+                InlineKeyboardButton(text=btn_rej, callback_data=f"adm:prop_decide:{prop.id}:reject")
             ])
 
-        buttons.append([
-            InlineKeyboardButton(text="🔄 Yenile", callback_data=f"prop:results:{prop.id}")
-        ])
-        buttons.append(get_nav_buttons(lang, back_callback="adm:proposals_hub"))
+        back_cb = "adm:proposals_hub" if is_admin_user(user, query.from_user.id) else "tch:active_props:0"
+        buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=back_cb)])
 
         await safe_edit_or_answer(query, card_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
-# --- YÖNETİCİ OYLAMA MASASI & KARAR VERME ---
 @router.callback_query(F.data == "adm:proposals_hub")
 async def cb_admin_proposals_hub(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         props = (await session.execute(select(Proposal).order_by(desc(Proposal.created_at)).limit(10))).scalars().all()
 
-        bc_ap = {"tr": "🏠 Ana Menü ➔ 🛠️ Araçlar ➔ 🗳️ Oylama & İstişare Masası", "ru": "🏠 Главное меню ➔ 🛠️ Инструменты ➔ 🗳️ Голосования", "uz": "🏠 Asosiy menyu ➔ 🛠️ Boshqaruv ➔ 🗳️ Ovoz berish", "en": "🏠 Main Menu ➔ 🛠️ Admin Tools ➔ 🗳️ Voting & Proposals"}.get(lang, "🗳️ Voting Desk")
-        title_ap = "🗳️ <b>YÖNETİM OYLAMA, ŞİKAYET VE KARAR MASASI</b>"
-        desc_ap = "Öğretmenlerin sunduğu öğrenci disiplin şikayetlerini, kurumsal teklifleri inceleyebilir, oylama sonuçlarına göre idari nihai kararı onaylayabilir veya tüm personele özel yeni bir oylama/referandum başlatabilirsiniz:"
+        bc_ap = {"tr": "🏠 Ana Menü ➔ 🛠️ Araçlar ➔ 🗳️ Oylamalar", "ru": "🏠 Главное меню ➔ 🛠️ Инструменты ➔ 🗳️ Голосования", "uz": "🏠 Asosiy menyu ➔ 🛠️ Boshqaruv ➔ 🗳️ Ovoz berish", "en": "🏠 Main Menu ➔ 🛠️ Admin Tools ➔ 🗳️ Proposals"}.get(lang, "🗳️ Voting Desk")
+        title_ap = {
+            "tr": "🗳️ <b>YÖNETİM OYLAMA, ŞİKAYET VE KARAR MASASI</b>",
+            "ru": "🗳️ <b>ЦЕНТР ГОЛОСОВАНИЙ И АДМИНИСТРАТИВНЫХ РЕШЕНИЙ</b>",
+            "uz": "🗳️ <b>MA'MURIYAT OVOZ BERISH VA QAROR MARKAZI</b>",
+            "en": "🗳️ <b>ADMINISTRATIVE BALLOTS & DECISIONS DESK</b>"
+        }.get(lang, "🗳️ <b>PROPOSALS & DECISIONS</b>")
 
-        text = (
-            f"<b>{bc_ap}</b>\\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n"
-            f"{title_ap}\\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n"
-            f"{desc_ap}\\n\\n"
-            f"📋 <b>Son Teklif ve Şikayetler ({len(props)}):</b>\\n"
+        desc_ap = {
+            "tr": "Öğretmenlerin sunduğu öğrenci disiplin şikayetlerini ve teklifleri inceleyebilir, oylama sonuçlarına göre idari kararı açıklayabilirsiniz:",
+            "ru": "Изучайте предложения и дисциплинарные жалобы учителей, принимайте решения по итогам голосования:",
+            "uz": "O'qituvchilar taklif va intizom shikoyatlarini ko'rib chiqishingiz va ovoz berish natijalariga ko'ra qaror qabul qilishingiz mumkin:",
+            "en": "Review faculty proposals and student disciplinary complaints, and issue official administrative decisions:"
+        }.get(lang, "Manage proposals:")
+
+        lbl_recent = {
+            "tr": f"📋 <b>Son Teklif ve Şikayetler ({len(props)}):</b>",
+            "ru": f"📋 <b>Недавние предложения и жалобы ({len(props)}):</b>",
+            "uz": f"📋 <b>So'nggi taklif va shikoyatlar ({len(props)}):</b>",
+            "en": f"📋 <b>Recent Proposals ({len(props)}):</b>"
+        }.get(lang, f"Proposals ({len(props)}):")
+
+        text_content = (
+            f"<b>{bc_ap}</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{title_ap}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{desc_ap}\n\n"
+            f"{lbl_recent}\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
 
@@ -13193,7 +13482,7 @@ async def cb_admin_proposals_hub(query: CallbackQuery):
         buttons.append([InlineKeyboardButton(text={"tr": "➕ Yeni Oylama / Teklif", "ru": "➕ Создать голосование", "uz": "➕ Yangi ovoz berish", "en": "➕ Start New Proposal"}.get(lang, "➕ Start New Proposal"), callback_data="adm:new_admin_prop")])
         buttons.append(get_nav_buttons(lang, back_callback="adm:cat_tools_reports"))
 
-        await safe_edit_or_answer(query, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+        await safe_edit_or_answer(query, text_content, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await query.answer()
 
 @router.callback_query(F.data.startswith("adm:prop_decide:"))
@@ -13209,7 +13498,7 @@ async def cb_admin_proposal_decide_init(query: CallbackQuery, state: FSMContext)
 
     dec_lbl = "KABUL VE ONAY" if decision == "accept" else "RET / ARŞİV"
     prompt_d = f"⚖️ <b>İdari Karar Belirleme: #{prop_id} ({dec_lbl})</b>\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\nLütfen personele ve teklif sahibine iletilecek resmi idari karar gerekçesini yazınız:"
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="adm:proposals_hub")
     await safe_edit_or_answer(query, prompt_d, reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.waiting_admin_decision_note)
     await query.answer()
@@ -13250,7 +13539,8 @@ async def process_admin_decision_note(message: Message, state: FSMContext):
             f"📝 <b>Yönetim Gerekçesi:</b>\\n<i>{escape_html(note_txt)}</i>\\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
-        res_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📊 Sonuçları İncele", callback_data=f"prop:results:{prop.id}")]])
+        b_res_inc = {"tr": "📊 Sonuçları İncele", "ru": "📊 Изучить результаты", "uz": "📊 Natijalarni ko'rish", "en": "📊 View Results"}.get(lang, "📊 View Results")
+        res_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=b_res_inc, callback_data=f"prop:results:{prop.id}")]])
 
         # Personele duyur
         staff_users = (await session.execute(select(User).where(User.role.in_(["teacher", "admin"])))).scalars().all()
@@ -13278,7 +13568,7 @@ async def cb_admin_new_proposal_init(query: CallbackQuery, state: FSMContext):
         lang = user.language if user else "tr"
 
     prompt_t = "👑 <b>Yönetici Teklifi / İdari Oylama Başlatma</b>\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\nLütfen oylamaya sunmak istediğiniz teklifin <b>Başlığını</b> yazınız (Örn: Hafta Sonu Kurs Programı Düzenlemesi):"
-    cancel_kb = get_cancel_reply_kb(lang)
+    cancel_kb = get_inline_cancel_kb(lang, back_callback="adm:proposals_hub")
     await safe_edit_or_answer(query, prompt_t, reply_markup=cancel_kb, parse_mode="HTML")
     await state.set_state(Form.waiting_admin_prop_title)
     await query.answer()
@@ -13337,13 +13627,17 @@ async def process_admin_prop_content(message: Message, state: FSMContext):
             "Lütfen idari teklife dair oyunuzu belirtiniz:"
         )
 
+        b_acc = {"tr": "✅ Kabul / Katılıyorum", "ru": "✅ Согласен", "uz": "✅ Qo'shilaman", "en": "✅ Agree"}.get(lang, "✅ Agree")
+        b_rej = {"tr": "❌ Red / Karşıyım", "ru": "❌ Не согласен", "uz": "❌ Qo'shilmayman", "en": "❌ Disagree"}.get(lang, "❌ Disagree")
+        b_rsn_a = {"tr": "📝 Gerekçe / Fikir Ekle", "ru": "📝 Добавить комментарий", "uz": "📝 Izoh / Fikr qo'shish", "en": "📝 Add Note"}.get(lang, "📝 Add Note")
+        b_live = {"tr": "📊 Canlı Sonuçlar", "ru": "📊 Результаты", "uz": "📊 Natijalar", "en": "📊 Live Results"}.get(lang, "📊 Live Results")
         vote_buttons = [
             [
-                InlineKeyboardButton(text="✅ Kabul / Katılıyorum", callback_data=f"prop:vote:{prop.id}:agree"),
-                InlineKeyboardButton(text="❌ Red / Karşıyım", callback_data=f"prop:vote:{prop.id}:disagree")
+                InlineKeyboardButton(text=b_acc, callback_data=f"prop:vote:{prop.id}:agree"),
+                InlineKeyboardButton(text=b_rej, callback_data=f"prop:vote:{prop.id}:disagree")
             ],
-            [InlineKeyboardButton(text="📝 Gerekçe / Fikir Ekle", callback_data=f"prop:reason:{prop.id}")],
-            [InlineKeyboardButton(text="📊 Canlı Sonuçlar", callback_data=f"prop:results:{prop.id}")]
+            [InlineKeyboardButton(text=b_rsn_a, callback_data=f"prop:reason:{prop.id}")],
+            [InlineKeyboardButton(text=b_live, callback_data=f"prop:results:{prop.id}")]
         ]
 
         staff_users = (await session.execute(select(User).where(User.role.in_(["teacher", "admin"])))).scalars().all()
@@ -13397,7 +13691,13 @@ async def cb_cat_tools_reports(event: Message | CallbackQuery, state: FSMContext
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, user_id): return
+        if not is_admin_user(user, user_id):
+
+            if "query" in locals() and isinstance(locals()["query"], CallbackQuery):
+
+                await locals()["query"].answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         title = get_text("rk_cat_tools_reports", lang)
         desc = {
@@ -13512,7 +13812,11 @@ async def cb_admin_scan_bot_blocks(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         all_users = (await session.execute(select(User))).scalars().all()
         blocked_count = 0
@@ -13552,9 +13856,13 @@ async def cb_admin_rename_class_init(query: CallbackQuery, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
 
-    cancel_kb = get_cancel_reply_kb(lang)
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
+
+    cancel_kb = get_inline_cancel_kb(lang, back_callback=f"adm:show_class:{class_name}")
     prompt_txt = {
         "tr": f"✏️ <b>{class_name} Sınıfının Adını Değiştirme</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBu sınıfa bağlı tüm öğrencilerin, ders programlarının ve ödevlerin sınıf adı otomatik güncellenecektir.\n\nLütfen yeni sınıf adını yazınız (Örn: <code>10-A</code>, <code>11-B</code>):",
         "ru": f"✏️ <b>Переименование класса {class_name}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nВсе ученики и расписания будут автоматически обновлены.\n\nВведите новое название класса:",
@@ -13624,7 +13932,11 @@ async def cb_admin_graduates_archive(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         all_grads = (await session.execute(select(Graduate).order_by(Graduate.graduation_year.desc(), Graduate.full_name))).scalars().all()
         total = len(all_grads)
@@ -13667,7 +13979,11 @@ async def cb_admin_remind_votes(query: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, query.from_user.id)
         lang = user.language if user else "tr"
-        if not is_admin_user(user, query.from_user.id): return
+        if not is_admin_user(user, query.from_user.id):
+
+            await query.answer(get_text("unauthorized_action", lang), show_alert=True)
+
+            return
 
         prop = await session.get(Proposal, prop_id)
         if not prop or prop.status != "active":
@@ -13693,8 +14009,9 @@ async def cb_admin_remind_votes(query: CallbackQuery):
             f"📌 <b>{escape_html(prop.title)}</b>\n\n"
             "<i>Lütfen aşağıdaki butona dokunarak görüşünüzü bildiriniz.</i>"
         )
+        b_open_v = {"tr": "🗳️ Oylamayı Aç ve Oy Ver", "ru": "🗳️ Открыть и проголосовать", "uz": "🗳️ Ovoz berishga o'tish", "en": "🗳️ Open & Vote"}.get(lang, "🗳️ Open & Vote")
         vote_btn = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🗳️ Oylamayı Aç ve Oy Ver", callback_data=f"prop:open:{prop.id}")]
+            [InlineKeyboardButton(text=b_open_v, callback_data=f"prop:open:{prop.id}")]
         ])
         for uid in non_voters:
             try:
@@ -13714,6 +14031,7 @@ async def cb_admin_remind_votes(query: CallbackQuery):
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+dp.callback_query.outer_middleware(AutoCallbackAnswerMiddleware())
 dp.include_router(router)
 
 @dp.error()
