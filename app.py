@@ -69,17 +69,29 @@ class GlobalMenuButtonMiddleware(BaseMiddleware):
     ) -> Any:
         if isinstance(event, Message) and event.text:
             text_val = event.text.strip()
+            # 1. Evrensel İptal Komutları ve Butonları (FSM ve durumdan bağımsız anında temizle)
             if is_universal_cancel_text(text_val) or text_val in ("/cancel", "/iptal", "/otmena", "/bekor"):
                 state = data.get("state")
                 if state:
-                    await state.clear()
+                    try: await state.clear()
+                    except Exception: pass
                 return await cmd_cancel(event, state)
 
+            # 2. Başlat / Menü Komutları (Her durumda ve FSM içindeyken dahi sıfırdan ana menüyü açar)
+            if text_val.lower() in ("/start", "start", "/menu", "menu", "/menü", "menü", "başlat", "baslat"):
+                state = data.get("state")
+                if state:
+                    try: await state.clear()
+                    except Exception: pass
+                return await cmd_start(event, state)
+
+            # 3. Alt Menü (ReplyKeyboardMarkup) Buton Yakalayıcı (FSM state'i temizleyip doğru sayfaya yönlendirir)
             action = match_reply_button(text_val)
             if action:
                 state = data.get("state")
                 if state:
-                    await state.clear()
+                    try: await state.clear()
+                    except Exception: pass
                 return await global_reply_keyboard_router(event, state)
 
         return await handler(event, data)
@@ -809,100 +821,70 @@ async def get_all_school_classes(session: AsyncSession) -> list[str]:
     return sorted(list(raw), key=natural_sort_key)
 
 async def init_db():
+    print("--> [DB INIT] Veritabanı tabloları ve endeksleri kontrol ediliyor...")
     async with engine.begin() as conn:
         if "sqlite" in DATABASE_URL:
-            try:
-                await conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
-                await conn.exec_driver_sql("PRAGMA synchronous=NORMAL;")
-                await conn.exec_driver_sql("PRAGMA busy_timeout=30000;")
-                await conn.exec_driver_sql("PRAGMA cache_size=-64000;")
-                await conn.exec_driver_sql("PRAGMA temp_store=MEMORY;")
-                await conn.exec_driver_sql("PRAGMA mmap_size=268435456;")
-                await conn.exec_driver_sql("PRAGMA threads=4;")
-                await conn.exec_driver_sql("PRAGMA integrity_check;")
-            except Exception:
-                pass
-                # Otomatik Tablo ve Endeks Kontrolleri
-        try:
-            await conn.run_sync(Base.metadata.create_all)
-            await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS digital_records (id INTEGER PRIMARY KEY AUTOINCREMENT, user_telegram_id BIGINT, category VARCHAR(40), title VARCHAR(150), summary TEXT, full_content TEXT, file_id VARCHAR(200), file_type VARCHAR(30), tg_message_id BIGINT, is_archived_from_chat BOOLEAN DEFAULT 0, expires_at DATETIME, created_at DATETIME);")
-            await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS classes (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(20) UNIQUE, created_at DATETIME);")
-            await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS graduates (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name VARCHAR(100), student_number VARCHAR(20), graduated_class VARCHAR(20), graduation_year INTEGER, parent_phone VARCHAR(30), created_at DATETIME);")
-            await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, proposal_type VARCHAR(40), title VARCHAR(150), content TEXT, target_audience VARCHAR(30), target_student_id INTEGER, created_by BIGINT, creator_name VARCHAR(100), status VARCHAR(20) DEFAULT 'active', admin_decision_note TEXT, decided_by BIGINT, decided_at DATETIME, is_anonymous BOOLEAN DEFAULT 0, deadline_at DATETIME, attachment_file_id VARCHAR(200), attachment_type VARCHAR(20), created_at DATETIME);")
-            await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS proposal_votes (id INTEGER PRIMARY KEY AUTOINCREMENT, proposal_id INTEGER, user_telegram_id BIGINT, voter_name VARCHAR(100), vote_choice VARCHAR(20), reason_note TEXT, voted_at DATETIME);")
-            
-            for col_sql in [
-                "ALTER TABLE proposals ADD COLUMN is_anonymous BOOLEAN DEFAULT 0;",
-                "ALTER TABLE proposals ADD COLUMN deadline_at DATETIME;",
-                "ALTER TABLE proposals ADD COLUMN attachment_file_id VARCHAR(200);",
-                "ALTER TABLE proposals ADD COLUMN attachment_type VARCHAR(20);",
-                "ALTER TABLE users ADD COLUMN is_bot_blocked BOOLEAN DEFAULT 0;",
-                "ALTER TABLE users ADD COLUMN blocked_detected_at DATETIME;"
+            for pragma in [
+                "PRAGMA journal_mode=WAL;",
+                "PRAGMA synchronous=NORMAL;",
+                "PRAGMA busy_timeout=30000;",
+                "PRAGMA cache_size=-64000;",
+                "PRAGMA temp_store=MEMORY;"
             ]:
-                try: await conn.exec_driver_sql(col_sql)
+                try: await conn.exec_driver_sql(pragma)
                 except Exception: pass
 
-            await conn.exec_driver_sql("DELETE FROM students WHERE class_name IN ('9-A', '9A') AND (student_number IN ('0', '101', '') OR student_number IS NULL) AND full_name IN ('Ahmet Yılmaz', 'Test Öğrenci', 'Öğrenci');")
-            await conn.exec_driver_sql("DELETE FROM schedules WHERE class_name IN ('9-A', '9A');")
-        except Exception:
-            pass
-
-    try:
-        await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_att_date_student ON attendances (date, student_id);")
-        await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_grades_student_subject ON grades (student_id, subject);")
-        await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_behavior_student_date ON behavior_records (student_id, created_at);")
-    except Exception:
-        pass
-
+        # 1. SQLAlchemy modellerinin tamamını oluştur
         try:
-            await conn.exec_driver_sql("UPDATE users SET role = 'guest', admin_type = 'none' WHERE telegram_id = 8576061834;")
-        except Exception:
-            pass
+            await conn.run_sync(Base.metadata.create_all)
+        except Exception as e:
+            print(f"--> [DB UYARI] metadata.create_all: {e}")
 
-        try:
-            if "sqlite" in DATABASE_URL:
-                res = await conn.exec_driver_sql("PRAGMA table_info(users);")
-                cols = [r[1] for r in res.fetchall()]
-                for c_name, c_type in [
-                    ("username", "VARCHAR(100)"),
-                    ("phone", "VARCHAR(30)"),
-                    ("admin_type", "VARCHAR(20) DEFAULT 'none'"),
-                    ("admin_until", "DATETIME"),
-                    ("previous_role", "VARCHAR(20) DEFAULT 'guest'")
-                ]:
-                    if c_name not in cols:
-                        await conn.exec_driver_sql(f"ALTER TABLE users ADD COLUMN {c_name} {c_type};")
-                if "is_bot_blocked" not in cols:
-                    await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN is_bot_blocked BOOLEAN DEFAULT 0;")
-                if "blocked_bot_at" not in cols:
-                    await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN blocked_bot_at DATETIME;")
-                
-                res_t = await conn.exec_driver_sql("PRAGMA table_info(teachers);")
-                cols_t = [r[1] for r in res_t.fetchall()]
-                if "assigned_classes" not in cols_t:
-                    await conn.exec_driver_sql("ALTER TABLE teachers ADD COLUMN assigned_classes VARCHAR(255) DEFAULT 'ALL';")
+        # 2. İlave tablolar
+        extra_tables = [
+            "CREATE TABLE IF NOT EXISTS digital_records (id INTEGER PRIMARY KEY AUTOINCREMENT, user_telegram_id BIGINT, category VARCHAR(40), title VARCHAR(150), summary TEXT, full_content TEXT, file_id VARCHAR(200), file_type VARCHAR(30), tg_message_id BIGINT, is_archived_from_chat BOOLEAN DEFAULT 0, expires_at DATETIME, created_at DATETIME);",
+            "CREATE TABLE IF NOT EXISTS classes (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(20) UNIQUE, created_at DATETIME);",
+            "CREATE TABLE IF NOT EXISTS graduates (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name VARCHAR(100), student_number VARCHAR(20), graduated_class VARCHAR(20), graduation_year INTEGER, parent_phone VARCHAR(30), created_at DATETIME);",
+            "CREATE TABLE IF NOT EXISTS proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, proposal_type VARCHAR(40), title VARCHAR(150), content TEXT, target_audience VARCHAR(30), target_student_id INTEGER, created_by BIGINT, creator_name VARCHAR(100), status VARCHAR(20) DEFAULT 'active', admin_decision_note TEXT, decided_by BIGINT, decided_at DATETIME, is_anonymous BOOLEAN DEFAULT 0, deadline_at DATETIME, attachment_file_id VARCHAR(200), attachment_type VARCHAR(20), created_at DATETIME);",
+            "CREATE TABLE IF NOT EXISTS proposal_votes (id INTEGER PRIMARY KEY AUTOINCREMENT, proposal_id INTEGER, user_telegram_id BIGINT, voter_name VARCHAR(100), vote_choice VARCHAR(20), reason_note TEXT, voted_at DATETIME);"
+        ]
+        if "sqlite" in DATABASE_URL:
+            for sql in extra_tables:
+                try: await conn.exec_driver_sql(sql)
+                except Exception: pass
 
-                res_ar = await conn.exec_driver_sql("PRAGMA table_info(access_requests);")
-                cols_ar = [r[1] for r in res_ar.fetchall()]
-                if "gender" not in cols_ar:
-                    await conn.exec_driver_sql("ALTER TABLE access_requests ADD COLUMN gender VARCHAR(20);")
-                if "birth_date" not in cols_ar:
-                    await conn.exec_driver_sql("ALTER TABLE access_requests ADD COLUMN birth_date VARCHAR(30);")
-            else:
-                for c_name, c_type in [
-                    ("username", "VARCHAR(100)"),
-                    ("phone", "VARCHAR(30)"),
-                    ("admin_type", "VARCHAR(20) DEFAULT 'none'"),
-                    ("admin_until", "TIMESTAMP"),
-                    ("previous_role", "VARCHAR(20) DEFAULT 'guest'")
-                ]:
-                    await conn.exec_driver_sql(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {c_name} {c_type};")
-                await conn.exec_driver_sql("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS assigned_classes VARCHAR(255) DEFAULT 'ALL';")
-                await conn.exec_driver_sql("ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS gender VARCHAR(20);")
-                await conn.exec_driver_sql("ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS birth_date VARCHAR(30);")
-        except Exception:
-            pass
+        # 3. Kolon ekleme geçişleri (Migrations)
+        migration_sqls = [
+            "ALTER TABLE proposals ADD COLUMN is_anonymous BOOLEAN DEFAULT 0;",
+            "ALTER TABLE proposals ADD COLUMN deadline_at DATETIME;",
+            "ALTER TABLE proposals ADD COLUMN attachment_file_id VARCHAR(200);",
+            "ALTER TABLE proposals ADD COLUMN attachment_type VARCHAR(20);",
+            "ALTER TABLE users ADD COLUMN is_bot_blocked BOOLEAN DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN blocked_detected_at DATETIME;",
+            "ALTER TABLE users ADD COLUMN username VARCHAR(100);",
+            "ALTER TABLE users ADD COLUMN phone VARCHAR(30);",
+            "ALTER TABLE users ADD COLUMN admin_type VARCHAR(20) DEFAULT 'none';",
+            "ALTER TABLE users ADD COLUMN admin_until DATETIME;",
+            "ALTER TABLE users ADD COLUMN previous_role VARCHAR(20) DEFAULT 'guest';",
+            "ALTER TABLE users ADD COLUMN blocked_bot_at DATETIME;",
+            "ALTER TABLE teachers ADD COLUMN assigned_classes VARCHAR(255) DEFAULT 'ALL';",
+            "ALTER TABLE access_requests ADD COLUMN gender VARCHAR(20);",
+            "ALTER TABLE access_requests ADD COLUMN birth_date VARCHAR(30);"
+        ]
+        for col_sql in migration_sqls:
+            try: await conn.exec_driver_sql(col_sql)
+            except Exception: pass
 
+        # 4. Performans Endeksleri
+        for idx_sql in [
+            "CREATE INDEX IF NOT EXISTS idx_att_date_student ON attendances (date, student_id);",
+            "CREATE INDEX IF NOT EXISTS idx_grades_student_subject ON grades (student_id, subject);",
+            "CREATE INDEX IF NOT EXISTS idx_behavior_student_date ON behavior_records (student_id, created_at);"
+        ]:
+            try: await conn.exec_driver_sql(idx_sql)
+            except Exception: pass
+
+        # 5. Zaman Dilimi Okuma
         try:
             tz_res = await conn.exec_driver_sql("SELECT value FROM system_settings WHERE key = 'timezone_offset';")
             row = tz_res.fetchone()
@@ -911,7 +893,7 @@ async def init_db():
                 TIMEZONE_OFFSET = int(row[0])
         except Exception:
             pass
-
+    print("--> [DB INIT] Veritabanı kurulumu başarıyla tamamlandı.\n")
 # ======================================================================
 # 3. KUSURSUZ 4 DİLLİ METİN SÖZLÜĞÜ (TR, RU, UZ, EN)
 # ======================================================================
@@ -3998,10 +3980,14 @@ async def cb_relaunch_start(query: CallbackQuery, state: FSMContext):
             await cmd_start(query.message, state)
     await query.answer()
 
-@router.message(CommandStart())
-@router.message(Command("menu"))
-async def cmd_start(message: Message, state: FSMContext):
-    await state.clear()
+@router.message(any_state, CommandStart())
+@router.message(any_state, Command("start", "menu", "baslat", "başlat"))
+@router.message(any_state, F.text.lower().in_(["/start", "start", "/menu", "menu", "menü", "/menü", "başlat", "baslat"]))
+async def cmd_start(message: Message, state: FSMContext | None = None):
+    print(f"--> [CMD_START TETİKLENDİ] ID: {message.from_user.id} | İsim: {message.from_user.full_name} | Metin: '{message.text}'")
+    if state is not None:
+        try: await state.clear()
+        except Exception: pass
     async with AsyncSessionLocal() as session:
         user = await session.get(User, message.from_user.id)
         is_admin_id = message.from_user.id in ADMIN_IDS
@@ -14601,9 +14587,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"--> [HATA 2/6] BOT_TOKEN ile Telegram'a bağlanılamadı: {e}")
 
+    polling_task = None
+    # Render Web Service veya public URL mevcutsa Webhook modu otomatik devreye girer.
     if bot_info and WEBHOOK_URL:
         try:
-            print(f"--> [3/6] Webhook Telegram'a kaydediliyor: {WEBHOOK_URL}")
+            print(f"--> [3/6] WEBHOOK modu Telegram'a kaydediliyor: {WEBHOOK_URL}")
             await bot.delete_webhook(drop_pending_updates=False)
             await bot.set_webhook(
                 url=WEBHOOK_URL,
@@ -14612,9 +14600,22 @@ async def lifespan(app: FastAPI):
                 allowed_updates=["message", "callback_query"]
             )
             wh = await bot.get_webhook_info()
-            print(f"--> [3/6] Webhook Başarıyla Kuruldu! Aktif URL: {wh.url}")
+            print(f"--> [3/6] Webhook Başarıyla Kuruldu! Aktif URL: {wh.url} (Bekleyen mesajlar: {wh.pending_update_count})")
         except Exception as e:
-            print(f"--> [HATA 3/6] Webhook kurulum hatası: {e}")
+            print(f"--> [HATA 3/6] Webhook kaydedilemedi: {e}. Yerel POLLING deneniyor...")
+            try:
+                await bot.delete_webhook(drop_pending_updates=False)
+                polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=["message", "callback_query"]))
+            except Exception as pe:
+                print(f"--> [HATA 3/6] Polling de başlatılamadı: {pe}")
+    else:
+        print("--> [3/6] WEBHOOK_URL bulunamadı, yerel POLLING modu başlatılıyor...")
+        try:
+            await bot.delete_webhook(drop_pending_updates=False)
+            polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=["message", "callback_query"]))
+            print("--> [3/6] Bot POLLING modunda aktif edildi.")
+        except Exception as pe:
+            print(f"--> [HATA 3/6] Polling hatası: {pe}")
 
     t1 = asyncio.create_task(background_attendance_loop())
     t2 = asyncio.create_task(background_keep_alive_pinger())
@@ -14627,6 +14628,8 @@ async def lifespan(app: FastAPI):
     print("--> [6/6] SİSTEM CANLI VE TÜM GÜVENLİK KALKANLARI HAZIR.")
     print("=" * 60)
     yield
+    if polling_task:
+        polling_task.cancel()
     t1.cancel()
     t2.cancel()
     t3.cancel()
@@ -14669,7 +14672,26 @@ async def health_check():
         }
     )
 
+@app.get("/bot-status")
+async def bot_status_view():
+    try:
+        me = await bot.get_me()
+        wh = await bot.get_webhook_info()
+        return {
+            "status": "online",
+            "bot_username": f"@{me.username}",
+            "bot_id": me.id,
+            "webhook_url": wh.url,
+            "pending_update_count": wh.pending_update_count,
+            "last_error_message": wh.last_error_message,
+            "last_error_date": str(wh.last_error_date) if wh.last_error_date else None,
+            "allowed_updates": wh.allowed_updates
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.post("/webhook")
+@app.post("/webhook/")
 async def telegram_webhook(request: Request):
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
     if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
